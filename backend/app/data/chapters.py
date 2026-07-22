@@ -81,12 +81,13 @@ CH2 = Chapter(
             id="p1",
             title="神经网络的结构",
             visualization="NetworkGraphViz",
-            description="可视化一个三层神经网络（输入层、隐藏层、输出层），节点和连线展示了参数的规模。",
+            description="调节隐藏层数量和每层神经元数，观察网络结构与参数规模如何变化。",
             content=[
                 ContentBlock(type=ContentBlockType.TEXT, text="神经网络由多层神经元组成，层与层之间通过权重全连接。每个连线就是一个参数 w。"),
-                ContentBlock(type=ContentBlockType.NOTE, text="一个 [2, 3, 1] 的网络有 2×3 + 3×1 = 9 个权重参数 + 3+1 = 4 个偏置参数，共 13 个参数。"),
+                ContentBlock(type=ContentBlockType.NOTE, text="增加隐藏层或神经元会提升网络表达能力，同时也会快速增加权重与偏置参数。"),
             ],
             controls=[
+                ControlConfig(key="hidden_layers", label="隐藏层数量", type=ControlType.SLIDER, min=1, max=3, step=1, default=1, value_labels=["1 层", "2 层", "3 层"]),
                 ControlConfig(key="hidden", label="隐藏层神经元数", type=ControlType.SLIDER, min=1, max=8, step=1, default=3),
             ],
         ),
@@ -98,9 +99,12 @@ CH2 = Chapter(
             content=[
                 ContentBlock(type=ContentBlockType.TEXT, text="前向传播：输入数据依次通过每一层的计算，得到最终预测输出。"),
                 ContentBlock(type=ContentBlockType.FORMULA, text="a⁽ˡ⁾ = f(W⁽ˡ⁾ · a⁽ˡ⁻¹⁾ + b⁽ˡ⁾)"),
-                ContentBlock(type=ContentBlockType.NOTE, text='点击"运行前向传播"按钮，观察数据在每一层的流动过程。'),
+                ContentBlock(type=ContentBlockType.NOTE, text='先设置网络结构和激活函数，再点击“运行前向传播”。动画完成后可以重复运行。'),
             ],
             controls=[
+                ControlConfig(key="hidden_layers", label="隐藏层数量", type=ControlType.SLIDER, min=1, max=3, step=1, default=1, value_labels=["1 层", "2 层", "3 层"]),
+                ControlConfig(key="hidden", label="每层神经元数", type=ControlType.SLIDER, min=2, max=6, step=1, default=3),
+                ControlConfig(key="activation", label="激活函数", type=ControlType.SELECT, options=["ReLU", "Sigmoid", "Tanh", "Step"], default=0),
                 ControlConfig(key="run", label="运行前向传播", type=ControlType.BUTTON, default=0),
             ],
             api_endpoint="/api/nn/forward",

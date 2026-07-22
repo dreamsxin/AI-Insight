@@ -130,6 +130,11 @@ export class SelfAttentionViz extends BaseVisualization {
     const n = data.weights.length;
     const focus = this.focus;
 
+    if (w < 460) {
+      this.renderCompact(data, n, focus);
+      return;
+    }
+
     // --- Title ---
     const title = new Text("自注意力: Attention(Q, K, V)", w / 2, 26, 18);
     title.fillStyle = COLORS.accent;
@@ -306,6 +311,108 @@ export class SelfAttentionViz extends BaseVisualization {
     hint.fillStyle = COLORS.textDim;
     this.scene.add(hint);
 
+    this.renderer.renderOnce();
+  }
+
+  /** Compact composition for narrow screens: one query, one candidate row, one matrix. */
+  private renderCompact(data: AttentionResponse, n: number, focus: number): void {
+    const w = this.width;
+    const h = this.height;
+    const weights = data.weights[focus] ?? [];
+    const title = new Text("自注意力 Q → K / V", w / 2, 22, 15);
+    title.fillStyle = COLORS.accent;
+    title.fontWeight = "bold";
+    this.scene.add(title);
+
+    const qLabel = new Text(`Q = "${TOKEN_LABELS[focus]}"`, w / 2, 48, 12);
+    qLabel.fillStyle = COLORS.text;
+    this.scene.add(qLabel);
+
+    const qX = w / 2;
+    const qY = 82;
+    const qNode = new GlowNode(qX, qY, 17);
+    qNode.hue = HUE_Q;
+    qNode.intensity = 1;
+    qNode.glowScale = 2.5;
+    qNode.label = "?";
+    qNode.labelSize = 14;
+    this.scene.add(qNode);
+
+    const candidateLabel = new Text("K / V 候选", w / 2, 121, 11);
+    candidateLabel.fillStyle = COLORS.textDim;
+    this.scene.add(candidateLabel);
+
+    const rowY = 164;
+    const left = 24;
+    const spacing = (w - left * 2) / Math.max(1, n - 1);
+    for (let j = 0; j < n; j++) {
+      const weight = weights[j] ?? 0;
+      const isHigh = weight > 0.25;
+      const x = left + j * spacing;
+      const curve = new Curve(qX, qY + 18, x, rowY - 15);
+      curve.setControlPoints(qX, 112, x, 132);
+      curve.strokeStyle = isHigh
+        ? `hsla(${HUE_K}, 90%, 70%, ${0.5 + weight * 0.5})`
+        : `hsla(${HUE_K}, 60%, 55%, ${0.2 + weight * 0.4})`;
+      curve.lineWidth = 0.5 + weight * 6;
+      this.scene.add(curve);
+
+      const prog = (this.flow.progress + j * 0.2) % 1;
+      const particle = new Particle(qX, qY + 18, x, rowY - 15, 2 + weight * 2, isHigh ? HUE_Q : HUE_K);
+      particle.progress = prog;
+      particle.opacity = 0.3 + weight * 0.7;
+      this.scene.add(particle);
+
+      const node = new GlowNode(x, rowY, 14);
+      node.hue = HUE_K;
+      node.intensity = 0.35 + weight * 0.65;
+      node.glowScale = isHigh ? 2.5 : 1.8;
+      node.label = TOKEN_LABELS[j];
+      node.labelSize = 11;
+      this.scene.add(node);
+
+      const weightLabel = new Text(`${(weight * 100).toFixed(0)}%${isHigh ? " ★" : ""}`, x, rowY + 31, 9);
+      weightLabel.fillStyle = isHigh ? COLORS.highlight : COLORS.textDim;
+      weightLabel.fontFamily = "monospace";
+      this.scene.add(weightLabel);
+    }
+
+    const matrixCell = Math.min(24, (w - 40) / n);
+    const matrixX = w / 2;
+    const matrixY = 306;
+    const matrix = new Grid(matrixX, matrixY, data.weights, matrixCell);
+    matrix.showValues = true;
+    matrix.fontSize = 8;
+    matrix.cellGap = 1;
+    matrix.valueMin = 0;
+    matrix.valueMax = 1;
+    this.scene.add(matrix);
+
+    const matrixLabel = new Text("注意力权重", matrixX, matrixY - (n * matrixCell) / 2 - 14, 11);
+    matrixLabel.fillStyle = COLORS.textDim;
+    this.scene.add(matrixLabel);
+
+    const matrixLeft = matrixX - (n * matrixCell) / 2;
+    const rowTop = matrixY - (n * matrixCell) / 2 + focus * matrixCell;
+    const rowHighlight = new Rect(matrixX, rowTop + matrixCell / 2, n * matrixCell, matrixCell);
+    rowHighlight.fillStyle = "rgba(233, 185, 95, 0.18)";
+    rowHighlight.strokeStyle = COLORS.highlight;
+    rowHighlight.lineWidth = 2;
+    this.scene.add(rowHighlight);
+
+    for (let j = 0; j < n; j++) {
+      const topLabel = new Text(TOKEN_LABELS[j], matrixLeft + j * matrixCell + matrixCell / 2, matrixY - (n * matrixCell) / 2 - 4, 8);
+      topLabel.fillStyle = COLORS.textDim;
+      this.scene.add(topLabel);
+      const sideLabel = new Text(TOKEN_LABELS[j], matrixLeft - 8, matrixY - (n * matrixCell) / 2 + j * matrixCell + matrixCell / 2, 8);
+      sideLabel.fillStyle = COLORS.textDim;
+      sideLabel.align = "right";
+      this.scene.add(sideLabel);
+    }
+
+    const hint = new Text(`Query #${focus} · 粗线 = 高匹配度`, w / 2, h - 14, 10);
+    hint.fillStyle = COLORS.textDim;
+    this.scene.add(hint);
     this.renderer.renderOnce();
   }
 

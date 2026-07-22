@@ -36,6 +36,15 @@ def test_get_chapter_not_found(client: TestClient):
     assert resp.status_code == 404
 
 
+def test_forward_pass_page_exposes_network_controls(client: TestClient):
+    chapter = client.get("/api/chapters/2").json()
+    page = chapter["pages"][1]
+    controls = {control["key"]: control for control in page["controls"]}
+
+    assert {"hidden_layers", "hidden", "activation", "run"} <= controls.keys()
+    assert controls["hidden_layers"]["value_labels"] == ["1 层", "2 层", "3 层"]
+
+
 def test_all_chapters_have_pages(client: TestClient):
     """Every chapter should have at least 2 pages."""
     resp = client.get("/api/chapters")

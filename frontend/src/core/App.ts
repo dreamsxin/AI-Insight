@@ -1,29 +1,29 @@
 /** App - main application controller. */
 
 import { Router } from "./Router";
-import { EventBus } from "./EventBus";
 import { Sidebar } from "@/components/Sidebar";
 import { PageView } from "@/components/PageView";
 import { ControlsPanel } from "@/components/ControlsPanel";
 import { fetchChapters, fetchChapter } from "@/api/chapters";
-import type { Chapter, Page, ChapterSummary } from "@/types/chapter";
+import type { Chapter, ChapterSummary, Page } from "@/types/chapter";
+import type { PlaybackAction } from "@/types/visualization";
 import { VIZ_REGISTRY } from "@/visualizations";
 import { BaseVisualization } from "@/visualizations/BaseVisualization";
 
 export class App {
   private router: Router;
-  private bus: EventBus;
   private sidebar: Sidebar;
   private pageView: PageView;
   private controlsPanel: ControlsPanel;
   private currentViz: BaseVisualization | null = null;
   private chapters: ChapterSummary[] = [];
   private currentChapter: Chapter | null = null;
+  private currentPage: Page | null = null;
+  private statusUnsubscribe: (() => void) | null = null;
   private el: HTMLElement;
 
   constructor(rootEl: HTMLElement) {
     this.router = new Router();
-    this.bus = new EventBus();
     this.sidebar = new Sidebar();
     this.pageView = new PageView();
     this.controlsPanel = this.pageView.controlsPanel;
@@ -31,31 +31,43 @@ export class App {
 
     // Layout
     rootEl.appendChild(this.sidebar.el);
+    rootEl.appendChild(this.sidebar.backdrop);
 
     const main = document.createElement("main");
     main.className = "main-content";
 
-    const header = document.createElement("div");
+    const header = document.createElement("header");
     header.className = "content-header";
 
-    const titleDiv = document.createElement("div");
-    titleDiv.className = "title";
-    titleDiv.id = "header-title";
-    titleDiv.textContent = "AI-Insight · 洞见AI";
-    header.appendChild(titleDiv);
+    const menuButton = document.createElement("button");
+    menuButton.type = "button";
+    menuButton.className = "sidebar-toggle";
+    menuButton.id = "sidebar-toggle";
+    menuButton.setAttribute("aria-controls", "course-sidebar");
+    menuButton.setAttribute("aria-label", "打开章节导航");
+    menuButton.textContent = "☰";
+    header.appendChild(menuButton);
+
+    const headerContext = document.createElement("div");
+    headerContext.className = "header-context";
+    headerContext.innerHTML = `
+      <div class="header-chapter" id="header-chapter">AI-Insight</div>
+      <h1 class="header-page-title" id="header-page-title">AI 原理可视化</h1>
+    `;
+    header.appendChild(headerContext);
 
     const navDiv = document.createElement("div");
     navDiv.className = "page-nav";
+    navDiv.setAttribute("aria-label", "页面导航");
     navDiv.innerHTML = `
-      <button class="nav-btn" id="btn-prev">‹ 上一页</button>
-      <span class="page-indicator" id="page-indicator">1 / 1</span>
-      <button class="nav-btn" id="btn-next">下一页 ›</button>
+      <button class="nav-btn" id="btn-prev"><span aria-hidden="true">‹</span><span class="nav-label">上一页</span></button>
+      <span class="page-indicator" id="page-indicator" aria-live="polite">1 / 1</span>
+      <button class="nav-btn" id="btn-next"><span class="nav-label">下一页</span><span aria-hidden="true">›</span></button>
     `;
     header.appendChild(navDiv);
 
     main.appendChild(header);
     main.appendChild(this.pageView.el);
-    main.appendChild(this.controlsPanel.el);
     rootEl.appendChild(main);
 
     this.bindEvents();
@@ -64,6 +76,14 @@ export class App {
   private bindEvents(): void {
     this.sidebar.onNavigate((chapter) => {
       this.router.navigate(chapter);
+    });
+
+    document.getElementById("sidebar-toggle")!.addEventListener("click", () => {
+      this.sidebar.open();
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") this.sidebar.close();
     });
 
     document.getElementById("btn-prev")!.addEventListener("click", () => {
@@ -86,9 +106,7 @@ export class App {
       this.currentViz?.setControl(key, value);
     });
 
-    window.addEventListener("resize", () => {
-      this.currentViz?.resize();
-    });
+    this.controlsPanel.onPlaybackAction((action) => this.handlePlaybackAction(action));
   }
 
   private async handleRouteChange(route: { chapter: number; page: number }): Promise<void> {
@@ -109,15 +127,11 @@ export class App {
     const pageIdx = Math.min(route.page - 1, chapter.pages.length - 1);
     const page = chapter.pages[pageIdx];
     if (!page) return;
-
-    // Destroy previous visualization
-    if (this.currentViz) {
-      this.currentViz.destroy();
-      this.currentViz = null;
-    }
+    this.currentPage = page;
 
     // Update header
-    document.getElementById("header-title")!.textContent = `${chapter.icon} ${chapter.title}`;
+    document.getElementById("header-chapter")!.textContent = `第 ${chapter.id} 章 · ${chapter.title}`;
+    document.getElementById("header-page-title")!.textContent = page.title;
     document.getElementById("page-indicator")!.textContent = `${pageIdx + 1} / ${chapter.pages.length}`;
 
     // Update nav buttons
@@ -129,7 +143,15 @@ export class App {
     // Update page view (info panel)
     this.pageView.setPage(page);
 
-    // Create visualization
+    this.mountVisualization(page);
+  }
+
+  private mountVisualization(page: Page): void {
+    this.statusUnsubscribe?.();
+    this.statusUnsubscribe = null;
+    this.currentViz?.destroy();
+    this.currentViz = null;
+
     const VizClass = VIZ_REGISTRY[page.visualization];
     const container = this.pageView.getCanvasContainer();
     if (VizClass) {
@@ -137,12 +159,24 @@ export class App {
       if (page.api_endpoint) {
         (this.currentViz as BaseVisualization & { apiEndpoint?: string }).apiEndpoint = page.api_endpoint;
       }
-      this.currentViz.start();
-      // Sync initial controls
       this.controlsPanel.setControls(page.controls, this.currentViz.getControls());
+      this.statusUnsubscribe = this.currentViz.onStatusChange((status) => {
+        this.controlsPanel.setPlaybackState(status);
+      });
+      this.currentViz.start();
     } else {
       container.innerHTML = `<div class="loading">可视化 "${page.visualization}" 暂未实现</div>`;
       this.controlsPanel.setControls([], {});
+    }
+  }
+
+  private handlePlaybackAction(action: PlaybackAction): void {
+    if (action === "pause") {
+      this.currentViz?.pause();
+    } else if (action === "resume") {
+      this.currentViz?.resume();
+    } else if (action === "reset" && this.currentPage) {
+      this.mountVisualization(this.currentPage);
     }
   }
 

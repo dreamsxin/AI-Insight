@@ -37,17 +37,16 @@ export class NetworkGraphViz extends BaseVisualization {
   private connectionLines: ConnectionLine[] = [];
   /** Nodes currently on screen, for pop-in animation. */
   private activeNodes: { node: GlowNode; pop: { val: number } }[] = [];
-  private prevHidden = 0;
+  private breathDirection = 1;
 
   onMount(): void {
     this.generateParameters();
-    this.prevHidden = this.layerSizes[1];
     this.render(true);
     this.startBreathing();
   }
 
   onControlChange(key: string, _value: number): void {
-    if (key === "hidden") {
+    if (key === "hidden" || key === "hidden_layers") {
       // Clear previous pop-in tweens to prevent accumulation
       this.renderer.clearAnimations();
       this.generateParameters();
@@ -57,9 +56,11 @@ export class NetworkGraphViz extends BaseVisualization {
     }
   }
 
-  /** Build the layer sizes for [2, hidden, 1]. */
+  /** Build [input, ...hidden layers, output]. */
   private get layerSizes(): number[] {
-    return [2, Math.floor(this.controls["hidden"] ?? 3), 1];
+    const hiddenLayers = Math.max(1, Math.floor(this.controls["hidden_layers"] ?? 1));
+    const hiddenSize = Math.max(1, Math.floor(this.controls["hidden"] ?? 3));
+    return [2, ...Array.from({ length: hiddenLayers }, () => hiddenSize), 1];
   }
 
   /** Generate weights/biases with a seeded RNG so visuals stay stable per layout. */
@@ -111,7 +112,8 @@ export class NetworkGraphViz extends BaseVisualization {
 
   /** Continuous breathing animation: line opacity oscillates 0.2 <-> 0.4. */
   private startBreathing(): void {
-    const tween = new Tween(this.breath, { val: 1 }, 1500, Easing.linear);
+    const target = this.breathDirection > 0 ? 1 : 0;
+    const tween = new Tween(this.breath, { val: target }, 1500, Easing.linear);
     tween.onUpdate(() => {
       const opacity = 0.2 + this.breath.val * 0.2;
       for (const c of this.connectionLines) {
@@ -120,8 +122,8 @@ export class NetworkGraphViz extends BaseVisualization {
       this.renderer.renderOnce();
     });
     tween.onComplete(() => {
-      tween.reset();
-      this.renderer.addTween(tween);
+      this.breathDirection *= -1;
+      this.startBreathing();
     });
     this.renderer.addTween(tween);
   }
@@ -135,14 +137,22 @@ export class NetworkGraphViz extends BaseVisualization {
     const sizes = this.layerSizes;
 
     // Title
-    const title = new Text("三层神经网络结构", w / 2, 28, 18);
+    const title = new Text(
+      w < 420 ? `[${sizes.join("-")}]` : "可配置神经网络结构",
+      w / 2,
+      28,
+      w < 420 ? 15 : 18,
+    );
     title.fillStyle = COLORS.text;
     title.fontWeight = "bold";
     this.scene.add(title);
 
-    // Layer X positions: input left, hidden center, output right
-    const marginX = w * 0.18;
-    const layerX = [marginX, w / 2, w - marginX];
+    // Spread any number of layers evenly from input to output.
+    const marginX = Math.max(70, w * 0.12);
+    const usableW = Math.max(1, w - marginX * 2);
+    const layerX = sizes.map((_, index) =>
+      marginX + (index / Math.max(1, sizes.length - 1)) * usableW,
+    );
 
     // Vertical spacing depends on the largest layer
     const maxNodes = Math.max(...sizes);
@@ -153,15 +163,19 @@ export class NetworkGraphViz extends BaseVisualization {
     const radius = Math.min(22, spacing * 0.32);
 
     // Layer labels
-    const layerLabels = ["输入层", "隐藏层", "输出层"];
     for (let l = 0; l < sizes.length; l++) {
-      const lbl = new Text(`${layerLabels[l]}  [${sizes[l]}]`, layerX[l], 64, 13);
+      const label = l === 0
+        ? "输入层"
+        : l === sizes.length - 1
+          ? "输出层"
+          : `隐藏层 ${l}`;
+      const lbl = new Text(`${label}  [${sizes[l]}]`, layerX[l], 64, 13);
       lbl.fillStyle = COLORS.textDim;
       this.scene.add(lbl);
     }
 
     // Draw connections (weights) colored by sign, with weight value labels
-    const showWeights = sizes[1] <= 4; // only for small networks
+    const showWeights = sizes.length <= 4 && sizes.slice(1, -1).every((size) => size <= 4);
     for (let l = 0; l < sizes.length - 1; l++) {
       const fromLayer = positions[l];
       const toLayer = positions[l + 1];
@@ -209,7 +223,7 @@ export class NetworkGraphViz extends BaseVisualization {
         let label: string;
         if (l === 0) label = `x${i + 1}`;
         else if (l === sizes.length - 1) label = "y";
-        else label = `h${i + 1}`;
+        else label = `h${l}.${i + 1}`;
         gn.label = label;
         gn.labelSize = 11;
 
@@ -264,7 +278,6 @@ export class NetworkGraphViz extends BaseVisualization {
     // Legend for weight colors
     this.drawLegend(w, h);
 
-    this.prevHidden = sizes[1];
     this.renderer.renderOnce();
   }
 

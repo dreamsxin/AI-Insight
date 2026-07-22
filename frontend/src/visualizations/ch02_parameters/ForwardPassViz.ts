@@ -1,13 +1,4 @@
-/** ForwardPassViz - data flowing through a neural network as glowing particles.
-
-When the user clicks "run", particles flow along every connection from
-input -> hidden -> output. Nodes light up (GlowNode) and emit a GlowPulse
-ring when particles arrive. The process can be replayed.
-
-Key design: the static network graph is built ONCE. During animation,
-only particle/pulse shapes are added/removed and node intensities are
-mutated in-place — the scene is never cleared mid-animation.
-*/
+/** ForwardPassViz - configurable, replayable neural-network data flow. */
 
 import { BaseVisualization } from "@/visualizations/BaseVisualization";
 import { GlowNode } from "@/canvas/shapes/GlowNode";
@@ -17,15 +8,15 @@ import { Line } from "@/canvas/shapes/Line";
 import { Text } from "@/canvas/shapes/Text";
 import { COLORS } from "@/utils/color";
 import { colormapHue, normalizeLayer } from "@/utils/colormap";
-import { relu } from "@/utils/math";
+import { relu, sigmoid, step, tanh } from "@/utils/math";
 import { nnForward } from "@/api/compute";
 import type { LayerResult } from "@/types/api";
 import { Tween } from "@/canvas/animation/Tween";
 import { Easing } from "@/canvas/animation/Easing";
 
-const LAYERS = [2, 3, 1];
 const INPUTS = [0.5, 0.8];
-const ACTIVATION = "relu";
+const ACTIVATIONS = ["relu", "sigmoid", "tanh", "step"] as const;
+type ActivationName = (typeof ACTIVATIONS)[number];
 
 interface NodeInfo {
   x: number;
@@ -35,46 +26,67 @@ interface NodeInfo {
 }
 
 interface EdgeInfo {
-  x1: number; y1: number;
-  x2: number; y2: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
   weight: number;
   fromLayer: number;
   fromIdx: number;
   toIdx: number;
 }
 
-function localForward(): LayerResult[] {
-  const results: LayerResult[] = [];
-  let prevA = INPUTS.slice();
-  for (let l = 0; l < LAYERS.length; l++) {
-    const n = LAYERS[l];
-    if (l === 0) {
-      results.push({ index: 0, neurons: n, z: INPUTS.slice(), a: INPUTS.slice(), weights: [], biases: [] });
-      continue;
-    }
-    const inN = LAYERS[l - 1];
-    const z: number[] = [];
-    const a: number[] = [];
+function activate(name: ActivationName, value: number): number {
+  if (name === "sigmoid") return sigmoid(value);
+  if (name === "tanh") return tanh(value);
+  if (name === "step") return step(value);
+  return relu(value);
+}
+
+function localForward(
+  layerSizes: number[],
+  inputs: number[],
+  activation: ActivationName,
+): LayerResult[] {
+  const results: LayerResult[] = [
+    {
+      index: 0,
+      neurons: layerSizes[0],
+      z: inputs.slice(),
+      a: inputs.slice(),
+      weights: [],
+      biases: [],
+    },
+  ];
+
+  let previous = inputs.slice();
+  for (let layer = 1; layer < layerSizes.length; layer++) {
+    const neuronCount = layerSizes[layer];
     const weights: number[][] = [];
     const biases: number[] = [];
-    for (let i = 0; i < n; i++) {
+    const z: number[] = [];
+    const a: number[] = [];
+
+    for (let i = 0; i < neuronCount; i++) {
       const row: number[] = [];
       let sum = 0;
-      for (let j = 0; j < inN; j++) {
-        const w = ((i + 1) * (j + 1) * 0.37) % 1.6 - 0.8;
-        row.push(w);
-        sum += w * prevA[j];
+      for (let j = 0; j < previous.length; j++) {
+        const weight = (((layer + 1) * (i + 1) * (j + 2) * 0.37) % 1.6) - 0.8;
+        row.push(weight);
+        sum += weight * previous[j];
       }
-      const b = i * 0.2 - 0.1;
-      biases.push(b);
-      sum += b;
-      z.push(sum);
-      a.push(relu(sum));
+      const bias = (i - (neuronCount - 1) / 2) * 0.14;
+      sum += bias;
       weights.push(row);
+      biases.push(bias);
+      z.push(sum);
+      a.push(activate(activation, sum));
     }
-    results.push({ index: l, neurons: n, z, a, weights, biases });
-    prevA = a;
+
+    results.push({ index: layer, neurons: neuronCount, z, a, weights, biases });
+    previous = a;
   }
+
   return results;
 }
 
@@ -84,40 +96,105 @@ export class ForwardPassViz extends BaseVisualization {
   private nodes: NodeInfo[][] = [];
   private edges: EdgeInfo[] = [];
   private statusText: Text | null = null;
+  private runGeneration = 0;
 
   onMount(): void {
-    this.layers = localForward();
-    this.buildStaticGraph();
-    this.setStatus("👉 点击「运行前向传播」观看数据流动");
-    // Light up input nodes immediately
-    this.lightInputNodes();
+    this.configureNetwork("设置参数后，点击「运行前向传播」");
   }
 
   onControlChange(key: string, _value: number): void {
     if (key === "run") {
       void this.runForward();
+      return;
+    }
+
+    if (key === "hidden_layers" || key === "hidden" || key === "activation") {
+      this.configureNetwork("网络结构已更新，可以开始运行");
     }
   }
 
+  onUnmount(): void {
+    this.runGeneration++;
+    this.isRunning = false;
+  }
+
+  private get layerSizes(): number[] {
+    const hiddenLayers = Math.max(1, Math.floor(this.controls["hidden_layers"] ?? 1));
+    const hiddenSize = Math.max(2, Math.floor(this.controls["hidden"] ?? 3));
+    return [INPUTS.length, ...Array.from({ length: hiddenLayers }, () => hiddenSize), 1];
+  }
+
+  private get activationName(): ActivationName {
+    const index = Math.max(0, Math.min(ACTIVATIONS.length - 1, Math.floor(this.controls["activation"] ?? 0)));
+    return ACTIVATIONS[index];
+  }
+
+  private configureNetwork(status: string): void {
+    this.runGeneration++;
+    this.isRunning = false;
+    this.renderer.clearAnimations();
+    this.setVisualizationStatus("idle");
+    this.layers = localForward(this.layerSizes, INPUTS, this.activationName);
+    this.buildStaticGraph();
+    this.setStatus(status);
+    this.lightInputNodes();
+    this.renderer.renderOnce();
+  }
+
   private async runForward(): Promise<void> {
-    if (this.isRunning) return;
+    if (this.isRunning) {
+      this.setStatus("动画正在运行，请等待本轮完成", COLORS.highlight);
+      return;
+    }
+
+    const generation = ++this.runGeneration;
+    const sizes = this.layerSizes;
+    const activation = this.activationName;
     this.isRunning = true;
-    this.setStatus("正在计算...");
+    this.setVisualizationStatus("running");
+    this.setStatus("正在计算网络各层输出...");
     this.renderer.renderOnce();
 
     let layers: LayerResult[];
     try {
-      const res = await nnForward({ layers: LAYERS, inputs: INPUTS, activation: ACTIVATION });
-      layers = res.layers;
+      const response = await nnForward({ layers: sizes, inputs: INPUTS, activation });
+      layers = this.withInputLayer(response.layers, sizes);
     } catch {
-      layers = localForward();
+      layers = localForward(sizes, INPUTS, activation);
     }
 
+    if (generation !== this.runGeneration) return;
+
     this.layers = layers;
+    this.renderer.clearAnimations();
+    this.buildStaticGraph();
     this.animateFlow(layers);
   }
 
-  /** Build the static network graph ONCE. Never called during animation. */
+  private withInputLayer(computedLayers: LayerResult[], sizes: number[]): LayerResult[] {
+    if (computedLayers.length !== sizes.length - 1) {
+      return localForward(sizes, INPUTS, this.activationName);
+    }
+
+    const inputLayer: LayerResult = {
+      index: 0,
+      neurons: sizes[0],
+      z: INPUTS.slice(),
+      a: INPUTS.slice(),
+      weights: [],
+      biases: [],
+    };
+
+    return [
+      inputLayer,
+      ...computedLayers.map((layer, index) => ({
+        ...layer,
+        index: index + 1,
+        neurons: sizes[index + 1],
+      })),
+    ];
+  }
+
   private buildStaticGraph(): void {
     this.scene.clear();
     this.nodes = [];
@@ -125,96 +202,118 @@ export class ForwardPassViz extends BaseVisualization {
 
     const w = this.width;
     const h = this.height;
+    const sizes = this.layerSizes;
 
-    const title = new Text("前向传播 · 数据流动", w / 2, 26, 17);
+    const title = new Text(
+      w < 420
+        ? `[${sizes.join("-")}] · ${this.activationName.toUpperCase()}`
+        : `前向传播  [${sizes.join(" - ")}]  ·  ${this.activationName.toUpperCase()}`,
+      w / 2,
+      26,
+      w < 420 ? 14 : 16,
+    );
     title.fillStyle = COLORS.text;
     title.fontWeight = "bold";
     this.scene.add(title);
 
-    const layerX = [w * 0.2, w / 2, w * 0.8];
-    const maxNodes = Math.max(...LAYERS);
-    const spacing = Math.min(75, (h - 180) / Math.max(maxNodes, 1));
-    const cy = h / 2;
-    const radius = Math.min(24, spacing * 0.32);
-    const layerHues = [180, 260, 30];
-    const layerLabels = ["输入层", "隐藏层", "输出层"];
+    const marginX = Math.max(64, w * 0.11);
+    const usableW = Math.max(1, w - marginX * 2);
+    const layerX = sizes.map((_, index) =>
+      marginX + (index / Math.max(1, sizes.length - 1)) * usableW,
+    );
+    const horizontalGap = usableW / Math.max(1, sizes.length - 1);
+    const maxNodes = Math.max(...sizes);
+    const spacing = Math.min(62, Math.max(34, (h - 190) / Math.max(maxNodes, 1)));
+    const cy = h / 2 + 12;
+    const radius = Math.max(9, Math.min(20, spacing * 0.3, horizontalGap * 0.13));
 
-    for (let l = 0; l < LAYERS.length; l++) {
-      const count = LAYERS[l];
-      const x = layerX[l];
-      const totalH = (count - 1) * spacing;
-      const startY = cy - totalH / 2;
+    for (let layer = 0; layer < sizes.length; layer++) {
+      const count = sizes[layer];
+      const x = layerX[layer];
+      const startY = cy - ((count - 1) * spacing) / 2;
+      const label = layer === 0
+        ? "输入"
+        : layer === sizes.length - 1
+          ? "输出"
+          : `隐藏 ${layer}`;
 
-      const lbl = new Text(layerLabels[l], x, 58, 12);
-      lbl.fillStyle = COLORS.textDim;
-      this.scene.add(lbl);
+      const layerLabel = new Text(`${label} [${count}]`, x, 58, 11);
+      layerLabel.fillStyle = COLORS.textDim;
+      this.scene.add(layerLabel);
 
-      const arr: NodeInfo[] = [];
-      for (let i = 0; i < count; i++) {
-        const ny = startY + i * spacing;
-        const gn = new GlowNode(x, ny, radius);
-        gn.hue = layerHues[l];
-        gn.intensity = 0;
-        this.scene.add(gn);
-        arr.push({ x, y: ny, glowNode: gn, radius });
+      const nodeLayer: NodeInfo[] = [];
+      for (let index = 0; index < count; index++) {
+        const y = startY + index * spacing;
+        const node = new GlowNode(x, y, radius);
+        node.hue = layer === 0 ? 180 : layer === sizes.length - 1 ? 35 : 220 + layer * 20;
+        node.intensity = 0;
+        node.labelSize = Math.max(9, Math.min(11, radius * 0.8));
+        this.scene.add(node);
+        nodeLayer.push({ x, y, glowNode: node, radius });
       }
-      this.nodes.push(arr);
+      this.nodes.push(nodeLayer);
     }
 
-    // Build edges
-    for (let l = 0; l < LAYERS.length - 1; l++) {
-      const fromNodes = this.nodes[l];
-      const toNodes = this.nodes[l + 1];
-      const layerData = this.layers[l + 1];
-      for (let j = 0; j < fromNodes.length; j++) {
-        for (let i = 0; i < toNodes.length; i++) {
-          const weight = layerData.weights[i]?.[j] ?? 0.5;
-          const line = new Line(fromNodes[j].x, fromNodes[j].y, toNodes[i].x, toNodes[i].y);
-          const wMag = Math.abs(weight);
+    for (let layer = 0; layer < sizes.length - 1; layer++) {
+      const fromNodes = this.nodes[layer];
+      const toNodes = this.nodes[layer + 1];
+      const layerData = this.layers[layer + 1];
+      for (let fromIndex = 0; fromIndex < fromNodes.length; fromIndex++) {
+        for (let toIndex = 0; toIndex < toNodes.length; toIndex++) {
+          const weight = layerData?.weights[toIndex]?.[fromIndex] ?? 0;
+          const magnitude = Math.min(1, Math.abs(weight));
+          const line = new Line(
+            fromNodes[fromIndex].x,
+            fromNodes[fromIndex].y,
+            toNodes[toIndex].x,
+            toNodes[toIndex].y,
+          );
           line.strokeStyle = weight >= 0
-            ? `rgba(0, 217, 255, ${0.15 + wMag * 0.15})`
-            : `rgba(239, 68, 68, ${0.15 + wMag * 0.15})`;
-          line.lineWidth = 0.8 + wMag * 1.5;
+            ? `rgba(0, 217, 255, ${0.12 + magnitude * 0.18})`
+            : `rgba(239, 68, 68, ${0.12 + magnitude * 0.18})`;
+          line.lineWidth = 0.7 + magnitude * 1.4;
           this.scene.add(line);
           this.edges.push({
-            x1: fromNodes[j].x, y1: fromNodes[j].y,
-            x2: toNodes[i].x, y2: toNodes[i].y,
-            weight: wMag, fromLayer: l, fromIdx: j, toIdx: i,
+            x1: fromNodes[fromIndex].x,
+            y1: fromNodes[fromIndex].y,
+            x2: toNodes[toIndex].x,
+            y2: toNodes[toIndex].y,
+            weight: magnitude,
+            fromLayer: layer,
+            fromIdx: fromIndex,
+            toIdx: toIndex,
           });
         }
       }
     }
 
-    // Status text placeholder
-    this.statusText = new Text("", w / 2, h - 28, 14);
+    this.statusText = new Text("", w / 2, h - 26, 13);
     this.statusText.fillStyle = COLORS.accent;
     this.statusText.fontWeight = "bold";
     this.scene.add(this.statusText);
-
+    this.lightInputNodes();
     this.renderer.renderOnce();
   }
 
-  private setStatus(msg: string, color: string = COLORS.accent): void {
-    if (this.statusText) {
-      this.statusText.text = msg;
-      this.statusText.fillStyle = color;
-    }
+  private setStatus(message: string, color: string = COLORS.accent): void {
+    if (!this.statusText) return;
+    this.statusText.text = message;
+    this.statusText.fillStyle = color;
   }
 
   private lightInputNodes(): void {
-    if (this.layers.length === 0) return;
     const inputLayer = this.layers[0];
-    for (let i = 0; i < this.nodes[0].length; i++) {
-      const node = this.nodes[0][i];
-      node.glowNode.intensity = 0.6;
-      node.glowNode.label = inputLayer.a[i].toFixed(2);
+    if (!inputLayer || !this.nodes[0]) return;
+    for (let index = 0; index < this.nodes[0].length; index++) {
+      const node = this.nodes[0][index];
+      node.glowNode.intensity = 0.65;
+      node.glowNode.label = inputLayer.a[index]?.toFixed(2) ?? "0";
     }
   }
 
-  /** Reset all nodes to dim state, keeping input lit. */
   private resetNodes(): void {
-    for (let l = 0; l < this.nodes.length; l++) {
-      for (const node of this.nodes[l]) {
+    for (const layer of this.nodes) {
+      for (const node of layer) {
         node.glowNode.intensity = 0;
         node.glowNode.label = "";
       }
@@ -222,120 +321,98 @@ export class ForwardPassViz extends BaseVisualization {
     this.lightInputNodes();
   }
 
-  /** Animate the forward pass: particles flow layer by layer. */
   private animateFlow(layers: LayerResult[]): void {
-    // Clear any leftover tweens/particles from a previous run
     this.renderer.clearAnimations();
     this.removeParticles();
-
     this.resetNodes();
-    this.setStatus("数据正在流动...", COLORS.highlight);
+    this.setStatus("数据正在逐层流动...", COLORS.highlight);
 
-    // Phase timing constants
-    const PARTICLE_DURATION = 600; // ms for particle to travel one edge
-    const LAYER_GAP = 200;        // ms gap between layers
-    let currentTime = 0;
+    const particleDuration = 560;
+    const layerGap = 180;
+    let currentTime = 180;
 
-    // Phase 0: ensure input nodes are lit (already done by resetNodes)
-    currentTime += 300;
-
-    // For each layer transition: emit particles -> wait for arrival -> light dest nodes + pulse
-    for (let l = 0; l < LAYERS.length - 1; l++) {
+    for (let layer = 0; layer < this.nodes.length - 1; layer++) {
       const emitTime = currentTime;
-      const arriveTime = emitTime + PARTICLE_DURATION;
+      const arriveTime = emitTime + particleDuration;
 
-      // Emit particles for all edges in this layer transition
       for (const edge of this.edges) {
-        if (edge.fromLayer !== l) continue;
+        if (edge.fromLayer !== layer) continue;
 
-        const fromNodeIntensity = this.nodes[l][edge.fromIdx].glowNode.intensity;
-        const hue = colormapHue(Math.max(0.1, fromNodeIntensity));
-        const p = new Particle(edge.x1, edge.y1, edge.x2, edge.y2, 3, hue);
-        p.opacity = 0;
-        p.progress = 0;
-        this.scene.add(p);
+        const sourceIntensity = this.nodes[layer][edge.fromIdx].glowNode.intensity;
+        const particle = new Particle(
+          edge.x1,
+          edge.y1,
+          edge.x2,
+          edge.y2,
+          2.5 + edge.weight,
+          colormapHue(Math.max(0.15, sourceIntensity)),
+        );
+        particle.opacity = 0;
+        particle.progress = 0;
+        this.scene.add(particle);
 
-        // Fade in (100ms)
-        const finState = { val: 0 };
-        const finTween = new Tween(finState, { val: 1 }, 100);
-        finTween.onUpdate(() => { p.opacity = finState.val; });
-        finTween.setDelay(emitTime);
-        this.renderer.addTween(finTween);
+        const fadeIn = { value: 0 };
+        const fadeInTween = new Tween(fadeIn, { value: 1 }, 100).setDelay(emitTime);
+        fadeInTween.onUpdate(() => { particle.opacity = fadeIn.value; });
+        this.renderer.addTween(fadeInTween);
 
-        // Travel along edge (PARTICLE_DURATION ms)
-        const travelState = { progress: 0 };
-        const travelTween = new Tween(travelState, { progress: 1 }, PARTICLE_DURATION, Easing.easeInOutCubic);
-        travelTween.setDelay(emitTime);
-        travelTween.onUpdate(() => { p.progress = travelState.progress; });
+        const travel = { progress: 0 };
+        const travelTween = new Tween(travel, { progress: 1 }, particleDuration, Easing.easeInOutCubic)
+          .setDelay(emitTime);
+        travelTween.onUpdate(() => { particle.progress = travel.progress; });
         travelTween.onComplete(() => {
-          // Fade out particle (150ms)
-          const foutState = { val: 1 };
-          const foutTween = new Tween(foutState, { val: 0 }, 150);
-          foutTween.onUpdate(() => { p.opacity = foutState.val; });
-          foutTween.onComplete(() => { this.scene.remove(p); });
-          this.renderer.addTween(foutTween);
+          const fadeOut = { value: 1 };
+          const fadeOutTween = new Tween(fadeOut, { value: 0 }, 140);
+          fadeOutTween.onUpdate(() => { particle.opacity = fadeOut.value; });
+          fadeOutTween.onComplete(() => { this.scene.remove(particle); });
+          this.renderer.addTween(fadeOutTween);
         });
         this.renderer.addTween(travelTween);
       }
 
-      // Light up destination nodes at arrival time
-      const destNodes = this.nodes[l + 1];
-      const layerData = layers[l + 1];
-      const normA = normalizeLayer(layerData.a);
-
-      for (let i = 0; i < destNodes.length; i++) {
-        const node = destNodes[i];
-        const targetIntensity = 0.3 + normA[i] * 0.7;
-        const hue = colormapHue(normA[i]);
-
-        const lightState = { val: 0 };
-        const lightTween = new Tween(lightState, { val: targetIntensity }, 400, Easing.easeOutCubic);
-        lightTween.setDelay(arriveTime);
+      const layerData = layers[layer + 1];
+      const normalized = normalizeLayer(layerData?.a ?? []);
+      for (let index = 0; index < this.nodes[layer + 1].length; index++) {
+        const node = this.nodes[layer + 1][index];
+        const intensity = 0.35 + (normalized[index] ?? 0.5) * 0.65;
+        const hue = colormapHue(normalized[index] ?? 0.5);
+        const light = { value: 0 };
+        const lightTween = new Tween(light, { value: intensity }, 360, Easing.easeOutCubic)
+          .setDelay(arriveTime);
         lightTween.onUpdate(() => {
-          node.glowNode.intensity = lightState.val;
+          node.glowNode.intensity = light.value;
           node.glowNode.hue = hue;
         });
         lightTween.onComplete(() => {
-          node.glowNode.label = layerData.a[i].toFixed(2);
-
-          // Spawn GlowPulse ring at the node
+          node.glowNode.label = layerData?.a[index]?.toFixed(2) ?? "0";
           const pulse = new GlowPulse(node.x, node.y, node.radius * 3, hue);
-          pulse.progress = 0;
           this.scene.add(pulse);
-
-          const pulseState = { val: 0 };
-          const pulseTween = new Tween(pulseState, { val: 1 }, 600, Easing.easeOutCubic);
-          pulseTween.onUpdate(() => { pulse.progress = pulseState.val; });
-          pulseTween.onComplete(() => {
-            pulse.visible = false;
-            this.scene.remove(pulse);
-          });
+          const pulseState = { value: 0 };
+          const pulseTween = new Tween(pulseState, { value: 1 }, 560, Easing.easeOutCubic);
+          pulseTween.onUpdate(() => { pulse.progress = pulseState.value; });
+          pulseTween.onComplete(() => { this.scene.remove(pulse); });
           this.renderer.addTween(pulseTween);
         });
         this.renderer.addTween(lightTween);
       }
 
-      currentTime = arriveTime + 400 + LAYER_GAP;
+      currentTime = arriveTime + 360 + layerGap;
     }
 
-    // Final completion message
-    const finalDelay = currentTime;
-    const doneState = { val: 0 };
-    const doneTween = new Tween(doneState, { val: 1 }, 100);
-    doneTween.setDelay(finalDelay);
+    const done = { value: 0 };
+    const doneTween = new Tween(done, { value: 1 }, 80).setDelay(currentTime);
     doneTween.onComplete(() => {
-      this.setStatus("✅ 前向传播完成！再次点击可重播", COLORS.positive);
+      this.setStatus("前向传播完成，点击按钮可再次运行", COLORS.positive);
       this.isRunning = false;
+      this.setVisualizationStatus("completed");
     });
     this.renderer.addTween(doneTween);
   }
 
-  /** Remove any Particle and GlowPulse shapes from the scene. */
   private removeParticles(): void {
-    const shapes = this.scene.getShapes();
-    for (const s of shapes) {
-      if (s instanceof Particle || s instanceof GlowPulse) {
-        this.scene.remove(s);
+    for (const shape of this.scene.getShapes()) {
+      if (shape instanceof Particle || shape instanceof GlowPulse) {
+        this.scene.remove(shape);
       }
     }
   }

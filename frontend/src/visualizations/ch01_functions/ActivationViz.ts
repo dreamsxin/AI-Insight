@@ -53,6 +53,10 @@ export class ActivationViz extends BaseVisualization {
 
   onControlChange(key: string, _value: number): void {
     if (key === "activation") {
+      // Restart the input sweep so every selected function visibly animates.
+      this.renderer.clearAnimations();
+      this.dotProgress.val = 0;
+      this.startMovingDot();
       // this.prevIdx still holds the previously-rendered index (the "from"
       // curve). controls["activation"] already reflects the new selection.
       this.morph.val = 0;
@@ -307,6 +311,7 @@ export class ActivationViz extends BaseVisualization {
       this.renderAll();
     });
     tween.onComplete(() => {
+      this.dotProgress.val = 0;
       tween.reset();
       this.renderer.addTween(tween);
     });

@@ -239,6 +239,7 @@ export class FunctionPlotViz extends BaseVisualization {
       this.renderPlot();
     });
     tween.onComplete(() => {
+      this.dotProgress.val = 0;
       tween.reset();
       this.renderer.addTween(tween);
     });

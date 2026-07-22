@@ -19,6 +19,7 @@ export interface ControlConfig {
   step: number;
   default: number;
   options: string[];
+  value_labels?: string[];
   api_endpoint?: string;
 }
 

@@ -448,6 +448,7 @@ export class NeuronBuildViz extends BaseVisualization {
       this.render();
     });
     tween.onComplete(() => {
+      this.sumPulse.val = 0;
       tween.reset();
       this.renderer.addTween(tween);
     });
@@ -461,6 +462,7 @@ export class NeuronBuildViz extends BaseVisualization {
       this.render();
     });
     tween.onComplete(() => {
+      this.particleProgress.val = 0;
       tween.reset();
       this.renderer.addTween(tween);
     });

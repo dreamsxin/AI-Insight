@@ -47,6 +47,7 @@ class ControlConfig(BaseModel):
     step: float = 0.01
     default: float = 0.0
     options: list[str] = Field(default_factory=list)  # for SELECT
+    value_labels: list[str] = Field(default_factory=list)  # for discrete sliders
     # Optional backend endpoint to call when the control value changes.
     api_endpoint: Optional[str] = None
 

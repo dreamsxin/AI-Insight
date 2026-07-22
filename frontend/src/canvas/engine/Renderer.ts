@@ -73,17 +73,26 @@ export class Renderer {
   }
 
   private update(dt: number): void {
-    // Update tweens
-    this.tweens = this.tweens.filter((t) => {
-      t.update(dt);
-      return !t.isFinished;
-    });
+    // Callbacks may enqueue or reset tweens while the current batch updates.
+    // Keep those additions in the next frame instead of overwriting them.
+    const currentTweens = this.tweens;
+    this.tweens = [];
+    for (const tween of currentTweens) {
+      tween.update(dt);
+      if (!tween.isFinished && !this.tweens.includes(tween)) {
+        this.tweens.push(tween);
+      }
+    }
 
     // Update timelines
-    this.timelines = this.timelines.filter((t) => {
-      t.update(dt);
-      return t.isPlaying;
-    });
+    const currentTimelines = this.timelines;
+    this.timelines = [];
+    for (const timeline of currentTimelines) {
+      timeline.update(dt);
+      if (timeline.isPlaying && !this.timelines.includes(timeline)) {
+        this.timelines.push(timeline);
+      }
+    }
   }
 
   private render(): void {
