@@ -65,6 +65,7 @@ export class ConvolutionViz extends BaseVisualization {
   private cellScales = new Map<string, number>();
 
   onMount(): void {
+    this.setVisualizationStatus("idle");
     void this.fetchAndRender();
   }
 
@@ -73,10 +74,11 @@ export class ConvolutionViz extends BaseVisualization {
       // Stride change requires re-fetching from the API.
       this.animStep = -1;
       this.cancelAnimation();
+      this.setVisualizationStatus("idle");
       void this.fetchAndRender();
     } else if (key === "run") {
       // "run" button press: kick off the step-by-step animation.
-      void this.runAnimation();
+      if (!this.loading) void this.runAnimation();
     }
   }
 
@@ -102,9 +104,11 @@ export class ConvolutionViz extends BaseVisualization {
       this.pulseState.active = false;
       this.cellScales.clear();
       this.loading = false;
+      this.setVisualizationStatus("idle");
       this.render();
     } catch (err) {
       this.loading = false;
+      this.setVisualizationStatus("error");
       this.renderError(err);
     }
   }
@@ -157,6 +161,7 @@ export class ConvolutionViz extends BaseVisualization {
     if (steps.length === 0) return;
 
     const gen = ++this.animGeneration;
+    this.setVisualizationStatus("running");
     this.renderer.clearAnimations();
     this.cellScales.clear();
     this.particleState.active = false;
@@ -203,6 +208,7 @@ export class ConvolutionViz extends BaseVisualization {
     this.particleState.active = false;
     this.pulseState.active = false;
     this.render();
+    this.setVisualizationStatus("completed");
   }
 
   /** Pop an output cell in (scale 0 -> 1 with easeOutBack) and emit a ring. */
@@ -250,7 +256,7 @@ export class ConvolutionViz extends BaseVisualization {
   }
 
   private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return this.waitForAnimation(ms);
   }
 
   private renderLoading(): void {

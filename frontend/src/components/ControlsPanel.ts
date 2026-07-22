@@ -161,7 +161,9 @@ export class ControlsPanel {
     if (this.playbackButton) {
       const paused = this.currentStatus === "paused";
       this.playbackButton.textContent = paused ? "▶ 继续" : "Ⅱ 暂停";
-      this.playbackButton.disabled = this.currentStatus === "completed" || this.currentStatus === "error";
+      this.playbackButton.disabled = this.currentStatus === "idle"
+        || this.currentStatus === "completed"
+        || this.currentStatus === "error";
     }
 
     for (const [key, originalLabel] of this.buttonLabels) {

@@ -30,14 +30,19 @@ export class PoolingViz extends BaseVisualization {
   private apiResponse: PoolingResponse | null = null;
   private animStep = -1;
   private animGeneration = 0;
+  private revealedSteps = 0;
 
   onMount(): void {
+    this.setVisualizationStatus("idle");
     void this.fetchAndRender();
   }
 
   onControlChange(key: string, _value: number): void {
     if (key === "pool_size" || key === "mode") {
       this.animStep = -1;
+      this.animGeneration++;
+      this.renderer.clearAnimations();
+      this.setVisualizationStatus("idle");
       void this.fetchAndRender();
     } else if (key === "run") {
       void this.runAnimation();
@@ -63,8 +68,11 @@ export class PoolingViz extends BaseVisualization {
       });
       this.apiResponse = resp;
       this.animStep = -1;
+      this.revealedSteps = 0;
+      this.setVisualizationStatus("idle");
       this.render();
     } catch (err) {
+      this.setVisualizationStatus("error");
       this.renderError(err);
     }
   }
@@ -75,24 +83,29 @@ export class PoolingViz extends BaseVisualization {
     if (steps.length === 0) return;
 
     const gen = ++this.animGeneration;
+    this.setVisualizationStatus("running");
     this.animStep = 0;
+    this.revealedSteps = 1;
     this.render();
 
     for (let i = 1; i < steps.length; i++) {
       await this.delay(STEP_DELAY_MS);
       if (gen !== this.animGeneration) return;
       this.animStep = i;
+      this.revealedSteps = i + 1;
       this.render();
     }
 
     await this.delay(STEP_DELAY_MS * 3);
     if (gen !== this.animGeneration) return;
     this.animStep = -1;
+    this.revealedSteps = steps.length;
     this.render();
+    this.setVisualizationStatus("completed");
   }
 
   private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return this.waitForAnimation(ms);
   }
 
   private renderLoading(): void {
@@ -219,14 +232,32 @@ export class PoolingViz extends BaseVisualization {
     outGrid.valueMax = 9;
     this.scene.add(outGrid);
 
+    // Cover cells that have not been visited yet so the output is revealed step-by-step.
+    const outLeft = outCx - (output[0].length * cellSize) / 2;
+    const outTop = outCy - (output.length * cellSize) / 2;
+    for (let r = 0; r < output.length; r++) {
+      for (let c = 0; c < output[r].length; c++) {
+        const index = r * output[r].length + c;
+        if (index < this.revealedSteps) continue;
+        const cx = outLeft + c * cellSize + cellSize / 2;
+        const cy = outTop + r * cellSize + cellSize / 2;
+        const cover = new Rect(cx, cy, cellSize - 4, cellSize - 4, 3);
+        cover.fillStyle = "rgba(15, 23, 42, 0.96)";
+        cover.strokeStyle = "rgba(148, 163, 184, 0.32)";
+        cover.lineWidth = 1;
+        this.scene.add(cover);
+        const marker = new Text("·", cx, cy, Math.max(12, Math.floor(cellSize / 2)));
+        marker.fillStyle = COLORS.textDim;
+        this.scene.add(marker);
+      }
+    }
+
     const outLabel = new Text("输出特征图 (下采样)", outCx, outCy + (output.length * cellSize) / 2 + 22, 13);
     outLabel.fillStyle = COLORS.text;
     this.scene.add(outLabel);
 
     // --- Highlight output cell + computation read-out ---
     if (activeStep) {
-      const outLeft = outCx - (output[0].length * cellSize) / 2;
-      const outTop = outCy - (output.length * cellSize) / 2;
       const cellX = outLeft + activeStep.col * cellSize;
       const cellY = outTop + activeStep.row * cellSize;
       const cellHL = new Rect(cellX + cellSize / 2, cellY + cellSize / 2, cellSize, cellSize);

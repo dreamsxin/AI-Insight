@@ -178,6 +178,9 @@ CH3 = Chapter(
             ],
             controls=[
                 ControlConfig(key="run", label="运行训练", type=ControlType.BUTTON, default=0),
+                ControlConfig(key="hidden_neurons", label="隐藏层宽度", type=ControlType.SLIDER, min=2, max=8, step=1, default=4),
+                ControlConfig(key="epochs", label="训练轮数", type=ControlType.SLIDER, min=20, max=200, step=20, default=100),
+                ControlConfig(key="learning_rate", label="学习率", type=ControlType.SLIDER, min=0.05, max=0.8, step=0.05, default=0.3),
             ],
             api_endpoint="/api/nn/train",
         ),
@@ -249,6 +252,7 @@ CH4 = Chapter(
             controls=[
                 ControlConfig(key="pool_size", label="池化窗口", type=ControlType.SLIDER, min=2, max=4, step=1, default=2),
                 ControlConfig(key="mode", label="池化方式", type=ControlType.SELECT, options=["max", "avg"], default=0),
+                ControlConfig(key="run", label="运行池化", type=ControlType.BUTTON, default=0),
             ],
             api_endpoint="/api/cnn/pool",
         ),

@@ -22,10 +22,8 @@ import { COLORS } from "@/utils/color";
 import { sigmoid } from "@/utils/math";
 import { nnTrain } from "@/api/compute";
 import { Tween } from "@/canvas/animation/Tween";
-import { Timeline } from "@/canvas/animation/Timeline";
 import { Easing } from "@/canvas/animation/Easing";
 
-const LAYERS = [2, 4, 1];
 const TRAIN_DATA: number[][] = [
   [0, 0, 0],
   [0, 1, 1],
@@ -53,7 +51,6 @@ export class BackpropViz extends BaseVisualization {
   private phase = "idle"; // idle | forward | loss | backward | done
   private running = false;
   private displayedLossPoints = 0;
-  private animState = { progress: 0 };
 
   private phaseLabel: Text | null = null;
 
@@ -65,12 +62,45 @@ export class BackpropViz extends BaseVisualization {
   onControlChange(key: string, _value: number): void {
     if (key === "run" && !this.running) {
       void this.runTraining();
+      return;
     }
+
+    if (key === "hidden_neurons" || key === "epochs" || key === "learning_rate") {
+      this.running = false;
+      this.renderer.clearAnimations();
+      this.lossHistory = [];
+      this.displayedLossPoints = 0;
+      this.phase = "idle";
+      this.setVisualizationStatus("idle");
+      this.buildStaticNetwork();
+      this.setPhaseLabel("网络参数已更新，点击「运行训练」开始");
+    }
+  }
+
+  onUnmount(): void {
+    this.running = false;
+  }
+
+  private get hiddenNeurons(): number {
+    return Math.max(2, Math.min(8, Math.floor(this.controls["hidden_neurons"] ?? 4)));
+  }
+
+  private get epochs(): number {
+    return Math.max(20, Math.min(200, Math.floor(this.controls["epochs"] ?? 100)));
+  }
+
+  private get learningRate(): number {
+    return Math.max(0.05, Math.min(0.8, this.controls["learning_rate"] ?? 0.3));
+  }
+
+  private get layerSizes(): number[] {
+    return [2, this.hiddenNeurons, 1];
   }
 
   private async runTraining(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    this.setVisualizationStatus("running");
     this.lossHistory = [];
     this.displayedLossPoints = 0;
     this.setPhaseLabel("正在训练...");
@@ -79,10 +109,10 @@ export class BackpropViz extends BaseVisualization {
     let lossHistory: number[];
     try {
       const res = await nnTrain({
-        layers: LAYERS,
+        layers: this.layerSizes,
         data: TRAIN_DATA,
-        epochs: 100,
-        learning_rate: 0.3,
+        epochs: this.epochs,
+        learning_rate: this.learningRate,
         activation: "sigmoid",
       });
       lossHistory = res.loss_history;
@@ -91,11 +121,14 @@ export class BackpropViz extends BaseVisualization {
     }
 
     this.lossHistory = lossHistory;
-    this.animateTraining();
+    if (this.running) this.animateTraining();
   }
 
   /** Local training fallback (full backprop). */
   private localTrain(): number[] {
+    const layerSizes = this.layerSizes;
+    const epochs = this.epochs;
+    const learningRate = this.learningRate;
     const rng = (s: number) => () => {
       s = (s * 16807) % 2147483647;
       return (s - 1) / 2147483646;
@@ -103,12 +136,12 @@ export class BackpropViz extends BaseVisualization {
     const rand = rng(42);
     const weights: number[][][] = [];
     const biases: number[][] = [];
-    for (let l = 0; l < LAYERS.length - 1; l++) {
+    for (let l = 0; l < layerSizes.length - 1; l++) {
       const w: number[][] = [];
       const b: number[] = [];
-      for (let i = 0; i < LAYERS[l + 1]; i++) {
+      for (let i = 0; i < layerSizes[l + 1]; i++) {
         const row: number[] = [];
-        for (let j = 0; j < LAYERS[l]; j++) row.push(rand() * 2 - 1);
+        for (let j = 0; j < layerSizes[l]; j++) row.push(rand() * 2 - 1);
         w.push(row);
         b.push(rand() * 2 - 1);
       }
@@ -117,7 +150,7 @@ export class BackpropViz extends BaseVisualization {
     }
 
     const losses: number[] = [];
-    for (let epoch = 0; epoch < 100; epoch++) {
+    for (let epoch = 0; epoch < epochs; epoch++) {
       let totalLoss = 0;
       for (const sample of TRAIN_DATA) {
         // Forward
@@ -125,7 +158,7 @@ export class BackpropViz extends BaseVisualization {
         for (let l = 0; l < weights.length; l++) {
           const prev = acts[l];
           const next: number[] = [];
-          for (let i = 0; i < LAYERS[l + 1]; i++) {
+          for (let i = 0; i < layerSizes[l + 1]; i++) {
             let z = biases[l][i];
             for (let j = 0; j < prev.length; j++) z += weights[l][i][j] * prev[j];
             next.push(sigmoid(z));
@@ -141,21 +174,21 @@ export class BackpropViz extends BaseVisualization {
         for (let l = weights.length - 1; l >= 0; l--) {
           const prev = acts[l];
           const dz: number[] = [];
-          for (let i = 0; i < LAYERS[l + 1]; i++) {
+          for (let i = 0; i < layerSizes[l + 1]; i++) {
             const a = acts[l + 1][i];
             dz.push(da * a * (1 - a));
           }
-          for (let i = 0; i < LAYERS[l + 1]; i++) {
-            for (let j = 0; j < LAYERS[l]; j++) {
-              weights[l][i][j] -= 0.3 * dz[i] * prev[j];
+          for (let i = 0; i < layerSizes[l + 1]; i++) {
+            for (let j = 0; j < layerSizes[l]; j++) {
+              weights[l][i][j] -= learningRate * dz[i] * prev[j];
             }
-            biases[l][i] -= 0.3 * dz[i];
+            biases[l][i] -= learningRate * dz[i];
           }
           if (l > 0) {
             const newDa: number[] = [];
-            for (let j = 0; j < LAYERS[l]; j++) {
+            for (let j = 0; j < layerSizes[l]; j++) {
               let s = 0;
-              for (let i = 0; i < LAYERS[l + 1]; i++) s += weights[l][i][j] * dz[i];
+              for (let i = 0; i < layerSizes[l + 1]; i++) s += weights[l][i][j] * dz[i];
               newDa.push(s);
             }
             da = newDa[0]; // simplified for scalar chain
@@ -187,15 +220,16 @@ export class BackpropViz extends BaseVisualization {
     const chartW = w - chartX - 20;
 
     const layerX = [netW * 0.15, netW * 0.5, netW * 0.85];
-    const maxNodes = Math.max(...LAYERS);
+    const layerSizes = this.layerSizes;
+    const maxNodes = Math.max(...layerSizes);
     const spacing = Math.min(60, (h - 180) / Math.max(maxNodes, 1));
     const cy = h / 2;
     const radius = 18;
     const layerHues = [180, 260, 30];
 
     // Build nodes
-    for (let l = 0; l < LAYERS.length; l++) {
-      const count = LAYERS[l];
+    for (let l = 0; l < layerSizes.length; l++) {
+      const count = layerSizes[l];
       const x = layerX[l];
       const totalH = (count - 1) * spacing;
       const startY = cy - totalH / 2;
@@ -212,7 +246,7 @@ export class BackpropViz extends BaseVisualization {
     }
 
     // Build edges
-    for (let l = 0; l < LAYERS.length - 1; l++) {
+    for (let l = 0; l < layerSizes.length - 1; l++) {
       const fromNodes = this.nodes[l];
       const toNodes = this.nodes[l + 1];
       for (let j = 0; j < fromNodes.length; j++) {
@@ -232,7 +266,7 @@ export class BackpropViz extends BaseVisualization {
 
     // Layer labels
     const labels = ["输入", "隐藏", "输出"];
-    for (let l = 0; l < LAYERS.length; l++) {
+    for (let l = 0; l < layerSizes.length; l++) {
       const lbl = new Text(labels[l], layerX[l], 58, 11);
       lbl.fillStyle = COLORS.textDim;
       this.scene.add(lbl);
@@ -362,6 +396,7 @@ export class BackpropViz extends BaseVisualization {
       this.drawLossCurve(maxLoss);
       this.scene.setLayer("default");
       this.running = false;
+      this.setVisualizationStatus("completed");
     });
 
     this.renderer.addTween(tween);

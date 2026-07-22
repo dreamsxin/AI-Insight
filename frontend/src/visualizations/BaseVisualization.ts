@@ -4,6 +4,8 @@ import { Renderer } from "@/canvas/engine/Renderer";
 import { MouseHandler } from "@/canvas/interaction/MouseHandler";
 import type { ControlConfig } from "@/types/chapter";
 import type { VisualizationStatus } from "@/types/visualization";
+import { Tween } from "@/canvas/animation/Tween";
+import { Easing } from "@/canvas/animation/Easing";
 
 export abstract class BaseVisualization {
   protected renderer: Renderer;
@@ -99,8 +101,12 @@ export abstract class BaseVisualization {
 
   /** Set a control value and trigger callback. */
   setControl(key: string, value: number): void {
+    const wasPaused = this.status === "paused";
     this.controls[key] = value;
     this.onControlChange(key, value);
+    // Parameter changes reset the current run in most visualizations. If that
+    // happened while paused, resume the renderer so the next run is live.
+    if (wasPaused && this.status !== "paused") this.renderer.start();
   }
 
   /** Get current control values. */
@@ -128,6 +134,16 @@ export abstract class BaseVisualization {
 
   protected get height(): number {
     return this.renderer.height;
+  }
+
+  /** Wait on the renderer clock so delays pause and resume with tweens. */
+  protected waitForAnimation(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      const state = { progress: 0 };
+      const tween = new Tween(state, { progress: 1 }, ms, Easing.linear);
+      tween.onComplete(resolve);
+      this.renderer.addTween(tween);
+    });
   }
 
   protected get scene() {

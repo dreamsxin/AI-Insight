@@ -41,6 +41,7 @@ export class GradientDescentViz extends BaseVisualization {
     this.ball.loss = this.trajectory[0]?.loss ?? 0;
     this.currentLoss = this.ball.loss;
     this.renderScene();
+    this.setVisualizationStatus("running");
     this.startAnimation();
   }
 
@@ -48,6 +49,7 @@ export class GradientDescentViz extends BaseVisualization {
     if (key === "lr" || key === "start_x") {
       this.renderer.clearAnimations();
       this.isAnimating = false; // reset so startAnimation() doesn't early-return
+      this.setVisualizationStatus("running");
       this.trail = [];
       this.computeTrajectory();
       this.ball.x = this.trajectory[0]?.x ?? 0;
@@ -88,8 +90,8 @@ export class GradientDescentViz extends BaseVisualization {
 
   private animateStep(): void {
     if (!this.isAnimating || this.stepIdx >= this.trajectory.length - 1) {
-      // Loop after pause
-      setTimeout(() => {
+      if (!this.isAnimating || this.trajectory.length === 0) return;
+      void this.waitForAnimation(1500).then(() => {
         if (!this.isAnimating) return;
         this.trail = [];
         this.stepIdx = 0;
@@ -99,7 +101,7 @@ export class GradientDescentViz extends BaseVisualization {
         this.currentLoss = this.ball.loss;
         this.renderScene();
         this.animateStep();
-      }, 1500);
+      });
       return;
     }
 
