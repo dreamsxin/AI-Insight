@@ -1,0 +1,47 @@
+/* Global theme variables and base styles. */
+
+:root {
+  --bg: #1a1a2e;
+  --bg-light: #16213e;
+  --panel: #0f3460;
+  --panel-light: #1a3a6b;
+  --accent: #00d9ff;
+  --accent2: #a78bfa;
+  --accent3: #f97316;
+  --text: #e2e8f0;
+  --text-dim: #94a3b8;
+  --border: #334155;
+  --positive: #22c55e;
+  --negative: #ef4444;
+  --highlight: #fbbf24;
+  --sidebar-width: 280px;
+  --header-height: 56px;
+  --radius: 8px;
+  --radius-sm: 4px;
+  --transition: 0.2s ease;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+}
+
+.mono {
+  font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+}
