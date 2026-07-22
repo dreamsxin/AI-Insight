@@ -143,6 +143,7 @@ export class App {
 
     // Update page view (info panel)
     this.pageView.setPage(page);
+    this.pageView.el.scrollTop = 0;
 
     this.mountVisualization(page);
   }

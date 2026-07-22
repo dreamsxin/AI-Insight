@@ -13,7 +13,7 @@ changes color when activation happens. Plain-language labels describe
 each stage.
 */
 
-import { BaseVisualization } from "@/visualizations/BaseVisualization";
+import { StepSequenceVisualization } from "@/visualizations/StepSequenceVisualization";
 import { Text } from "@/canvas/shapes/Text";
 import { Line } from "@/canvas/shapes/Line";
 import { Circle } from "@/canvas/shapes/Circle";
@@ -23,10 +23,9 @@ import { GlowNode } from "@/canvas/shapes/GlowNode";
 import { Particle } from "@/canvas/shapes/Particle";
 import { COLORS } from "@/utils/color";
 import { relu } from "@/utils/math";
-import { Tween } from "@/canvas/animation/Tween";
 import { Easing } from "@/canvas/animation/Easing";
 
-export class NeuronBuildViz extends BaseVisualization {
+export class NeuronBuildViz extends StepSequenceVisualization {
   /** Entrance animation progress (0..1) for the current step. */
   private entrance = { val: 0 };
   /** Σ pulse progress (0..1) looping, drives scale of the sum circle. */
@@ -36,22 +35,36 @@ export class NeuronBuildViz extends BaseVisualization {
   /** Particle flow progress (0..1) looping along input->sum lines. */
   private particleProgress = { val: 0 };
 
+  protected get maxStep(): number {
+    return 3;
+  }
+
+  protected get transitionDuration(): number {
+    return 720;
+  }
+
   onMount(): void {
-    this.render();
-    this.startStepEntrance();
-    this.startSumPulse();
+    this.initializeStepSequence();
+    super.resize();
+    this.renderStepSequenceFrame();
   }
 
   onControlChange(key: string, _value: number): void {
-    if (key === "step") {
-      this.actGlow.val = 0;
-      // Clear all previous animations to prevent tween accumulation
-      this.renderer.clearAnimations();
-      this.render();
-      this.startStepEntrance();
-      this.startSumPulse();
-      this.startParticleFlow();
-    }
+    this.handleStepSequenceControl(key);
+  }
+
+  override resize(): void {
+    super.resize();
+    this.renderStepSequenceFrame();
+  }
+
+  protected renderStepSequenceFrame(): void {
+    const progress = this.stepTransition.progress;
+    this.entrance.val = progress;
+    this.sumPulse.val = progress;
+    this.particleProgress.val = progress;
+    this.actGlow.val = Math.max(0, Math.min(1, (progress - 0.5) / 0.5));
+    this.render();
   }
 
   /** Current step index. */
@@ -125,7 +138,7 @@ export class NeuronBuildViz extends BaseVisualization {
     yLabel.opacity = e;
     this.scene.add(yLabel);
 
-    this.addDesc("最简单的线性函数：一个输入 x，通过权重 w 和偏置 b，得到输出 y", w, h);
+    this.addDesc(w < 560 ? "输入经过一条规则，得到结果" : "最简单的线性函数：一个输入 x，通过权重 w 和偏置 b，得到输出 y", w, h);
   }
 
   private drawStep1(w: number, h: number): void {
@@ -189,7 +202,7 @@ export class NeuronBuildViz extends BaseVisualization {
     bLabel.opacity = e;
     this.scene.add(bLabel);
 
-    this.addDesc("多输入：每个输入乘以各自的权重，求和后加上偏置 b", w, h);
+    this.addDesc(w < 560 ? "多份输入按各自的重要程度汇合" : "多输入：每个输入乘以各自的权重，求和后加上偏置 b", w, h);
   }
 
   private drawStep2(w: number, h: number): void {
@@ -272,7 +285,7 @@ export class NeuronBuildViz extends BaseVisualization {
     outLabel.opacity = e;
     this.scene.add(outLabel);
 
-    this.addDesc("加上激活函数 f：先求和得到 z，再通过 f(z) 得到输出 a", w, h);
+    this.addDesc(w < 560 ? "先把信息汇合，再通过输出开关" : "加上激活函数 f：先求和得到 z，再通过 f(z) 得到输出 a", w, h);
   }
 
   private drawStep3(w: number, h: number): void {
@@ -378,12 +391,18 @@ export class NeuronBuildViz extends BaseVisualization {
     this.scene.add(outLabel);
 
     // Plain-language stage labels
-    const stageLabels = [
-      { text: "输入(原料)", x: w * 0.12, y: cy + 110 },
-      { text: "求和(加工)", x: neuronX, y: cy + 110 },
-      { text: "激活(检验)", x: w * 0.62, y: cy + 110 },
-      { text: "输出(产品)", x: w * 0.78, y: cy + 110 },
-    ];
+    const stageLabels = w < 560
+      ? [
+          { text: "输入", x: w * 0.12, y: cy + 108 },
+          { text: "神经元", x: neuronX, y: cy + 108 },
+          { text: "输出", x: w * 0.78, y: cy + 108 },
+        ]
+      : [
+          { text: "输入(原料)", x: w * 0.12, y: cy + 110 },
+          { text: "求和(加工)", x: neuronX, y: cy + 110 },
+          { text: "激活(检验)", x: w * 0.62, y: cy + 110 },
+          { text: "输出(产品)", x: w * 0.78, y: cy + 110 },
+        ];
     for (const sl of stageLabels) {
       const t = new Text(sl.text, sl.x, sl.y + (1 - e) * 30, 12);
       t.fillStyle = COLORS.textDim;
@@ -393,7 +412,9 @@ export class NeuronBuildViz extends BaseVisualization {
 
     // Computation detail
     const detail = new Text(
-      `z = ${wVals[0]}×${xVals[0]} + ${wVals[1]}×${xVals[1]} + ${wVals[2]}×${xVals[2]} + ${bias} = ${z.toFixed(2)}  →  a = ${a.toFixed(2)}`,
+      w < 560
+        ? `三份输入汇合后得到 ${z.toFixed(2)}`
+        : `z = ${wVals[0]}×${xVals[0]} + ${wVals[1]}×${xVals[1]} + ${wVals[2]}×${xVals[2]} + ${bias} = ${z.toFixed(2)}  →  a = ${a.toFixed(2)}`,
       w / 2, h - 50, 12,
     );
     detail.fillStyle = COLORS.text;
@@ -401,7 +422,7 @@ export class NeuronBuildViz extends BaseVisualization {
     detail.opacity = e;
     this.scene.add(detail);
 
-    const formulaText = new Text("a = f( Σ wᵢxᵢ + b )", w / 2, h - 28, 16);
+    const formulaText = new Text("a = f( Σ wᵢxᵢ + b )", w / 2, h - 28, w < 560 ? 13 : 16);
     formulaText.fillStyle = COLORS.accent;
     formulaText.fontFamily = "monospace";
     formulaText.fontWeight = "bold";
@@ -417,55 +438,4 @@ export class NeuronBuildViz extends BaseVisualization {
     this.scene.add(desc);
   }
 
-  /** Animate entrance (0 -> 1) then trigger activation glow in steps 2/3. */
-  private startStepEntrance(): void {
-    this.entrance.val = 0;
-    const tween = new Tween(this.entrance, { val: 1 }, 500, Easing.easeOutBack);
-    tween.onUpdate(() => {
-      this.render();
-    });
-    tween.onComplete(() => {
-      if (this.step === 2 || this.step === 3) {
-        this.fireActivationGlow();
-      }
-    });
-    this.renderer.addTween(tween);
-  }
-
-  /** After entrance, animate the f() box / neuron "activating". */
-  private fireActivationGlow(): void {
-    const tween = new Tween(this.actGlow, { val: 1 }, 350, Easing.easeOutCubic);
-    tween.onUpdate(() => {
-      this.render();
-    });
-    this.renderer.addTween(tween);
-  }
-
-  /** Looping Σ pulse: drives a sine-like scale oscillation. */
-  private startSumPulse(): void {
-    const tween = new Tween(this.sumPulse, { val: 1 }, 1200, Easing.linear);
-    tween.onUpdate(() => {
-      this.render();
-    });
-    tween.onComplete(() => {
-      this.sumPulse.val = 0;
-      tween.reset();
-      this.renderer.addTween(tween);
-    });
-    this.renderer.addTween(tween);
-  }
-
-  /** Looping particle flow along input->sum connections (step 3). */
-  private startParticleFlow(): void {
-    const tween = new Tween(this.particleProgress, { val: 1 }, 1500, Easing.linear);
-    tween.onUpdate(() => {
-      this.render();
-    });
-    tween.onComplete(() => {
-      this.particleProgress.val = 0;
-      tween.reset();
-      this.renderer.addTween(tween);
-    });
-    this.renderer.addTween(tween);
-  }
 }

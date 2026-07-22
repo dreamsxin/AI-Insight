@@ -20,24 +20,35 @@ export class FunctionPlotViz extends BaseVisualization {
   /** Animated display values (tweened toward the slider targets). */
   private anim = { w: 1, b: 0 };
   /** Moving dot progress along x (0..1), looping. */
-  private dotProgress = { val: 0 };
+  private dotProgress = { val: 0.5 };
 
   onMount(): void {
     const w0 = this.controls["w"] ?? 1;
     const b0 = this.controls["b"] ?? 0;
     this.anim.w = w0;
     this.anim.b = b0;
+    super.resize();
     this.renderPlot();
-    this.startMovingDot();
   }
 
   onControlChange(key: string, _value: number): void {
+    if (key === "run") {
+      this.playInputSweep();
+      return;
+    }
     if (key !== "w" && key !== "b") return;
     this.animateToTarget();
   }
 
+  override resize(): void {
+    super.resize();
+    this.renderPlot();
+  }
+
   /** Animate w and b from current display values to the slider targets. */
   private animateToTarget(): void {
+    this.renderer.clearAnimations();
+    this.setVisualizationStatus("idle");
     const targetW = this.controls["w"] ?? 1;
     const targetB = this.controls["b"] ?? 0;
     const tween = new Tween(this.anim, { w: targetW, b: targetB }, 300, Easing.easeInOutCubic);
@@ -76,7 +87,10 @@ export class FunctionPlotViz extends BaseVisualization {
     this.scene.add(this.makeText("y", cx + 12, 14, 12, COLORS.textDim));
 
     // Tick marks
-    for (let i = -10; i <= 10; i += 2) {
+    const compact = w < 560;
+    const tickStep = compact ? 4 : 2;
+    const tickLimit = compact ? 8 : 10;
+    for (let i = -tickLimit; i <= tickLimit; i += tickStep) {
       if (i === 0) continue;
       const tx = cx + i * scaleX;
       const tick = new Line(tx, cy - 4, tx, cy + 4);
@@ -164,8 +178,9 @@ export class FunctionPlotViz extends BaseVisualization {
     scaleY: number,
     wVal: number,
   ): void {
-    const x0 = 2;
-    const x1 = 5;
+    const compact = this.width < 560;
+    const x0 = compact ? 1 : 2;
+    const x1 = compact ? 3 : 5;
     const p0x = cx + x0 * scaleX;
     const p1x = cx + x1 * scaleX;
     const p0y = cy - (wVal * x0) * scaleY;
@@ -184,11 +199,11 @@ export class FunctionPlotViz extends BaseVisualization {
     this.scene.add(riseLine);
 
     // Labels
-    const runLbl = new Text("run", (p0x + p1x) / 2, p0y + 12, 10);
+    const runLbl = new Text("横向", (p0x + p1x) / 2, p0y + 12, 10);
     runLbl.fillStyle = COLORS.accent2;
     this.scene.add(runLbl);
 
-    const riseLbl = new Text("rise", p1x + 10, (p0y + p1y) / 2, 10);
+    const riseLbl = new Text("升降", p1x + 12, (p0y + p1y) / 2, 10);
     riseLbl.fillStyle = COLORS.accent3;
     this.scene.add(riseLbl);
 
@@ -232,16 +247,20 @@ export class FunctionPlotViz extends BaseVisualization {
     this.scene.add(guide);
   }
 
-  /** Looping tween that moves the dot along x and redraws. */
-  private startMovingDot(): void {
+  /** Move one input point across the line, then hold the completed frame. */
+  private playInputSweep(): void {
+    this.renderer.clearAnimations();
+    this.dotProgress.val = 0;
+    this.setVisualizationStatus("running");
+    this.renderPlot();
     const tween = new Tween(this.dotProgress, { val: 1 }, 4000, Easing.linear);
     tween.onUpdate(() => {
       this.renderPlot();
     });
     tween.onComplete(() => {
-      this.dotProgress.val = 0;
-      tween.reset();
-      this.renderer.addTween(tween);
+      this.dotProgress.val = 1;
+      this.renderPlot();
+      this.setVisualizationStatus("completed");
     });
     this.renderer.addTween(tween);
   }

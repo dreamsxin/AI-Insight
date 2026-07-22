@@ -14,7 +14,7 @@ export abstract class BaseVisualization {
   protected controlConfigs: ControlConfig[] = [];
   protected canvas: HTMLCanvasElement;
   protected apiEndpoint: string | undefined;
-  private container: HTMLElement;
+  protected container: HTMLElement;
   private status: VisualizationStatus = "idle";
   private statusBeforePause: VisualizationStatus = "idle";
   private statusListeners = new Set<(status: VisualizationStatus) => void>();

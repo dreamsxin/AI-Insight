@@ -39,7 +39,7 @@ const STEPS = 120;
 
 export class ActivationViz extends BaseVisualization {
   /** Moving dot x-progress (0..1) across the plot range, looping. */
-  private dotProgress = { val: 0 };
+  private dotProgress = { val: (1 + RANGE) / (RANGE * 2) };
   /** Morph progress (0..1) between previous and current curve. */
   private morph = { val: 1 };
   private prevIdx = 2;
@@ -47,16 +47,23 @@ export class ActivationViz extends BaseVisualization {
   private mainPlot = { x: 0, y: 0, w: 0, h: 0 };
 
   onMount(): void {
+    this.dotProgress.val = this.progressForInput(this.controls["x"] ?? 1);
+    super.resize();
     this.renderAll();
-    this.startMovingDot();
   }
 
-  onControlChange(key: string, _value: number): void {
+  onControlChange(key: string, value: number): void {
+    if (key === "run") {
+      this.playInputSweep();
+      return;
+    }
+    if (key === "x") {
+      this.moveInputTo(value);
+      return;
+    }
     if (key === "activation") {
-      // Restart the input sweep so every selected function visibly animates.
       this.renderer.clearAnimations();
-      this.dotProgress.val = 0;
-      this.startMovingDot();
+      this.setVisualizationStatus("idle");
       // this.prevIdx still holds the previously-rendered index (the "from"
       // curve). controls["activation"] already reflects the new selection.
       this.morph.val = 0;
@@ -70,6 +77,11 @@ export class ActivationViz extends BaseVisualization {
       });
       this.renderer.addTween(tween);
     }
+  }
+
+  override resize(): void {
+    super.resize();
+    this.renderAll();
   }
 
   /** Get current + previous curve sampled points in screen space (for main plot). */
@@ -98,7 +110,8 @@ export class ActivationViz extends BaseVisualization {
     const selected = ACTIVATION_LIST[selectedIdx] ?? ACTIVATION_LIST[2];
 
     // Layout: large plot for selected + small thumbnails for others
-    const mainPlotH = h * 0.62;
+    const compact = w < 560;
+    const mainPlotH = h * (compact ? 0.68 : 0.62);
     const thumbH = (h - mainPlotH) / 2;
     const thumbW = (w - 40) / 2;
 
@@ -131,9 +144,10 @@ export class ActivationViz extends BaseVisualization {
     selected: ActInfo, selectedIdx: number,
   ): void {
     const cx = x + w / 2;
-    const cy = y + h / 2;
+    const isRelu = selectedIdx === 2;
+    const cy = isRelu ? y + h - 22 : y + h / 2 + 8;
     const scaleX = (w - 40) / (RANGE * 2);
-    const scaleY = (h - 30) / 4;
+    const scaleY = isRelu ? (h - 70) / 6.4 : (h - 70) / 2.6;
     this.mainPlot = { x, y, w, h };
 
     // Title with emoji + nickname
@@ -180,7 +194,7 @@ export class ActivationViz extends BaseVisualization {
     }
 
     // Moving input dot
-    const xVal = -RANGE + this.dotProgress.val * RANGE * 2;
+    const xVal = this.inputForProgress(this.dotProgress.val);
     const outVal = selected.fn(xVal);
     const dotX = cx + xVal * scaleX;
     const dotY = cy - outVal * scaleY;
@@ -244,9 +258,10 @@ export class ActivationViz extends BaseVisualization {
     act: ActInfo, isActive: boolean,
   ): void {
     const cx = x + w / 2;
-    const cy = y + h / 2;
+    const isRelu = act.name === "ReLU";
+    const cy = isRelu ? y + h - 7 : y + h / 2;
     const scaleX = (w - 20) / (RANGE * 2);
-    const scaleY = (h - 20) / 4;
+    const scaleY = isRelu ? (h - 20) / 6.4 : (h - 20) / 2.8;
 
     // Border
     const top = new Line(x, y, x + w, y);
@@ -304,17 +319,41 @@ export class ActivationViz extends BaseVisualization {
     return color;
   }
 
-  /** Looping tween that moves the dot along x and redraws. */
-  private startMovingDot(): void {
-    const tween = new Tween(this.dotProgress, { val: 1 }, 5000, Easing.linear);
+  private playInputSweep(): void {
+    this.renderer.clearAnimations();
+    this.morph.val = 1;
+    this.prevIdx = Math.floor(this.controls["activation"] ?? 2);
+    this.dotProgress.val = 0;
+    this.setControlValue("x", -RANGE);
+    this.setVisualizationStatus("running");
+    this.renderAll();
+    const tween = new Tween(this.dotProgress, { val: 1 }, 4200, Easing.linear);
     tween.onUpdate(() => {
+      this.setControlValue("x", Number(this.inputForProgress(this.dotProgress.val).toFixed(1)));
       this.renderAll();
     });
     tween.onComplete(() => {
-      this.dotProgress.val = 0;
-      tween.reset();
-      this.renderer.addTween(tween);
+      this.dotProgress.val = 1;
+      this.setControlValue("x", RANGE);
+      this.renderAll();
+      this.setVisualizationStatus("completed");
     });
     this.renderer.addTween(tween);
+  }
+
+  private moveInputTo(value: number): void {
+    this.renderer.clearAnimations();
+    this.setVisualizationStatus("idle");
+    const tween = new Tween(this.dotProgress, { val: this.progressForInput(value) }, 280, Easing.easeOutCubic);
+    tween.onUpdate(() => this.renderAll());
+    this.renderer.addTween(tween);
+  }
+
+  private progressForInput(value: number): number {
+    return Math.max(0, Math.min(1, (value + RANGE) / (RANGE * 2)));
+  }
+
+  private inputForProgress(progress: number): number {
+    return -RANGE + Math.max(0, Math.min(1, progress)) * RANGE * 2;
   }
 }

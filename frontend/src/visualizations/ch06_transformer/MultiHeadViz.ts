@@ -1,159 +1,153 @@
-/** MultiHeadViz - multiple attention heads running in parallel.
+/** Multi-head attention explained as several observers reading the same sentence. */
 
-A "heads" slider (1-8) controls how many heads are drawn. Each head renders a
-mini attention-weight matrix with its own color, and a deterministic
-pseudo-random attention pattern (seedable RNG so the patterns are stable and
-vary across heads). The bottom shows the concatenation step that combines all
-heads into one vector before a final linear projection.
-
-No API call is needed here - this is a structural/conceptual visualization.
-Formula: headᵢ = Attention(QWᵢQ, KWᵢK, VWᵢV)
-*/
-
-import { BaseVisualization } from "@/visualizations/BaseVisualization";
+import { StepSequenceVisualization } from "@/visualizations/StepSequenceVisualization";
 import { Text } from "@/canvas/shapes/Text";
-import { Grid } from "@/canvas/shapes/Grid";
 import { Rect } from "@/canvas/shapes/Rect";
-import { Arrow } from "@/canvas/shapes/Arrow";
+import { Circle } from "@/canvas/shapes/Circle";
 import { COLORS } from "@/utils/color";
-import { softmax, mulberry32 } from "@/utils/math";
+import { Easing } from "@/canvas/animation/Easing";
 
-const SEQ_LEN = 5;
-const HEAD_COLORS = [
-  "#00d9ff",
-  "#a78bfa",
-  "#f97316",
-  "#22c55e",
-  "#ef4444",
-  "#fbbf24",
-  "#ec4899",
-  "#38bdf8",
+const TOKENS = ["小猫", "追着", "毛线球", "开心地", "玩"];
+const OBSERVERS = [
+  { role: "谁在行动", clue: "小猫 ↔ 追着" },
+  { role: "动作指向谁", clue: "追着 ↔ 毛线球" },
+  { role: "语气怎么样", clue: "开心地 ↔ 玩" },
+  { role: "前后位置", clue: "小猫 ↔ 玩" },
+  { role: "事物关系", clue: "小猫 ↔ 毛线球" },
+  { role: "动作方式", clue: "开心地 ↔ 追着" },
+  { role: "句子主角", clue: "小猫" },
+  { role: "最终动作", clue: "玩" },
 ];
+const OBSERVER_COLORS = [COLORS.accent, COLORS.accent2, COLORS.accent3];
 
-export class MultiHeadViz extends BaseVisualization {
+export class MultiHeadViz extends StepSequenceVisualization {
+  protected get maxStep(): number {
+    return 3;
+  }
+
+  protected get transitionDuration(): number {
+    return 680;
+  }
+
   onMount(): void {
-    this.render();
+    this.initializeStepSequence();
+    super.resize();
+    this.renderStepSequenceFrame();
   }
 
-  onControlChange(_key: string, _value: number): void {
-    this.render();
-  }
-
-  private get heads(): number {
-    return Math.max(1, Math.min(8, Math.floor(this.controls["heads"] ?? 4)));
-  }
-
-  /** Deterministic attention pattern for head h: stable, head-specific. */
-  private headWeights(h: number): number[][] {
-    const rng = mulberry32(1000 + h * 17);
-    const raw: number[][] = [];
-    for (let i = 0; i < SEQ_LEN; i++) {
-      const row: number[] = [];
-      for (let j = 0; j < SEQ_LEN; j++) {
-        // Combine a positional bias (attend to nearby tokens) with head-specific noise.
-        const positional = 1 / (1 + Math.abs(i - j) * 0.9);
-        const noise = rng();
-        // Some heads prefer attending to the start, some to the end.
-        const bias = h % 2 === 0 ? 1 / (1 + j * 0.5) : 1 / (1 + (SEQ_LEN - 1 - j) * 0.5);
-        row.push(positional * 0.5 + noise * 0.3 + bias * 0.4);
-      }
-      raw.push(softmax(row));
+  onControlChange(key: string, _value: number): void {
+    if (this.handleStepSequenceControl(key)) return;
+    if (key === "heads") {
+      this.initializeStepSequence();
+      this.renderStepSequenceFrame();
     }
-    return raw;
   }
 
-  private render(): void {
+  override resize(): void {
+    super.resize();
+    this.renderStepSequenceFrame();
+  }
+
+  protected renderStepSequenceFrame(): void {
     this.scene.clear();
     const w = this.width;
     const h = this.height;
-    const numHeads = this.heads;
+    const step = Math.max(0, Math.min(this.maxStep, Math.floor(this.controls["step"] ?? 0)));
+    const heads = Math.max(1, Math.min(8, Math.floor(this.controls["heads"] ?? 4)));
+    const compact = w < 560;
+    const movement = Easing.easeOutCubic(this.stepTransition.progress);
 
-    // --- Title ---
-    const title = new Text("多头注意力: 多个头并行关注不同子空间", w / 2, 30, 18);
-    title.fillStyle = COLORS.accent;
-    title.fontWeight = "bold";
-    this.scene.add(title);
+    this.addText("让多位观察员同时读一句话", w / 2, 26, 18, COLORS.text, true);
+    this.addText("专业名称：多头注意力 Multi-Head Attention", w / 2, 50, 11, COLORS.textDim);
 
-    // --- Formula ---
-    const formula = new Text("headᵢ = Attention(QWᵢQ, KWᵢK, VWᵢV)", w / 2, 56, 14);
-    formula.fillStyle = COLORS.accent2;
-    formula.fontFamily = "monospace";
-    this.scene.add(formula);
+    const tokenGap = Math.min(86, (w - 42) / TOKENS.length);
+    const tokenWidth = Math.max(44, tokenGap - 9);
+    const tokenStart = w / 2 - tokenGap * (TOKENS.length - 1) / 2;
+    TOKENS.forEach((token, index) => {
+      const rect = new Rect(tokenStart + index * tokenGap, 84, tokenWidth, 38, 4);
+      rect.fillStyle = COLORS.panel;
+      rect.strokeStyle = step === 0 ? COLORS.highlight : COLORS.edge;
+      rect.lineWidth = step === 0 ? 2 : 1;
+      this.scene.add(rect);
+      this.addText(token, rect.x, rect.y, compact ? 11 : 12, COLORS.text, step === 0);
+    });
 
-    // Layout heads in a grid of mini matrices.
-    const cols = Math.min(numHeads, 4);
-    const rows = Math.ceil(numHeads / cols);
-    const miniCell = Math.min(16, (h - 240) / (SEQ_LEN * rows));
-    const miniW = SEQ_LEN * miniCell;
-    const miniH = SEQ_LEN * miniCell;
+    const stageStart = this.scene.getShapes().length;
+    const observerCenters: Array<{ x: number; y: number; color: string }> = [];
+    if (step >= 1) {
+      const columns = compact ? 2 : Math.min(4, heads);
+      const rows = Math.ceil(heads / columns);
+      const top = 122;
+      const bottom = step >= 3 ? h - 98 : h - 34;
+      const areaHeight = Math.max(190, bottom - top);
+      const cellWidth = (w - 28) / columns;
+      const cellHeight = areaHeight / rows;
+      const cardWidth = Math.min(compact ? 150 : 158, cellWidth - 10);
+      const cardHeight = Math.min(compact ? 52 : 62, cellHeight - 8);
 
-    const totalW = cols * (miniW + 20) - 20;
-    const startX = (w - totalW) / 2 + miniW / 2;
-    const startY = 96;
-
-    for (let hd = 0; hd < numHeads; hd++) {
-      const r = Math.floor(hd / cols);
-      const c = hd % cols;
-      const cx = startX + c * (miniW + 20);
-      const cy = startY + r * (miniH + 44) + miniH / 2;
-      const color = HEAD_COLORS[hd % HEAD_COLORS.length];
-
-      const weights = this.headWeights(hd);
-      const grid = new Grid(cx, cy, weights, miniCell);
-      grid.cellGap = 1;
-      grid.valueMin = 0;
-      grid.valueMax = 1;
-      this.scene.add(grid);
-
-      // border around the head to color-code it
-      const border = new Rect(cx, cy, miniW + 6, miniH + 6, 4);
-      border.fillStyle = "transparent";
-      border.strokeStyle = color;
-      border.lineWidth = 1.5;
-      this.scene.add(border);
-
-      const lbl = new Text(`head ${hd + 1}`, cx, cy + miniH / 2 + 14, 11);
-      lbl.fillStyle = color;
-      lbl.fontWeight = "bold";
-      this.scene.add(lbl);
+      for (let index = 0; index < heads; index++) {
+        const row = Math.floor(index / columns);
+        const column = index % columns;
+        const finalX = 14 + cellWidth * column + cellWidth / 2;
+        const finalY = top + cellHeight * row + cellHeight / 2;
+        const sourceX = tokenStart + (index % TOKENS.length) * tokenGap;
+        const x = step === 1 ? sourceX + (finalX - sourceX) * movement : finalX;
+        const y = step === 1 ? 104 + (finalY - 104) * movement : finalY;
+        const color = OBSERVER_COLORS[index % OBSERVER_COLORS.length];
+        observerCenters.push({ x: finalX, y: finalY, color });
+        const card = new Rect(x, y, cardWidth, cardHeight, 5);
+        card.fillStyle = COLORS.panel;
+        card.strokeStyle = color;
+        card.lineWidth = step >= 2 ? 2 : 1;
+        this.scene.add(card);
+        this.addText(`观察员 ${index + 1} · ${OBSERVERS[index].role}`, x, y - (step >= 2 ? 11 : 0), compact ? 10 : 11, COLORS.text, true);
+        if (step >= 2) {
+          this.addText(`重点：${OBSERVERS[index].clue}`, x, y + 12, compact ? 9 : 10, color);
+          const clueWidth = (cardWidth - 18) * (step === 2 ? movement : 1);
+          const clueBar = new Rect(x - (cardWidth - 18) / 2 + clueWidth / 2, y + cardHeight / 2 - 5, clueWidth, 3, 1);
+          clueBar.fillStyle = color;
+          clueBar.strokeStyle = "transparent";
+          this.scene.add(clueBar);
+        }
+      }
     }
 
-    // --- Concatenation step at the bottom ---
-    const concatY = h - 80;
-    // arrow from heads area down to concat
-    const downArrow = new Arrow(w / 2, startY + rows * (miniH + 44) - 12, w / 2, concatY - 26, 8);
-    downArrow.strokeStyle = COLORS.accent2;
-    downArrow.lineWidth = 2;
-    this.scene.add(downArrow);
-
-    const concatLabel = new Text("Concat → Linear", w / 2, concatY - 14, 14);
-    concatLabel.fillStyle = COLORS.accent3;
-    concatLabel.fontWeight = "bold";
-    this.scene.add(concatLabel);
-
-    // Concatenated output bar: segments colored per head
-    const barW = Math.min(420, w - 80);
-    const segW = barW / numHeads;
-    const barLeft = w / 2 - barW / 2;
-    for (let hd = 0; hd < numHeads; hd++) {
-      const color = HEAD_COLORS[hd % HEAD_COLORS.length];
-      const seg = new Rect(barLeft + hd * segW + segW / 2, concatY + 8, segW - 4, 18, 3);
-      seg.fillStyle = color;
-      seg.opacity = 0.85;
-      seg.strokeStyle = "transparent";
-      this.scene.add(seg);
+    if (step >= 3) {
+      const resultWidth = Math.min(480, w - 32);
+      for (const observer of observerCenters) {
+        const dot = new Circle(
+          observer.x + (w / 2 - observer.x) * movement,
+          observer.y + (h - 91 - observer.y) * movement,
+          compact ? 3 : 4,
+        );
+        dot.fillStyle = observer.color;
+        this.scene.add(dot);
+      }
+      const barWidth = resultWidth * movement;
+      const bar = new Rect(w / 2, h - 63, barWidth, 52, 5);
+      bar.fillStyle = "rgba(76, 195, 138, 0.10)";
+      bar.strokeStyle = COLORS.positive;
+      bar.lineWidth = 2;
+      this.scene.add(bar);
+      if (movement > 0.35) this.addText("合并大家看到的线索", w / 2, h - 72, 13, COLORS.positive, true);
+      if (movement > 0.62) this.addText("谁做了什么、对象是谁、语气如何，都汇成一份完整理解", w / 2, h - 52, compact ? 10 : 11, COLORS.text);
     }
 
-    const outLabel = new Text("MultiHead(Q,K,V) = Concat(head₁,...,headₕ) Wᴼ", w / 2, concatY + 34, 12);
-    outLabel.fillStyle = COLORS.textDim;
-    outLabel.fontFamily = "monospace";
-    this.scene.add(outLabel);
-
-    // --- Bottom hint ---
-    const hint = new Text(`当前 ${numHeads} 个头并行  •  每个头关注不同的模式`, w / 2, h - 16, 12);
-    hint.fillStyle = COLORS.textDim;
-    this.scene.add(hint);
-
+    const stepLabels = [
+      "先给所有观察员同一句话",
+      `派出 ${heads} 位观察员，各自负责一个角度`,
+      "每个人圈出自己认为重要的关系",
+      "最后把所有线索合在一起",
+    ];
+    this.addText(stepLabels[step], w / 2, h - 16, compact ? 10 : 12, COLORS.textDim);
+    this.applyStepTransition(stageStart);
     this.renderer.renderOnce();
+  }
+
+  private addText(text: string, x: number, y: number, size: number, color: string, bold = false): void {
+    const label = new Text(text, x, y, size);
+    label.fillStyle = color;
+    label.fontWeight = bold ? "bold" : "normal";
+    this.scene.add(label);
   }
 }

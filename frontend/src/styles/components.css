@@ -265,6 +265,55 @@
   overflow: hidden;
 }
 
+.canvas-container--3d {
+  border: 0;
+  border-radius: 0;
+  background: #0b1118;
+}
+
+.architecture-canvas {
+  display: block;
+  width: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+.architecture-canvas:active {
+  cursor: grabbing;
+}
+
+.architecture-detail {
+  position: absolute;
+  inset: auto 0 0;
+  min-height: 78px;
+  display: grid;
+  grid-template-columns: minmax(130px, 0.7fr) minmax(220px, 1.8fr) minmax(130px, 0.8fr);
+  align-items: center;
+  gap: 18px;
+  padding: 13px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.architecture-detail strong {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.architecture-detail span {
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.architecture-detail small {
+  color: var(--text-dim);
+  font-size: 11px;
+  text-align: right;
+}
+
 /* ===== Supporting Concepts ===== */
 .info-panel {
   min-width: 0;
@@ -680,6 +729,23 @@
 
   .canvas-container {
     height: 420px;
+  }
+
+  .architecture-detail {
+    min-height: 100px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 12px;
+    padding: 10px 12px;
+  }
+
+  .architecture-detail span {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    font-size: 12px;
+  }
+
+  .architecture-detail small {
+    font-size: 10px;
   }
 
   .controls-panel {
