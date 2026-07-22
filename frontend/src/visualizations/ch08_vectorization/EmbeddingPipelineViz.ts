@@ -11,7 +11,7 @@ row of small colored squares via the Grid shape. The formula
 "embedding = E[token_id]" is shown at the bottom.
 */
 
-import { BaseVisualization } from "@/visualizations/BaseVisualization";
+import { StepSequenceVisualization } from "@/visualizations/StepSequenceVisualization";
 import { Text } from "@/canvas/shapes/Text";
 import { Rect } from "@/canvas/shapes/Rect";
 import { Arrow } from "@/canvas/shapes/Arrow";
@@ -44,13 +44,18 @@ const PIPELINE_TOKENS: PipelineToken[] = [
 /** Dimensionality of each embedding vector. */
 const EMBED_DIM = 8;
 
-export class EmbeddingPipelineViz extends BaseVisualization {
+export class EmbeddingPipelineViz extends StepSequenceVisualization {
   onMount(): void {
-    this.render();
+    this.initializeStepSequence();
+    this.renderStepSequenceFrame();
   }
 
-  onControlChange(_key: string, _value: number): void {
-    this.render();
+  onControlChange(key: string, _value: number): void {
+    if (!this.handleStepSequenceControl(key)) this.renderStepSequenceFrame();
+  }
+
+  protected get maxStep(): number {
+    return 3;
   }
 
   private get step(): number {
@@ -58,7 +63,7 @@ export class EmbeddingPipelineViz extends BaseVisualization {
     return Math.max(0, Math.min(3, v));
   }
 
-  private render(): void {
+  protected renderStepSequenceFrame(): void {
     this.scene.clear();
     const w = this.width;
     const h = this.height;
@@ -79,6 +84,7 @@ export class EmbeddingPipelineViz extends BaseVisualization {
     const subtitle = new Text(stepLabels[step], w / 2, 56, 13);
     subtitle.fillStyle = COLORS.highlight;
     this.scene.add(subtitle);
+    const transitionStart = this.scene.count;
 
     // --- Layout: three columns ---
     // col1 = tokens, col2 = IDs, col3 = embeddings.
@@ -180,6 +186,7 @@ export class EmbeddingPipelineViz extends BaseVisualization {
     formula.fontWeight = "bold";
     this.scene.add(formula);
 
+    this.applyStepTransition(transitionStart);
     this.renderer.renderOnce();
   }
 

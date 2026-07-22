@@ -11,7 +11,7 @@ Boxes (Rect) connected by arrows (Arrow) show the data flow; residual
 connections are drawn as curved arrows bypassing each sublayer.
 */
 
-import { BaseVisualization } from "@/visualizations/BaseVisualization";
+import { StepSequenceVisualization } from "@/visualizations/StepSequenceVisualization";
 import { Text } from "@/canvas/shapes/Text";
 import { Rect } from "@/canvas/shapes/Rect";
 import { Arrow } from "@/canvas/shapes/Arrow";
@@ -35,20 +35,33 @@ const STEP_DESCRIPTIONS = [
   "Step 4: 完整编码器层 (两个子层 + 残差)",
 ];
 
-export class EncoderDetailViz extends BaseVisualization {
+const STEP_SHORT_DESCRIPTIONS = [
+  "输入 → 多头注意力",
+  "注意力 + 残差 + 归一化",
+  "前馈网络 FFN",
+  "FFN + 残差 + 归一化",
+  "完整 Encoder 输出",
+];
+
+export class EncoderDetailViz extends StepSequenceVisualization {
   onMount(): void {
-    this.render();
+    this.initializeStepSequence();
+    this.renderStepSequenceFrame();
   }
 
-  onControlChange(_key: string, _value: number): void {
-    this.render();
+  onControlChange(key: string, _value: number): void {
+    if (!this.handleStepSequenceControl(key)) this.renderStepSequenceFrame();
+  }
+
+  protected get maxStep(): number {
+    return 4;
   }
 
   private get step(): number {
     return Math.max(0, Math.min(4, Math.floor(this.controls["step"] ?? 0)));
   }
 
-  private render(): void {
+  protected renderStepSequenceFrame(): void {
     this.scene.clear();
     const w = this.width;
     const h = this.height;
@@ -61,19 +74,25 @@ export class EncoderDetailViz extends BaseVisualization {
     this.scene.add(title);
 
     // --- Step description ---
-    const desc = new Text(STEP_DESCRIPTIONS[step], w / 2, 54, 13);
+    const desc = new Text(
+      w < 560 ? STEP_SHORT_DESCRIPTIONS[step] : STEP_DESCRIPTIONS[step],
+      w / 2,
+      54,
+      w < 560 ? 11 : 13,
+    );
     desc.fillStyle = COLORS.accent2;
     desc.fontFamily = "monospace";
     this.scene.add(desc);
+    const transitionStart = this.scene.count;
 
     // Layout: vertical flow centered horizontally.
     const cx = w / 2;
     const bw = Math.min(240, w * 0.5);
-    const bh = 40;
-    const gap = 56; // vertical gap between box centers
+    const gap = Math.min(56, (h - 175) / 5);
+    const bh = Math.min(40, gap * 0.72);
 
     // Boxes (top to bottom): Input, Attn, Add+Norm1, FFN, Add+Norm2, Output
-    const startY = 96;
+    const startY = 88;
     const positions = [
       startY,                       // Input
       startY + gap,                 // Multi-Head Attention
@@ -122,35 +141,29 @@ export class EncoderDetailViz extends BaseVisualization {
     }
 
     // --- Annotations on the right ---
-    const annotX = cx + bw / 2 + 60;
-    if (step === 1 || step === 4) {
-      this.annotate(annotX, positions[2], "x + Attn(x)", COLORS.accent);
-    }
-    if (step === 3 || step === 4) {
-      this.annotate(annotX, positions[4], "y + FFN(y)", COLORS.accent3);
+    if (w >= 620) {
+      const annotX = cx + bw / 2 + 42;
+      if (step === 1 || step === 4) {
+        this.annotate(annotX, positions[2], "x + Attn(x)", COLORS.accent);
+      }
+      if (step === 3 || step === 4) {
+        this.annotate(annotX, positions[4], "y + FFN(y)", COLORS.accent3);
+      }
     }
 
     // --- Formula at the bottom ---
     const formula = new Text(
       "子层输出 = LayerNorm(x + Sublayer(x))",
       w / 2,
-      h - 28,
-      15,
+      h - 22,
+      w < 480 ? 12 : 14,
     );
     formula.fillStyle = COLORS.accent;
     formula.fontFamily = "monospace";
     formula.fontWeight = "bold";
     this.scene.add(formula);
 
-    const hint = new Text(
-      step === 4 ? "完整编码器层: 两个子层 + 残差" : "拖动 step 滑块查看逐步数据流",
-      w / 2,
-      h - 10,
-      11,
-    );
-    hint.fillStyle = COLORS.textDim;
-    this.scene.add(hint);
-
+    this.applyStepTransition(transitionStart);
     this.renderer.renderOnce();
   }
 
@@ -171,11 +184,14 @@ export class EncoderDetailViz extends BaseVisualization {
 
   /** Draw a curved residual arrow from box `from` to box `to` on the left side. */
   private drawResidual(from: Box, to: Box, label: string, color: string): void {
-    const leftX = from.x - from.w / 2 - 36;
+    const availableLeft = from.x - from.w / 2;
+    const offset = Math.min(36, Math.max(18, availableLeft * 0.4));
+    const leftX = availableLeft - offset;
     const startY = from.y;
     const endY = to.y;
     const curve = new Curve(leftX, startY, leftX, endY);
-    curve.setControlPoints(leftX - 40, startY, leftX - 40, endY);
+    const bend = Math.min(40, Math.max(14, leftX - 10));
+    curve.setControlPoints(leftX - bend, startY, leftX - bend, endY);
     curve.strokeStyle = color;
     curve.lineWidth = 2;
     curve.opacity = 0.9;
@@ -193,7 +209,7 @@ export class EncoderDetailViz extends BaseVisualization {
     outArr.opacity = 0.9;
     this.scene.add(outArr);
 
-    const lblTxt = new Text(label, leftX - 46, (startY + endY) / 2, 10);
+    const lblTxt = new Text(label, Math.max(14, leftX - bend - 6), (startY + endY) / 2, 10);
     lblTxt.fillStyle = color;
     lblTxt.fontWeight = "bold";
     this.scene.add(lblTxt);

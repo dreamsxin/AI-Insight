@@ -82,4 +82,26 @@ describe("ControlsPanel", () => {
     panel.setPlaybackState("completed");
     expect(runButton.textContent).toBe("重新运行前向传播");
   });
+
+  it("updates a slider value and semantic label from visualization playback", () => {
+    const panel = new ControlsPanel();
+    const config: ControlConfig = {
+      key: "step",
+      label: "计算步骤",
+      type: "slider",
+      min: 0,
+      max: 3,
+      step: 1,
+      default: 0,
+      options: [],
+      value_labels: ["Q/K", "点积", "缩放", "Softmax"],
+    };
+
+    panel.setControls([config], { step: 0 });
+    panel.setControlValue("step", 2);
+
+    const input = panel.el.querySelector<HTMLInputElement>("#control-step")!;
+    expect(input.value).toBe("2");
+    expect(panel.el.textContent).toContain("缩放");
+  });
 });

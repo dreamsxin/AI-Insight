@@ -12,7 +12,7 @@ Each step shows its formula. Grid shapes render the matrices; Text shows the
 formulas and values.
 */
 
-import { BaseVisualization } from "@/visualizations/BaseVisualization";
+import { StepSequenceVisualization } from "@/visualizations/StepSequenceVisualization";
 import { Text } from "@/canvas/shapes/Text";
 import { Grid } from "@/canvas/shapes/Grid";
 import { Rect } from "@/canvas/shapes/Rect";
@@ -39,35 +39,58 @@ const STEP_FORMULAS = [
   "Step 3: 权重 = softmax(缩放分数)",
 ];
 
-export class ScaledDotProductViz extends BaseVisualization {
+const STEP_SHORT_FORMULAS = [
+  "输入矩阵 Q 与 K",
+  "Q · Kᵀ 得到相关性分数",
+  "分数 ÷ √dₖ，避免 Softmax 饱和",
+  "Softmax 得到注意力权重",
+];
+
+export class ScaledDotProductViz extends StepSequenceVisualization {
   private apiResponse: AttentionResponse | null = null;
   private loading = false;
   private error: string | null = null;
 
   onMount(): void {
+    this.initializeStepSequence();
     void this.fetchAndRender();
   }
 
-  onControlChange(_key: string, _value: number): void {
-    this.render();
+  onControlChange(key: string, _value: number): void {
+    if (key === "run" && !this.apiResponse) {
+      if (!this.loading) void this.fetchAndRender(true);
+      return;
+    }
+    if (!this.handleStepSequenceControl(key)) this.renderStepSequenceFrame();
+  }
+
+  protected get maxStep(): number {
+    return 3;
+  }
+
+  protected canPlayStepSequence(): boolean {
+    return this.apiResponse !== null && !this.loading;
   }
 
   private get step(): number {
     return Math.max(0, Math.min(3, Math.floor(this.controls["step"] ?? 0)));
   }
 
-  private async fetchAndRender(): Promise<void> {
+  private async fetchAndRender(playAfterLoad = false): Promise<void> {
     this.loading = true;
     this.error = null;
+    if (playAfterLoad) this.setVisualizationStatus("idle");
     this.renderLoading();
     try {
       const resp = await transformerAttention({ sequence: SEQUENCE, causal_mask: false });
       this.apiResponse = resp;
       this.loading = false;
-      this.render();
+      this.renderStepSequenceFrame();
+      if (playAfterLoad) this.playStepSequence();
     } catch (err) {
       this.loading = false;
       this.error = err instanceof Error ? err.message : String(err);
+      this.setVisualizationStatus("error");
       this.renderError();
     }
   }
@@ -89,7 +112,7 @@ export class ScaledDotProductViz extends BaseVisualization {
     this.renderer.renderOnce();
   }
 
-  private render(): void {
+  protected renderStepSequenceFrame(): void {
     this.scene.clear();
     if (!this.apiResponse) {
       this.renderLoading();
@@ -114,7 +137,7 @@ export class ScaledDotProductViz extends BaseVisualization {
     banner.strokeStyle = COLORS.accent;
     banner.lineWidth = 1;
     this.scene.add(banner);
-    const formula = new Text(STEP_FORMULAS[step], w / 2, 60, 14);
+    const formula = new Text(w < 500 ? STEP_SHORT_FORMULAS[step] : STEP_FORMULAS[step], w / 2, 60, w < 500 ? 11 : 14);
     formula.fillStyle = COLORS.accent;
     formula.fontFamily = "monospace";
     formula.fontWeight = "bold";
@@ -126,6 +149,7 @@ export class ScaledDotProductViz extends BaseVisualization {
     master.fontFamily = "monospace";
     master.fontWeight = "bold";
     this.scene.add(master);
+    const transitionStart = this.scene.count;
 
     const cellSize = Math.min(34, (h - 200) / n, (w * 0.2) / n);
 
@@ -144,6 +168,7 @@ export class ScaledDotProductViz extends BaseVisualization {
         break;
     }
 
+    this.applyStepTransition(transitionStart);
     this.renderer.renderOnce();
   }
 

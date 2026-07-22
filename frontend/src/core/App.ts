@@ -20,6 +20,7 @@ export class App {
   private currentChapter: Chapter | null = null;
   private currentPage: Page | null = null;
   private statusUnsubscribe: (() => void) | null = null;
+  private controlValueUnsubscribe: (() => void) | null = null;
   private el: HTMLElement;
 
   constructor(rootEl: HTMLElement) {
@@ -149,6 +150,8 @@ export class App {
   private mountVisualization(page: Page): void {
     this.statusUnsubscribe?.();
     this.statusUnsubscribe = null;
+    this.controlValueUnsubscribe?.();
+    this.controlValueUnsubscribe = null;
     this.currentViz?.destroy();
     this.currentViz = null;
 
@@ -162,6 +165,9 @@ export class App {
       this.controlsPanel.setControls(page.controls, this.currentViz.getControls());
       this.statusUnsubscribe = this.currentViz.onStatusChange((status) => {
         this.controlsPanel.setPlaybackState(status);
+      });
+      this.controlValueUnsubscribe = this.currentViz.onControlValueChange((key, value) => {
+        this.controlsPanel.setControlValue(key, value);
       });
       this.currentViz.start();
     } else {

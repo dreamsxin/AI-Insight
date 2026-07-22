@@ -45,6 +45,19 @@ def test_forward_pass_page_exposes_network_controls(client: TestClient):
     assert controls["hidden_layers"]["value_labels"] == ["1 层", "2 层", "3 层"]
 
 
+def test_step_sequence_pages_expose_playback_controls(client: TestClient):
+    pages = [
+        client.get("/api/chapters/6").json()["pages"][1],
+        client.get("/api/chapters/7").json()["pages"][1],
+        client.get("/api/chapters/8").json()["pages"][1],
+    ]
+
+    for page in pages:
+        controls = {control["key"]: control for control in page["controls"]}
+        assert {"run", "step"} <= controls.keys()
+        assert len(controls["step"]["value_labels"]) == controls["step"]["max"] + 1
+
+
 def test_all_chapters_have_pages(client: TestClient):
     """Every chapter should have at least 2 pages."""
     resp = client.get("/api/chapters")

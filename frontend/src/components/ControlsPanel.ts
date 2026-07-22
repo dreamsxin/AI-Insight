@@ -8,6 +8,7 @@ export class ControlsPanel {
   private onControlChangeCb: ((key: string, value: number) => void) | null = null;
   private onPlaybackActionCb: ((action: PlaybackAction) => void) | null = null;
   private controlElements: Map<string, HTMLInputElement | HTMLSelectElement | HTMLButtonElement> = new Map();
+  private controlConfigs: Map<string, ControlConfig> = new Map();
   private buttonLabels: Map<string, string> = new Map();
   private currentStatus: VisualizationStatus = "idle";
   private statusEl: HTMLElement | null = null;
@@ -21,6 +22,7 @@ export class ControlsPanel {
   setControls(configs: ControlConfig[], currentValues: Record<string, number>): void {
     this.el.innerHTML = "";
     this.controlElements.clear();
+    this.controlConfigs.clear();
     this.buttonLabels.clear();
     this.statusEl = null;
     this.playbackButton = null;
@@ -69,6 +71,7 @@ export class ControlsPanel {
     this.el.appendChild(grid);
 
     for (const cfg of configs) {
+      this.controlConfigs.set(cfg.key, cfg);
       const wrapper = document.createElement("div");
       wrapper.className = `control-item control-${cfg.type}`;
 
@@ -143,6 +146,18 @@ export class ControlsPanel {
   setPlaybackState(status: VisualizationStatus): void {
     this.currentStatus = status;
     this.updatePlaybackUi();
+  }
+
+  setControlValue(key: string, value: number): void {
+    const config = this.controlConfigs.get(key);
+    const control = this.controlElements.get(key);
+    if (!config || !control || control instanceof HTMLButtonElement) return;
+
+    control.value = String(value);
+    if (control instanceof HTMLInputElement) {
+      const valueEl = this.el.querySelector<HTMLElement>(`[data-val="${key}"]`);
+      if (valueEl) valueEl.textContent = this.formatValue(config, value);
+    }
   }
 
   private updatePlaybackUi(): void {

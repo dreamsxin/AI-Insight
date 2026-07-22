@@ -18,6 +18,7 @@ export abstract class BaseVisualization {
   private status: VisualizationStatus = "idle";
   private statusBeforePause: VisualizationStatus = "idle";
   private statusListeners = new Set<(status: VisualizationStatus) => void>();
+  private controlValueListeners = new Set<(key: string, value: number) => void>();
   private resizeObserver: ResizeObserver | null = null;
 
   constructor(container: HTMLElement, controlConfigs: ControlConfig[] = []) {
@@ -73,6 +74,7 @@ export abstract class BaseVisualization {
     this.mouseHandler?.destroy();
     this.renderer.clearAnimations();
     this.statusListeners.clear();
+    this.controlValueListeners.clear();
     this.canvas.remove();
   }
 
@@ -97,6 +99,11 @@ export abstract class BaseVisualization {
     this.statusListeners.add(cb);
     cb(this.status);
     return () => this.statusListeners.delete(cb);
+  }
+
+  onControlValueChange(cb: (key: string, value: number) => void): () => void {
+    this.controlValueListeners.add(cb);
+    return () => this.controlValueListeners.delete(cb);
   }
 
   /** Set a control value and trigger callback. */
@@ -126,6 +133,13 @@ export abstract class BaseVisualization {
     if (this.status === status) return;
     this.status = status;
     for (const listener of this.statusListeners) listener(status);
+  }
+
+  /** Update a control from an animation without triggering onControlChange. */
+  protected setControlValue(key: string, value: number): void {
+    if (this.controls[key] === value) return;
+    this.controls[key] = value;
+    for (const listener of this.controlValueListeners) listener(key, value);
   }
 
   protected get width(): number {

@@ -349,7 +349,17 @@ CH6 = Chapter(
                 ContentBlock(type=ContentBlockType.NOTE, text="SoftMax 将分数归一化为概率分布，所有权重之和为 1。"),
             ],
             controls=[
-                ControlConfig(key="step", label="计算步骤", type=ControlType.SLIDER, min=0, max=3, step=1, default=0),
+                ControlConfig(key="run", label="播放计算过程", type=ControlType.BUTTON, default=0),
+                ControlConfig(
+                    key="step",
+                    label="计算步骤",
+                    type=ControlType.SLIDER,
+                    min=0,
+                    max=3,
+                    step=1,
+                    default=0,
+                    value_labels=["Q / K", "点积", "缩放", "Softmax"],
+                ),
             ],
         ),
         Page(
@@ -419,7 +429,17 @@ CH7 = Chapter(
                 ContentBlock(type=ContentBlockType.NOTE, text="残差连接帮助梯度流动，LayerNorm 稳定训练。"),
             ],
             controls=[
-                ControlConfig(key="step", label="展示步骤", type=ControlType.SLIDER, min=0, max=4, step=1, default=0),
+                ControlConfig(key="run", label="播放 Encoder 流程", type=ControlType.BUTTON, default=0),
+                ControlConfig(
+                    key="step",
+                    label="展示步骤",
+                    type=ControlType.SLIDER,
+                    min=0,
+                    max=4,
+                    step=1,
+                    default=0,
+                    value_labels=["输入", "注意力归一化", "前馈网络", "FFN 归一化", "完整输出"],
+                ),
             ],
         ),
         Page(
@@ -482,7 +502,17 @@ CH8 = Chapter(
                 ContentBlock(type=ContentBlockType.NOTE, text="嵌入矩阵是模型训练学到的，编码了词的语义信息。相似词的向量距离更近。"),
             ],
             controls=[
-                ControlConfig(key="step", label="流水线步骤", type=ControlType.SLIDER, min=0, max=3, step=1, default=0),
+                ControlConfig(key="run", label="播放嵌入流程", type=ControlType.BUTTON, default=0),
+                ControlConfig(
+                    key="step",
+                    label="流水线步骤",
+                    type=ControlType.SLIDER,
+                    min=0,
+                    max=3,
+                    step=1,
+                    default=0,
+                    value_labels=["Token", "Token → ID", "ID → 向量", "完整流程"],
+                ),
             ],
         ),
         Page(
