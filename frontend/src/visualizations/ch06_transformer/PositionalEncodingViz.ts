@@ -55,6 +55,7 @@ export class PositionalEncodingViz extends BaseVisualization {
   private startWaveLoop(): void {
     const gen = ++this.waveGen;
     this.renderer.clearAnimations();
+    this.setVisualizationStatus("running");
     this.wave.progress = 0;
     const tw = new Tween(this.wave, { progress: 1 }, 3000, Easing.linear);
     tw.onUpdate(() => this.render());

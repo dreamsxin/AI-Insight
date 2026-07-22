@@ -67,6 +67,7 @@ export class AttentionConceptViz extends BaseVisualization {
   private startFlowLoop(): void {
     const gen = ++this.flowGen;
     this.renderer.clearAnimations();
+    this.setVisualizationStatus("running");
     this.flow.progress = 0;
     const tw = new Tween(this.flow, { progress: 1 }, 1400, Easing.linear);
     tw.onUpdate(() => this.render());

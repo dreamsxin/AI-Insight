@@ -45,13 +45,24 @@ export class RNNSequenceViz extends BaseVisualization {
   onControlChange(key: string, _value: number): void {
     if (key === "step") {
       // Restart the memory-ball animation toward the new current step.
-      void this.animateBall();
+      this.animateBall();
+    } else if (key === "seq_len") {
+      this.ballGen++;
+      this.renderer.clearAnimations();
+      this.ballRunning = false;
+      this.ball.progress = 0;
+      this.pulse.active = false;
+      this.computeLayout();
+      this.setVisualizationStatus("idle");
+      this.render();
     } else {
       this.render();
     }
   }
 
   onUnmount(): void {
+    this.ballGen++;
+    this.ballRunning = false;
     this.renderer.clearAnimations();
   }
 
@@ -78,30 +89,21 @@ export class RNNSequenceViz extends BaseVisualization {
   }
 
   /** Animate the memory ball from cell 0 to the current step, fading as it goes. */
-  private async animateBall(): Promise<void> {
+  private animateBall(): void {
     const gen = ++this.ballGen;
     this.renderer.clearAnimations();
+    this.setVisualizationStatus("running");
     const cur = this.currentStep;
     const cx = this.layout.cx;
-    if (cx.length === 0) return;
-
-    // Pulse the target cell as the ball arrives.
-    this.pulse = { p: 0, active: true };
-    const pulseState = { p: 0 };
-    const pulseTw = new Tween(pulseState, { p: 1 }, 700, Easing.easeOutCubic);
-    pulseTw.onUpdate(() => {
-      this.pulse.p = pulseState.p;
-      this.render();
-    });
-    pulseTw.onComplete(() => {
-      this.pulse.active = false;
-      this.render();
-    });
-    this.renderer.addTween(pulseTw);
+    if (cx.length === 0) {
+      this.setVisualizationStatus("completed");
+      return;
+    }
 
     if (cur === 0) {
       this.ball.progress = 1;
       this.render();
+      this.pulseTarget(gen);
       return;
     }
 
@@ -114,8 +116,26 @@ export class RNNSequenceViz extends BaseVisualization {
       if (gen !== this.ballGen) return;
       this.ballRunning = false;
       this.render();
+      this.pulseTarget(gen);
     });
     this.renderer.addTween(tw);
+  }
+
+  private pulseTarget(gen: number): void {
+    this.pulse = { p: 0, active: true };
+    const pulseState = { p: 0 };
+    const pulseTw = new Tween(pulseState, { p: 1 }, 700, Easing.easeOutCubic);
+    pulseTw.onUpdate(() => {
+      this.pulse.p = pulseState.p;
+      this.render();
+    });
+    pulseTw.onComplete(() => {
+      if (gen !== this.ballGen) return;
+      this.pulse.active = false;
+      this.setVisualizationStatus("completed");
+      this.render();
+    });
+    this.renderer.addTween(pulseTw);
   }
 
   /** Ball intensity: full at the source, fading toward 0.25 as distance grows. */

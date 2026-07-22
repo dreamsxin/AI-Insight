@@ -54,7 +54,7 @@ export class SelfAttentionViz extends BaseVisualization {
 
   onControlChange(_key: string, _value: number): void {
     // The focus slider only affects local rendering; no re-fetch needed.
-    this.startFlowLoop();
+    if (this.apiResponse) this.startFlowLoop();
     this.render();
   }
 
@@ -81,6 +81,7 @@ export class SelfAttentionViz extends BaseVisualization {
     } catch (err) {
       this.loading = false;
       this.error = err instanceof Error ? err.message : String(err);
+      this.setVisualizationStatus("error");
       this.renderError();
     }
   }
@@ -89,6 +90,7 @@ export class SelfAttentionViz extends BaseVisualization {
   private startFlowLoop(): void {
     const gen = ++this.flowGen;
     this.renderer.clearAnimations();
+    this.setVisualizationStatus("running");
     this.flow.progress = 0;
     const tw = new Tween(this.flow, { progress: 1 }, 1600, Easing.linear);
     tw.onUpdate(() => this.render());

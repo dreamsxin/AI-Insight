@@ -1,7 +1,7 @@
 /** DataFlowViz - animates a token flowing through the Transformer.
 
 Shows the pipeline stages (Token -> Embedding -> +Pos Enc -> Attention -> FFN
--> ... -> Output) as labeled Rects in a row with emoji icons. A "run" button
+-> Output) as labeled Rects with emoji icons. A "run" button
 triggers an animation where a glowing Particle (with trail) moves from stage to
 stage. Each stage LIGHTS UP (GlowPulse expanding ring) when the particle passes
 through. The particle leaves a GLOWING TRAIL behind it.
@@ -16,7 +16,6 @@ import { Arrow } from "@/canvas/shapes/Arrow";
 import { Particle } from "@/canvas/shapes/Particle";
 import { GlowPulse } from "@/canvas/shapes/GlowPulse";
 import { Tween } from "@/canvas/animation/Tween";
-import { Timeline } from "@/canvas/animation/Timeline";
 import { Easing } from "@/canvas/animation/Easing";
 import { COLORS } from "@/utils/color";
 
@@ -37,48 +36,84 @@ const STAGES: Stage[] = [
 ];
 
 const STAGE_HOVER_MS = 450;
-const STAGE_GAP = 40;
+
+interface Point {
+  x: number;
+  y: number;
+}
 
 export class DataFlowViz extends BaseVisualization {
-  /** Shared animation state: the particle's current x position and progress. */
-  private animState: { x: number; glow: number } = { x: 0, glow: 0 };
-  /** Particle endpoints for the current segment (drives the trail). */
-  private particleFrom = 0;
-  private particleTo = 0;
+  private animState = { progress: 0, glow: 0 };
+  private particleFrom: Point = { x: 0, y: 0 };
+  private particleTo: Point = { x: 0, y: 0 };
   /** GlowPulse ring state per active stage. */
-  private pulseState = { p: 0, active: false, x: 0, hue: 180 };
-  private stageCenters: number[] = [];
-  private stageY = 0;
+  private pulseState = { p: 0, active: false, x: 0, y: 0, hue: 180 };
+  private stagePositions: Point[] = [];
   private running = false;
+  private completed = false;
   private activeStage = -1;
   private stageW = 120;
+  private runGeneration = 0;
+  private pulseGeneration = 0;
 
   onMount(): void {
     this.computeLayout();
-    this.animState.x = this.stageCenters[0];
+    this.resetFlow();
     this.render();
   }
 
   onControlChange(key: string, _value: number): void {
     if (key === "run") {
-      void this.runAnimation();
+      this.runAnimation();
+    } else if (key === "speed") {
+      this.cancelAnimation();
+      this.resetFlow();
+      this.setVisualizationStatus("idle");
+      this.render();
     }
   }
 
   onUnmount(): void {
+    this.runGeneration++;
+    this.running = false;
     this.renderer.clearAnimations();
+  }
+
+  private get speed(): number {
+    return Math.max(0.5, Math.min(2, this.controls["speed"] ?? 1));
   }
 
   private computeLayout(): void {
     const w = this.width;
     const h = this.height;
-    const n = STAGES.length;
-    const stageW = Math.min(128, (w - STAGE_GAP * (n + 1)) / n);
-    const totalW = n * stageW + (n - 1) * STAGE_GAP;
-    const startX = (w - totalW) / 2 + stageW / 2;
-    this.stageCenters = STAGES.map((_, i) => startX + i * (stageW + STAGE_GAP));
-    this.stageY = h / 2;
-    this.stageW = stageW;
+    if (w >= 680) {
+      const gap = 18;
+      this.stageW = Math.min(120, (w - 40 - gap * (STAGES.length - 1)) / STAGES.length);
+      const totalW = STAGES.length * this.stageW + (STAGES.length - 1) * gap;
+      const startX = (w - totalW) / 2 + this.stageW / 2;
+      this.stagePositions = STAGES.map((_, i) => ({
+        x: startX + i * (this.stageW + gap),
+        y: h / 2,
+      }));
+      return;
+    }
+
+    const cols = 3;
+    const gap = 14;
+    this.stageW = Math.min(108, (w - 32 - gap * (cols - 1)) / cols);
+    const totalW = cols * this.stageW + (cols - 1) * gap;
+    const left = (w - totalW) / 2 + this.stageW / 2;
+    const topY = Math.max(118, h * 0.36);
+    const bottomY = Math.min(h - 112, h * 0.65);
+    this.stagePositions = STAGES.map((_, i) => {
+      const row = Math.floor(i / cols);
+      const colInRow = i % cols;
+      const col = row % 2 === 0 ? colInRow : cols - 1 - colInRow;
+      return {
+        x: left + col * (this.stageW + gap),
+        y: row === 0 ? topY : bottomY,
+      };
+    });
   }
 
   private get blockH(): number {
@@ -86,74 +121,114 @@ export class DataFlowViz extends BaseVisualization {
   }
 
   /** Emit a GlowPulse ring at a stage. */
-  private firePulse(x: number, hue: number): void {
-    this.pulseState = { p: 0, active: true, x, hue };
+  private firePulse(point: Point, hue: number): void {
+    const generation = ++this.pulseGeneration;
+    this.pulseState = { p: 0, active: true, x: point.x, y: point.y, hue };
     const s = { p: 0 };
     const tw = new Tween(s, { p: 1 }, 600, Easing.easeOutCubic);
     tw.onUpdate(() => {
+      if (generation !== this.pulseGeneration) return;
       this.pulseState.p = s.p;
       this.render();
     });
     tw.onComplete(() => {
+      if (generation !== this.pulseGeneration) return;
       this.pulseState.active = false;
       this.render();
     });
     this.renderer.addTween(tw);
   }
 
-  private async runAnimation(): Promise<void> {
+  private runAnimation(): void {
     if (this.running) return;
+    if (this.stagePositions.length !== STAGES.length) return;
+    const generation = ++this.runGeneration;
     this.running = true;
-
+    this.completed = false;
+    this.setVisualizationStatus("running");
     this.renderer.clearAnimations();
-
-    const timeline = new Timeline();
     this.activeStage = 0;
     this.animState.glow = 1;
-    this.particleFrom = this.stageCenters[0];
-    this.particleTo = this.stageCenters[0];
-    this.firePulse(this.stageCenters[0], STAGES[0].hue);
+    this.animState.progress = 0;
+    this.particleFrom = { ...this.stagePositions[0] };
+    this.particleTo = { ...this.stagePositions[0] };
+    this.firePulse(this.stagePositions[0], STAGES[0].hue);
     this.render();
+    this.animateSegment(0, generation);
+  }
 
-    // Build a tween per stage transition.
-    for (let i = 0; i < this.stageCenters.length - 1; i++) {
-      const fromX = this.stageCenters[i];
-      const toX = this.stageCenters[i + 1];
-      const tween = new Tween(this.animState, { x: toX, glow: 1 }, STAGE_HOVER_MS, Easing.easeInOutCubic);
-      const stageIdx = i + 1;
-      // Set up the particle's endpoints for the trail.
-      this.particleFrom = fromX;
-      this.particleTo = toX;
-      tween.onUpdate(() => {
-        const t = (this.animState.x - fromX) / (toX - fromX);
-        this.activeStage = t > 0.5 ? stageIdx : stageIdx - 1;
-        this.render();
-      });
-      tween.onComplete(() => {
-        this.activeStage = stageIdx;
-        this.firePulse(this.stageCenters[stageIdx], STAGES[stageIdx].hue);
-        this.render();
-      });
-      timeline.add(tween, i * STAGE_HOVER_MS);
+  private animateSegment(index: number, generation: number): void {
+    if (generation !== this.runGeneration) return;
+    if (index >= this.stagePositions.length - 1) {
+      this.finishAnimation(generation);
+      return;
     }
 
-    timeline.onComplete(() => {
-      this.activeStage = this.stageCenters.length - 1;
-      this.animState.glow = 1;
+    const nextIndex = index + 1;
+    this.particleFrom = { ...this.stagePositions[index] };
+    this.particleTo = { ...this.stagePositions[nextIndex] };
+    this.animState.progress = 0;
+    const tween = new Tween(
+      this.animState,
+      { progress: 1, glow: 1 },
+      STAGE_HOVER_MS / this.speed,
+      Easing.easeInOutCubic,
+    );
+    tween.onUpdate(() => {
+      this.activeStage = this.animState.progress >= 0.5 ? nextIndex : index;
       this.render();
-      // reset to idle after a pause so it can be replayed
-      setTimeout(() => {
-        this.running = false;
-        this.activeStage = -1;
-        this.pulseState.active = false;
-        this.animState.x = this.stageCenters[0];
-        this.animState.glow = 0;
-        this.render();
-      }, 1600);
     });
+    tween.onComplete(() => {
+      if (generation !== this.runGeneration) return;
+      this.activeStage = nextIndex;
+      this.firePulse(this.stagePositions[nextIndex], STAGES[nextIndex].hue);
+      this.render();
+      this.animateSegment(nextIndex, generation);
+    });
+    this.renderer.addTween(tween);
+  }
 
-    this.renderer.addTimeline(timeline);
-    timeline.play();
+  private finishAnimation(generation: number): void {
+    const hold = { progress: 0 };
+    const tween = new Tween(hold, { progress: 1 }, 520 / this.speed, Easing.linear);
+    tween.onComplete(() => {
+      if (generation !== this.runGeneration) return;
+      this.running = false;
+      this.completed = true;
+      this.activeStage = STAGES.length - 1;
+      this.pulseState.active = false;
+      this.setVisualizationStatus("completed");
+      this.render();
+    });
+    this.renderer.addTween(tween);
+  }
+
+  private cancelAnimation(): void {
+    this.runGeneration++;
+    this.pulseGeneration++;
+    this.running = false;
+    this.renderer.clearAnimations();
+  }
+
+  private resetFlow(): void {
+    const start = this.stagePositions[0] ?? { x: 0, y: 0 };
+    this.completed = false;
+    this.activeStage = -1;
+    this.animState = { progress: 0, glow: 0 };
+    this.particleFrom = { ...start };
+    this.particleTo = { ...start };
+    this.pulseGeneration++;
+    this.pulseState.active = false;
+  }
+
+  private showCompletedFlow(): void {
+    const lastIndex = STAGES.length - 1;
+    this.completed = true;
+    this.activeStage = lastIndex;
+    this.animState = { progress: 1, glow: 1 };
+    this.particleFrom = { ...this.stagePositions[lastIndex - 1] };
+    this.particleTo = { ...this.stagePositions[lastIndex] };
+    this.pulseState.active = false;
   }
 
   private render(): void {
@@ -169,12 +244,14 @@ export class DataFlowViz extends BaseVisualization {
 
     // --- Stage boxes + connecting arrows ---
     for (let i = 0; i < STAGES.length; i++) {
-      const cx = this.stageCenters[i];
+      const point = this.stagePositions[i];
+      const cx = point.x;
+      const cy = point.y;
       const isActive = i === this.activeStage;
       const isPast = this.activeStage >= 0 && i < this.activeStage;
       const stage = STAGES[i];
 
-      const r = new Rect(cx, this.stageY, this.stageW, this.blockH, 8);
+      const r = new Rect(cx, cy, this.stageW, this.blockH, 8);
       r.fillStyle = isActive
         ? "rgba(251, 191, 36, 0.2)"
         : isPast
@@ -184,28 +261,33 @@ export class DataFlowViz extends BaseVisualization {
       r.lineWidth = isActive ? 3 : 1.5;
       this.scene.add(r);
 
-      const num = new Text(`#${i}`, cx, this.stageY - this.blockH / 2 - 12, 10);
+      const num = new Text(`#${i + 1}`, cx, cy - this.blockH / 2 - 10, 10);
       num.fillStyle = isActive ? COLORS.highlight : COLORS.textDim;
       this.scene.add(num);
 
       // Emoji icon
-      const icon = new Text(stage.icon, cx, this.stageY - 10, 22);
+      const icon = new Text(stage.icon, cx, cy - 10, 22);
       icon.fillStyle = COLORS.text;
       this.scene.add(icon);
 
-      const lbl = new Text(stage.label, cx, this.stageY + 14, 12);
+      const lbl = new Text(stage.label, cx, cy + 14, 12);
       lbl.fillStyle = isActive ? COLORS.highlight : isPast ? COLORS.text : COLORS.textDim;
       lbl.fontWeight = isActive ? "bold" : "normal";
       this.scene.add(lbl);
 
       // Arrow to next stage
       if (i < STAGES.length - 1) {
-        const nextCx = this.stageCenters[i + 1];
+        const next = this.stagePositions[i + 1];
+        const dx = next.x - cx;
+        const dy = next.y - cy;
+        const distance = Math.hypot(dx, dy) || 1;
+        const insetX = (dx / distance) * (this.stageW / 2);
+        const insetY = (dy / distance) * (this.blockH / 2);
         const arr = new Arrow(
-          cx + this.stageW / 2,
-          this.stageY,
-          nextCx - this.stageW / 2,
-          this.stageY,
+          cx + insetX,
+          cy + insetY,
+          next.x - insetX,
+          next.y - insetY,
           7,
         );
         arr.strokeStyle = isPast ? COLORS.accent2 : COLORS.edge;
@@ -215,8 +297,10 @@ export class DataFlowViz extends BaseVisualization {
       }
 
       // GlowPulse ring on the active stage.
-      if (isActive && this.pulseState.active && Math.abs(this.pulseState.x - cx) < 2) {
-        const pulse = new GlowPulse(cx, this.stageY, this.stageW * 1.1, stage.hue);
+      if (isActive && this.pulseState.active
+        && Math.abs(this.pulseState.x - cx) < 2
+        && Math.abs(this.pulseState.y - cy) < 2) {
+        const pulse = new GlowPulse(cx, cy, this.stageW * 1.1, stage.hue);
         pulse.progress = this.pulseState.p;
         pulse.lineWidth = 3;
         this.scene.add(pulse);
@@ -227,17 +311,14 @@ export class DataFlowViz extends BaseVisualization {
     if (this.activeStage >= 0) {
       const hue = STAGES[Math.max(0, Math.min(STAGES.length - 1, this.activeStage))].hue;
       const particle = new Particle(
-        this.particleFrom,
-        this.stageY,
-        this.particleTo,
-        this.stageY,
+        this.particleFrom.x,
+        this.particleFrom.y,
+        this.particleTo.x,
+        this.particleTo.y,
         7,
         hue,
       );
-      // progress within the current segment
-      const segLen = this.particleTo - this.particleFrom;
-      const segProgress = segLen !== 0 ? (this.animState.x - this.particleFrom) / segLen : 1;
-      particle.progress = Math.max(0, Math.min(1, segProgress));
+      particle.progress = this.animState.progress;
       particle.trailLength = 10;
       particle.opacity = this.animState.glow;
       this.scene.add(particle);
@@ -248,17 +329,21 @@ export class DataFlowViz extends BaseVisualization {
     if (this.running) {
       const stageName = this.activeStage >= 0 ? `${STAGES[this.activeStage].icon} ${STAGES[this.activeStage].label}` : "";
       statusText = `动画中... 当前阶段: ${stageName}`;
+    } else if (this.completed) {
+      statusText = "数据流已到达 Output";
     } else {
       statusText = "点击播放动画";
     }
-    const status = new Text(statusText, w / 2, this.stageY + this.blockH / 2 + 44, 14);
-    status.fillStyle = this.running ? COLORS.accent : COLORS.textDim;
-    status.fontWeight = this.running ? "bold" : "normal";
+    const maxStageY = Math.max(...this.stagePositions.map((point) => point.y));
+    const statusY = Math.min(h - 46, maxStageY + this.blockH / 2 + 34);
+    const status = new Text(statusText, w / 2, statusY, 14);
+    status.fillStyle = this.running || this.completed ? COLORS.accent : COLORS.textDim;
+    status.fontWeight = this.running || this.completed ? "bold" : "normal";
     this.scene.add(status);
 
     // --- Hint ---
     const hint = new Text(
-      this.running ? "粒子(带拖尾)在各阶段间流动，每经过一个阶段就发光脉冲" : '按 "run" 按钮开始动画',
+      this.running ? "粒子在各阶段间流动，每经过一个阶段就发光脉冲" : "调整速度后可重新播放",
       w / 2,
       h - 18,
       12,
@@ -273,8 +358,15 @@ export class DataFlowViz extends BaseVisualization {
   resize(): void {
     super.resize();
     this.computeLayout();
-    if (this.activeStage < 0) {
-      this.animState.x = this.stageCenters[0] ?? this.animState.x;
+    if (this.running) {
+      this.cancelAnimation();
+      this.resetFlow();
+      this.setVisualizationStatus("idle");
+      this.renderer.start();
+    } else if (this.completed) {
+      this.showCompletedFlow();
+    } else {
+      this.resetFlow();
     }
     this.render();
   }

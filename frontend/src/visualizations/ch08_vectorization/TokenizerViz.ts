@@ -100,6 +100,7 @@ export class TokenizerViz extends BaseVisualization {
   private playCutAnimation(): void {
     const gen = ++this.cutGen;
     this.renderer.clearAnimations();
+    this.setVisualizationStatus("running");
     const sample = TEXT_SAMPLES[this.sampleIndex];
     this.tokenScales = sample.tokens.map(() => 0);
     this.knife.progress = 0;
@@ -123,6 +124,9 @@ export class TokenizerViz extends BaseVisualization {
         bounce.onComplete(() => {
           if (gen !== this.cutGen) return;
           this.tokenScales[i] = 1;
+          if (i === sample.tokens.length - 1) {
+            this.setVisualizationStatus("completed");
+          }
           this.render();
         });
         this.renderer.addTween(bounce);

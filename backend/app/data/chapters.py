@@ -433,6 +433,16 @@ CH7 = Chapter(
             ],
             controls=[
                 ControlConfig(key="run", label="播放动画", type=ControlType.BUTTON, default=0),
+                ControlConfig(
+                    key="speed",
+                    label="播放速度",
+                    type=ControlType.SLIDER,
+                    min=0.5,
+                    max=2,
+                    step=0.5,
+                    default=1,
+                    value_labels=["0.5×", "1×", "1.5×", "2×"],
+                ),
             ],
         ),
     ],
