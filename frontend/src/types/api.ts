@@ -97,3 +97,99 @@ export interface Term {
   short: string;
   detail: string;
 }
+
+// ---------------------------------------------------------------------------
+// Stepwise training
+// ---------------------------------------------------------------------------
+
+export interface OptimizerState {
+  m_w: number[][][];
+  v_w: number[][][];
+  m_b: number[][];
+  v_b: number[][];
+  t: number;
+}
+
+export interface NNTrainStepRequest {
+  layers: number[];
+  data: number[][];
+  epochs: number;
+  learning_rate: number;
+  activation: string;
+  seed: number;
+  weights?: number[][][];
+  biases?: number[][];
+  return_predictions?: boolean;
+  optimizer_state?: OptimizerState;
+}
+
+export interface NNTrainStepResponse {
+  loss_history: number[];
+  weights: number[][][];
+  biases: number[][];
+  predictions?: number[][];
+  accuracy?: number | null;
+  optimizer_state: OptimizerState;
+}
+
+// ---------------------------------------------------------------------------
+// Datasets
+// ---------------------------------------------------------------------------
+
+export interface DatasetInfo {
+  name: string;
+  description: string;
+  sample_count: number;
+  input_dim: number;
+  output_dim: number;
+  n_classes: number;
+  suggested_layers: number[];
+}
+
+export interface DatasetResponse {
+  name: string;
+  description: string;
+  data: number[][];
+  points: number[][];
+  suggested_layers: number[];
+  input_dim: number;
+  output_dim: number;
+  n_classes: number;
+}
+
+// ---------------------------------------------------------------------------
+// Saved models
+// ---------------------------------------------------------------------------
+
+export interface SavedModelSummary {
+  id: string;
+  name: string;
+  dataset: string;
+  layers: number[];
+  epoch: number;
+  loss: number;
+  accuracy?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SavedModelDetail extends SavedModelSummary {
+  activation: string;
+  weights: number[][][];
+  biases: number[][];
+  optimizer_state?: OptimizerState | null;
+}
+
+export interface SaveModelRequest {
+  name: string;
+  dataset: string;
+  layers: number[];
+  activation: string;
+  weights: number[][][];
+  biases: number[][];
+  epoch: number;
+  loss: number;
+  accuracy?: number | null;
+  overwrite_id?: string;
+  optimizer_state?: OptimizerState | null;
+}

@@ -26,3 +26,6 @@ Thumbs.db
 # Env
 .env
 .env.local
+
+# Saved model files (generated at runtime)
+backend/app/data/saved_models/
