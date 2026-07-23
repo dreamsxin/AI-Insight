@@ -19,4 +19,12 @@ describe("ArchitectureViz layout", () => {
     expect(positions.slice(0, 5).map((position) => position.x)).toEqual([-5, -2.5, 0, 2.5, 5]);
     expect(positions.slice(5).map((position) => position.x)).toEqual([5, 2.5, 0, -2.5]);
   });
+
+  it("links the Self-Attention station to its internal explainer", () => {
+    expect(ARCHITECTURE_STAGES[2]).toMatchObject({
+      daily: "找出重点",
+      term: "Self-Attention",
+      route: "#/ch6/p1",
+    });
+  });
 });

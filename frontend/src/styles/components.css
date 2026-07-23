@@ -335,7 +335,7 @@
   inset: auto 0 0;
   min-height: 78px;
   display: grid;
-  grid-template-columns: minmax(130px, 0.7fr) minmax(220px, 1.8fr) minmax(130px, 0.8fr);
+  grid-template-columns: minmax(130px, 0.7fr) minmax(220px, 1.8fr) minmax(120px, 0.7fr) auto;
   align-items: center;
   gap: 18px;
   padding: 13px 16px;
@@ -360,6 +360,23 @@
   color: var(--text-dim);
   font-size: 11px;
   text-align: right;
+}
+
+.architecture-enter {
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.architecture-enter:hover {
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel));
 }
 
 /* ===== Supporting Concepts ===== */
@@ -930,6 +947,11 @@
 
   .architecture-detail small {
     font-size: 10px;
+  }
+
+  .architecture-enter {
+    grid-column: 2;
+    grid-row: 3;
   }
 
   .controls-panel {

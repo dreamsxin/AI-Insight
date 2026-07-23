@@ -2,13 +2,14 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { BaseVisualization } from "@/visualizations/BaseVisualization";
+import { DrilldownVisualization } from "@/visualizations/DrilldownVisualization";
 
 interface Stage {
   daily: string;
   term: string;
   explanation: string;
   color: number;
+  route: string;
 }
 
 interface StageView {
@@ -20,15 +21,15 @@ interface StageView {
 }
 
 export const ARCHITECTURE_STAGES: Stage[] = [
-  { daily: "把词变成数字", term: "Embedding", explanation: "每个词先换成一组数字，机器才有办法处理它。", color: 0x35c8ff },
-  { daily: "加上先后顺序", term: "Position", explanation: "给每个词标上位置，模型知道谁在前、谁在后。", color: 0x35c8ff },
-  { daily: "找出重点", term: "Self-Attention", explanation: "每个词都看看其他词，判断哪些信息和自己最有关。", color: 0x8b7cff },
-  { daily: "逐项加工", term: "Feed Forward", explanation: "把刚才找到的重点再加工一次，整理成更有用的表示。", color: 0x8b7cff },
-  { daily: "开始写答案", term: "Decoder Input", explanation: "生成答案时，从已经写出的内容开始继续往下写。", color: 0xffa64d },
-  { daily: "只看已经写过的", term: "Masked Attention", explanation: "写到哪儿只能看前面，不能偷看还没写出的词。", color: 0xffa64d },
-  { daily: "参考输入内容", term: "Cross Attention", explanation: "写答案时回头查阅输入，找到真正需要的原文信息。", color: 0xffa64d },
-  { daily: "再整理一遍", term: "Feed Forward", explanation: "把综合后的信息再次加工，让答案更清楚。", color: 0xffa64d },
-  { daily: "选出下一个词", term: "Softmax", explanation: "给候选词排队，挑出最合适的下一个词。", color: 0x55d68b },
+  { daily: "把词变成数字", term: "Embedding", explanation: "每个词先换成一组数字，机器才有办法处理它。", color: 0x35c8ff, route: "#/ch8/p2" },
+  { daily: "加上先后顺序", term: "Position", explanation: "给每个词标上位置，模型知道谁在前、谁在后。", color: 0x35c8ff, route: "#/ch6/p4" },
+  { daily: "找出重点", term: "Self-Attention", explanation: "每个词都看看其他词，判断哪些信息和自己最有关。", color: 0x8b7cff, route: "#/ch6/p1" },
+  { daily: "逐项加工", term: "Feed Forward", explanation: "把刚才找到的重点再加工一次，整理成更有用的表示。", color: 0x8b7cff, route: "#/ch7/p2" },
+  { daily: "开始写答案", term: "Decoder Input", explanation: "生成答案时，从已经写出的内容开始继续往下写。", color: 0xffa64d, route: "#/ch7/p3" },
+  { daily: "只看已经写过的", term: "Masked Attention", explanation: "写到哪儿只能看前面，不能偷看还没写出的词。", color: 0xffa64d, route: "#/ch6/p2" },
+  { daily: "参考输入内容", term: "Cross Attention", explanation: "写答案时回头查阅输入，找到真正需要的原文信息。", color: 0xffa64d, route: "#/ch7/p2" },
+  { daily: "再整理一遍", term: "Feed Forward", explanation: "把综合后的信息再次加工，让答案更清楚。", color: 0xffa64d, route: "#/ch7/p2" },
+  { daily: "选出下一个词", term: "Softmax", explanation: "给候选词排队，挑出最合适的下一个词。", color: 0x55d68b, route: "#/ch6/p2" },
 ];
 
 const SURFACE = 0x111a24;
@@ -51,7 +52,7 @@ export function architecturePositions(width: number): THREE.Vector3[] {
   });
 }
 
-export class ArchitectureViz extends BaseVisualization {
+export class ArchitectureViz extends DrilldownVisualization {
   private scene3d: THREE.Scene | null = null;
   private camera: THREE.PerspectiveCamera | null = null;
   private threeRenderer: THREE.WebGLRenderer | null = null;
@@ -70,6 +71,13 @@ export class ArchitectureViz extends BaseVisualization {
   private lastFrame = 0;
   private selectedIndex = 0;
   private stagePositions: THREE.Vector3[] = [];
+  private focused = false;
+  private cameraMoving = false;
+  private cameraMoveStartedAt = 0;
+  private cameraFrom = new THREE.Vector3();
+  private cameraTo = new THREE.Vector3();
+  private targetFrom = new THREE.Vector3();
+  private targetTo = new THREE.Vector3();
   private readonly onPointerDown = (event: PointerEvent): void => this.handlePointer(event);
 
   override start(): void {
@@ -78,6 +86,7 @@ export class ArchitectureViz extends BaseVisualization {
   }
 
   onMount(): void {
+    this.initializeDrilldown("Transformer 总览");
     this.canvas.style.display = "none";
     this.container.classList.add("canvas-container--3d");
     this.detailEl = document.createElement("div");
@@ -130,7 +139,11 @@ export class ArchitectureViz extends BaseVisualization {
       this.playJourney();
       return;
     }
-    if (key === "focus" && !this.journeyRunning) this.selectStage(value);
+    if (key === "focus" && !this.journeyRunning) this.focusStage(value);
+  }
+
+  protected override onDrilldownRequest(depth: number): void {
+    if (depth === 0) this.exitFocus();
   }
 
   override pause(): void {
@@ -156,16 +169,6 @@ export class ArchitectureViz extends BaseVisualization {
     this.threeRenderer.domElement.style.width = "100%";
     this.threeRenderer.domElement.style.height = `${height}px`;
     this.camera.aspect = width / Math.max(240, height);
-    const compact = width < 620;
-    const wide = width > 760;
-    const horizontalTarget = compact ? 2.2 : 0;
-    this.orbit?.target.set(horizontalTarget, 0, 0);
-    this.camera.position.set(
-      0,
-      compact ? 9.6 : wide ? 7.1 : 7.8,
-      compact ? 12.8 : wide ? 10.8 : 12.3,
-    );
-    this.camera.lookAt(horizontalTarget, 0, 0);
     this.camera.updateProjectionMatrix();
     this.stagePositions = architecturePositions(width);
     this.stageViews.forEach((view, index) => view.group.position.copy(this.stagePositions[index]));
@@ -173,6 +176,8 @@ export class ArchitectureViz extends BaseVisualization {
     if (this.token && this.stagePositions[this.selectedIndex]) {
       this.token.position.copy(this.stagePositions[this.selectedIndex]).add(new THREE.Vector3(0, 0.78, 0));
     }
+    if (this.focused) this.placeFocusedCamera(this.selectedIndex, false);
+    else this.placeOverviewCamera(width, false);
   }
 
   override onUnmount(): void {
@@ -194,6 +199,7 @@ export class ArchitectureViz extends BaseVisualization {
     this.camera = null;
     this.threeRenderer = null;
     this.orbit = null;
+    super.onUnmount();
   }
 
   private get focus(): number {
@@ -294,25 +300,103 @@ export class ArchitectureViz extends BaseVisualization {
     this.stageViews.forEach((view, stageIndex) => {
       const selected = stageIndex === safeIndex;
       view.material.emissiveIntensity = selected ? 0.72 : 0.08;
-      view.material.opacity = selected ? 1 : 0.72;
-      view.material.transparent = !selected;
-      view.group.scale.setScalar(selected ? 1.06 : 1);
+      view.material.opacity = selected ? 1 : this.focused ? 0.08 : 0.72;
+      view.material.transparent = !selected || this.focused;
+      view.group.scale.setScalar(selected ? (this.focused ? 1.18 : 1.06) : this.focused ? 0.92 : 1);
       // Bright border only on the selected component.
       const edgeMat = view.edges.material as THREE.LineBasicMaterial;
       edgeMat.opacity = selected ? 1 : 0;
       view.edges.visible = selected;
     });
     const stage = ARCHITECTURE_STAGES[safeIndex];
-    if (this.detailEl) {
-      this.detailEl.innerHTML = `<strong>${stage.daily}</strong><span>${stage.explanation}</span><small>专业名称：${stage.term}</small>`;
-    }
+    this.renderDetail(stage);
+    const connectorMaterial = this.connector?.material as THREE.LineBasicMaterial | undefined;
+    if (connectorMaterial) connectorMaterial.opacity = this.focused ? 0.1 : 0.58;
     if (this.token && this.stagePositions[safeIndex] && !this.journeyRunning) {
       this.token.position.copy(this.stagePositions[safeIndex]).add(new THREE.Vector3(0, 0.78, 0));
     }
   }
 
+  private focusStage(index: number): void {
+    const safeIndex = Math.max(0, Math.min(ARCHITECTURE_STAGES.length - 1, Math.round(index)));
+    this.journeyRunning = false;
+    this.journeyPaused = false;
+    this.focused = true;
+    this.setVisualizationStatus("idle");
+    this.setDrilldownPath(["Transformer 总览", ARCHITECTURE_STAGES[safeIndex].daily]);
+    this.selectStage(safeIndex);
+    this.placeFocusedCamera(safeIndex, true);
+  }
+
+  private exitFocus(animate = true): void {
+    this.focused = false;
+    this.setDrilldownPath(["Transformer 总览"]);
+    this.selectStage(this.selectedIndex);
+    this.placeOverviewCamera(this.container.getBoundingClientRect().width || 600, animate);
+  }
+
+  private renderDetail(stage: Stage): void {
+    if (!this.detailEl) return;
+    const title = document.createElement("strong");
+    title.textContent = stage.daily;
+    const explanation = document.createElement("span");
+    explanation.textContent = stage.explanation;
+    const term = document.createElement("small");
+    term.textContent = `专业名称：${stage.term}`;
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = "architecture-enter";
+    action.textContent = this.focused ? "进入内部" : "放大查看";
+    action.addEventListener("click", () => {
+      if (this.focused) window.location.hash = stage.route;
+      else this.focusStage(this.selectedIndex);
+    });
+    this.detailEl.replaceChildren(title, explanation, term, action);
+  }
+
+  private placeOverviewCamera(width: number, animate: boolean): void {
+    const compact = width < 620;
+    const wide = width > 760;
+    const target = new THREE.Vector3(compact ? 2.2 : 0, 0, 0);
+    const position = new THREE.Vector3(
+      0,
+      compact ? 9.6 : wide ? 7.1 : 7.8,
+      compact ? 12.8 : wide ? 10.8 : 12.3,
+    );
+    this.moveCamera(position, target, animate);
+  }
+
+  private placeFocusedCamera(index: number, animate: boolean): void {
+    const stagePosition = this.stagePositions[index];
+    if (!stagePosition) return;
+    const compact = (this.container.getBoundingClientRect().width || 600) < 620;
+    const target = stagePosition.clone().add(new THREE.Vector3(0, 0.08, 0));
+    const position = stagePosition.clone().add(new THREE.Vector3(compact ? 1.2 : 0.5, compact ? 3.4 : 2.8, compact ? 5.5 : 4.5));
+    this.moveCamera(position, target, animate);
+  }
+
+  private moveCamera(position: THREE.Vector3, target: THREE.Vector3, animate: boolean): void {
+    if (!this.camera || !this.orbit) return;
+    if (!animate) {
+      this.camera.position.copy(position);
+      this.orbit.target.copy(target);
+      this.camera.lookAt(target);
+      this.cameraMoving = false;
+      this.orbit.enabled = true;
+      return;
+    }
+    this.cameraFrom.copy(this.camera.position);
+    this.cameraTo.copy(position);
+    this.targetFrom.copy(this.orbit.target);
+    this.targetTo.copy(target);
+    this.cameraMoveStartedAt = performance.now();
+    this.cameraMoving = true;
+    this.orbit.enabled = false;
+  }
+
   private playJourney(): void {
     if (!this.threeRenderer || this.journeyRunning) return;
+    if (this.focused) this.exitFocus(false);
     this.journeyRunning = true;
     this.journeyPaused = false;
     this.journeyElapsed = 0;
@@ -330,10 +414,7 @@ export class ArchitectureViz extends BaseVisualization {
     const hit = this.raycaster.intersectObjects(this.stageViews.map((view) => view.mesh), false)[0];
     const index = hit?.object.userData.stageIndex;
     if (typeof index === "number") {
-      this.journeyRunning = false;
-      this.journeyPaused = false;
-      this.setVisualizationStatus("idle");
-      this.selectStage(index);
+      this.focusStage(index);
     }
   }
 
@@ -341,6 +422,17 @@ export class ArchitectureViz extends BaseVisualization {
     if (!this.threeRenderer || !this.scene3d || !this.camera) return;
     const dt = this.lastFrame ? now - this.lastFrame : 16;
     this.lastFrame = now;
+    if (this.cameraMoving && this.camera && this.orbit) {
+      const progress = Math.min(1, (now - this.cameraMoveStartedAt) / 680);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      this.camera.position.lerpVectors(this.cameraFrom, this.cameraTo, eased);
+      this.orbit.target.lerpVectors(this.targetFrom, this.targetTo, eased);
+      this.camera.lookAt(this.orbit.target);
+      if (progress >= 1) {
+        this.cameraMoving = false;
+        this.orbit.enabled = true;
+      }
+    }
     if (this.journeyRunning && !this.journeyPaused && this.stagePositions.length) {
       this.journeyElapsed = now - this.journeyStartedAt;
       const segmentMs = 900;
