@@ -3,8 +3,9 @@
 The input text is drawn as a long candy/cake bar. A "knife" line comes down to
 CUT the bar into token pieces; each piece then BOUNCES into position
 (easeOutBounce) with a different color. A "text" select lets the user pick one
-of three sample sentences. The token count and a short BPE note are displayed
-at the bottom.
+of three sample sentences, and an HTML text input (positioned over the canvas)
+lets the user type their own text. The token count and a short BPE note are
+displayed at the bottom.
 */
 
 import { BaseVisualization } from "@/visualizations/BaseVisualization";
@@ -22,42 +23,14 @@ interface TokenDef {
   start: number;
 }
 
-interface TextSample {
-  source: string;
-  tokens: TokenDef[];
-}
-
-/** Predefined tokenization (hardcoded splits, not from the API). */
-const TEXT_SAMPLES: TextSample[] = [
-  {
-    source: "我爱人工智能",
-    tokens: [
-      { text: "我", start: 0 },
-      { text: "爱", start: 1 },
-      { text: "人工", start: 2 },
-      { text: "智能", start: 4 },
-    ],
-  },
-  {
-    source: "Transformer is powerful",
-    tokens: [
-      { text: "Transform", start: 0 },
-      { text: "er", start: 9 },
-      { text: " is", start: 11 },
-      { text: " power", start: 14 },
-      { text: "ful", start: 20 },
-    ],
-  },
-  {
-    source: "今天天气真好",
-    tokens: [
-      { text: "今天", start: 0 },
-      { text: "天气", start: 2 },
-      { text: "真", start: 4 },
-      { text: "好", start: 5 },
-    ],
-  },
+/** Preset example sentences offered by the "text" select control. */
+const TEXT_PRESETS: string[] = [
+  "我爱人工智能",
+  "Transformer is powerful",
+  "今天天气真好",
 ];
+
+const DEFAULT_TEXT = "我爱人工智能";
 
 /** Color palette cycled across token boxes. */
 const TOKEN_PALETTE: string[] = [
@@ -73,36 +46,110 @@ const KNIFE_MS = 320;
 const BOUNCE_MS = 600;
 
 export class TokenizerViz extends BaseVisualization {
+  private textInput: HTMLInputElement | null = null;
   /** Knife progress: 0 = up high, 1 = cut into the bar. */
   private knife = { progress: 0 };
   /** Per-token bounce state: scale 0 -> 1 (eased by easeOutBounce). */
   private tokenScales: number[] = [];
   private cutGen = 0;
+  /** Current input text being tokenized. */
+  private currentText: string = DEFAULT_TEXT;
+  /** Tokens produced by the BPE-like tokenizer. */
+  private tokens: TokenDef[] = [];
 
   onMount(): void {
+    // HTML text input overlaid at the top of the canvas container.
+    this.textInput = document.createElement("input");
+    this.textInput.type = "text";
+    this.textInput.value = this.currentText;
+    this.textInput.placeholder = "输入文本进行分词...";
+    this.textInput.setAttribute("aria-label", "输入要进行分词的文本");
+    this.textInput.style.cssText =
+      "position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:10;width:300px;padding:8px 12px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:14px;outline:none;";
+    this.container.style.position = "relative";
+    this.container.appendChild(this.textInput);
+    this.textInput.addEventListener("input", () => {
+      this.currentText = this.textInput!.value;
+      this.tokenize();
+      this.playCutAnimation();
+    });
+
+    // Tokenize the default/preset text and start the animation.
+    this.tokenize();
     this.playCutAnimation();
   }
 
-  onControlChange(_key: string, _value: number): void {
+  onControlChange(key: string, _value: number): void {
+    if (key === "text") {
+      // The "text" select picks a preset example. Sync the text input so the
+      // two controls stay consistent, then re-tokenize and re-run.
+      const idx = Math.max(0, Math.min(TEXT_PRESETS.length - 1, Math.floor(_value)));
+      this.currentText = TEXT_PRESETS[idx];
+      if (this.textInput) this.textInput.value = this.currentText;
+    }
+    this.tokenize();
     this.playCutAnimation();
   }
 
-  onUnmount(): void {
+  override onUnmount(): void {
+    this.textInput?.remove();
+    this.textInput = null;
     this.renderer.clearAnimations();
   }
 
-  private get sampleIndex(): number {
-    const v = Math.floor(this.controls["text"] ?? 0);
-    return Math.max(0, Math.min(TEXT_SAMPLES.length - 1, v));
+  /** Run the BPE-like heuristic tokenizer over the current text. */
+  private tokenize(): void {
+    const text = this.currentText || DEFAULT_TEXT;
+    this.tokens = [];
+    // Simple heuristic tokenizer:
+    // - Chinese characters: try to merge adjacent chars into 2-char pairs
+    // - English/digits: split on spaces, then subword split for long words
+    let i = 0;
+    while (i < text.length) {
+      const ch = text[i];
+      if (/[\u4e00-\u9fff]/.test(ch)) {
+        // Chinese: try to merge with next char
+        if (i + 1 < text.length && /[\u4e00-\u9fff]/.test(text[i + 1])) {
+          this.tokens.push({ text: text.substring(i, i + 2), start: i });
+          i += 2;
+        } else {
+          this.tokens.push({ text: ch, start: i });
+          i += 1;
+        }
+      } else if (/\s/.test(ch)) {
+        i += 1; // skip spaces
+      } else {
+        // English/digits: collect until space or Chinese
+        let j = i;
+        while (j < text.length && !/[\u4e00-\u9fff]/.test(text[j]) && !/\s/.test(text[j])) {
+          j++;
+        }
+        const word = text.substring(i, j);
+        // Subword split for long words (>4 chars): split into pairs
+        if (word.length > 4) {
+          for (let k = 0; k < word.length; k += 2) {
+            const end = Math.min(k + 2, word.length);
+            this.tokens.push({ text: word.substring(k, end), start: i + k });
+          }
+        } else {
+          this.tokens.push({ text: word, start: i });
+        }
+        i = j;
+      }
+    }
+    // Guarantee at least one token so the layout never collapses.
+    if (this.tokens.length === 0) {
+      this.tokens.push({ text: text, start: 0 });
+    }
   }
 
-  /** Play the knife-cut + bounce animation for the current sample. */
+  /** Play the knife-cut + bounce animation for the current tokens. */
   private playCutAnimation(): void {
     const gen = ++this.cutGen;
     this.renderer.clearAnimations();
     this.setVisualizationStatus("running");
-    const sample = TEXT_SAMPLES[this.sampleIndex];
-    this.tokenScales = sample.tokens.map(() => 0);
+    const tokens = this.tokens;
+    this.tokenScales = tokens.map(() => 0);
     this.knife.progress = 0;
     this.render();
 
@@ -113,7 +160,7 @@ export class TokenizerViz extends BaseVisualization {
       if (gen !== this.cutGen) return;
       this.render();
       // Stagger the bounce-in of each token piece.
-      sample.tokens.forEach((_, i) => {
+      tokens.forEach((_, i) => {
         const scaleState = { v: 0 };
         const bounce = new Tween(scaleState, { v: 1 }, BOUNCE_MS, Easing.easeOutBounce);
         bounce.setDelay(i * 120);
@@ -124,7 +171,7 @@ export class TokenizerViz extends BaseVisualization {
         bounce.onComplete(() => {
           if (gen !== this.cutGen) return;
           this.tokenScales[i] = 1;
-          if (i === sample.tokens.length - 1) {
+          if (i === tokens.length - 1) {
             this.setVisualizationStatus("completed");
           }
           this.render();
@@ -139,7 +186,8 @@ export class TokenizerViz extends BaseVisualization {
     this.scene.clear();
     const w = this.width;
     const h = this.height;
-    const sample = TEXT_SAMPLES[this.sampleIndex];
+    const tokens = this.tokens;
+    const source = this.currentText || DEFAULT_TEXT;
 
     // --- Title ---
     const title = new Text("分词器: 文本切分为 Token", w / 2, 30, 18);
@@ -170,18 +218,18 @@ export class TokenizerViz extends BaseVisualization {
     this.scene.add(bar);
 
     // Text inside the bar.
-    const inputText = new Text(sample.source, w / 2, barY, 20);
+    const inputText = new Text(source, w / 2, barY, 20);
     inputText.fillStyle = COLORS.text;
     inputText.fontWeight = "bold";
     this.scene.add(inputText);
 
     // --- Knife line coming down to cut the bar ---
     const usableW = barW - 48;
-    const charWidth = sample.source.length > 0 ? usableW / sample.source.length : 0;
+    const charWidth = source.length > 0 ? usableW / source.length : 0;
     const inputLeft = barLeft + 24;
 
     // Draw the knife at each token boundary (descending with progress).
-    sample.tokens.forEach((tok, i) => {
+    tokens.forEach((tok, i) => {
       if (i === 0) return; // no cut before the first token
       const cutX = inputLeft + tok.start * charWidth;
       const knifeTop = barY - barH / 2 - 70;
@@ -199,10 +247,10 @@ export class TokenizerViz extends BaseVisualization {
     });
 
     // --- Token boxes (bounce into position) ---
-    const tokenBoxW = Math.max(64, Math.min(110, (w - 60) / sample.tokens.length - 14));
+    const tokenBoxW = Math.max(64, Math.min(110, (w - 60) / tokens.length - 14));
     const tokenBoxH = 54;
     const gap = 14;
-    const totalRowW = sample.tokens.length * tokenBoxW + (sample.tokens.length - 1) * gap;
+    const totalRowW = tokens.length * tokenBoxW + (tokens.length - 1) * gap;
     const tokenY = 250;
     const startX = w / 2 - totalRowW / 2;
 
@@ -210,7 +258,7 @@ export class TokenizerViz extends BaseVisualization {
     tokensLabel.fillStyle = COLORS.textDim;
     this.scene.add(tokensLabel);
 
-    sample.tokens.forEach((tok, i) => {
+    tokens.forEach((tok, i) => {
       const bx = startX + i * (tokenBoxW + gap) + tokenBoxW / 2;
       const color = TOKEN_PALETTE[i % TOKEN_PALETTE.length];
       const scale = this.tokenScales[i] ?? 0;
@@ -264,7 +312,7 @@ export class TokenizerViz extends BaseVisualization {
 
     // --- Token count ---
     const countY = tokenY + tokenBoxH / 2 + 46;
-    const countText = new Text(`共 ${sample.tokens.length} 个 token`, w / 2, countY, 16);
+    const countText = new Text(`共 ${tokens.length} 个 token`, w / 2, countY, 16);
     countText.fillStyle = COLORS.highlight;
     countText.fontWeight = "bold";
     this.scene.add(countText);
@@ -276,19 +324,30 @@ export class TokenizerViz extends BaseVisualization {
 
     // --- Illustrative merge example at the bottom ---
     const exampleY = h - 40;
-    if (sample.source === "我爱人工智能") {
-      this.drawMergeExample(w / 2, exampleY, "人", "工", "人工");
-    } else if (sample.source === "Transformer is powerful") {
-      this.drawMergeExample(w / 2, exampleY, "Transform", "er", "Transformer");
-    } else {
-      this.drawMergeExample(w / 2, exampleY, "今", "天", "今天");
-    }
+    this.drawMergeExample(w / 2, exampleY, this.firstTokenPair());
 
     this.renderer.renderOnce();
   }
 
+  /** Pick a representative (a, b, merged) triple from the current tokens. */
+  private firstTokenPair(): { a: string; b: string; merged: string } {
+    const tokens = this.tokens;
+    // Prefer the first two tokens that are non-empty and merge cleanly.
+    for (let i = 0; i + 1 < tokens.length; i++) {
+      const a = tokens[i].text;
+      const b = tokens[i + 1].text;
+      if (a && b) return { a, b, merged: a + b };
+    }
+    // Fallback for a single token: split its characters.
+    const first = tokens[0]?.text ?? "我";
+    const a = first.charAt(0) || "我";
+    const b = first.length > 1 ? first.charAt(1) : "爱";
+    return { a, b, merged: a + b };
+  }
+
   /** Draw a small "a + b -> ab" merge illustration centered at (cx, cy). */
-  private drawMergeExample(cx: number, cy: number, a: string, b: string, merged: string): void {
+  private drawMergeExample(cx: number, cy: number, pair: { a: string; b: string; merged: string }): void {
+    const { a, b, merged } = pair;
     const boxW = 64;
     const boxH = 26;
     const gap = 14;

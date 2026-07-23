@@ -107,6 +107,14 @@ export class App {
       this.currentViz?.setControl(key, value);
     });
 
+    this.controlsPanel.onTextChange((key, text) => {
+      // For text-type controls, pass the text to the visualization if supported
+      const viz = this.currentViz as BaseVisualization & { onTextChange?: (key: string, text: string) => void };
+      if (viz.onTextChange) {
+        viz.onTextChange(key, text);
+      }
+    });
+
     this.controlsPanel.onPlaybackAction((action) => this.handlePlaybackAction(action));
   }
 

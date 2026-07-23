@@ -8,7 +8,14 @@ export interface ContentBlock {
   meta?: Record<string, string>;
 }
 
-export type ControlType = "slider" | "button" | "select" | "toggle";
+export type ControlType =
+  | "slider"
+  | "button"
+  | "select"
+  | "toggle"
+  | "text"
+  | "segmented"
+  | "stepper";
 
 export interface ControlConfig {
   key: string;
@@ -21,6 +28,14 @@ export interface ControlConfig {
   options: string[];
   value_labels?: string[];
   api_endpoint?: string;
+  /** Display unit suffix (e.g. "ms", "%", "×") */
+  unit?: string;
+  /** Human-readable description shown as a tooltip */
+  description?: string;
+  /** Group label for visual grouping of related controls */
+  group?: string;
+  /** Disable this control while the visualization is running */
+  disabled_while_running?: boolean;
 }
 
 export interface Page {

@@ -34,6 +34,9 @@ class ControlType(str, Enum):
     BUTTON = "button"
     SELECT = "select"
     TOGGLE = "toggle"
+    TEXT = "text"
+    SEGMENTED = "segmented"
+    STEPPER = "stepper"
 
 
 class ControlConfig(BaseModel):
@@ -46,10 +49,18 @@ class ControlConfig(BaseModel):
     max: float = 1.0
     step: float = 0.01
     default: float = 0.0
-    options: list[str] = Field(default_factory=list)  # for SELECT
+    options: list[str] = Field(default_factory=list)  # for SELECT / SEGMENTED
     value_labels: list[str] = Field(default_factory=list)  # for discrete sliders
     # Optional backend endpoint to call when the control value changes.
     api_endpoint: Optional[str] = None
+    # Display unit suffix (e.g. "ms", "%", "×")
+    unit: Optional[str] = None
+    # Human-readable description shown as a tooltip
+    description: Optional[str] = None
+    # Group label for visual grouping of related controls
+    group: Optional[str] = None
+    # Disable this control while the visualization is running
+    disabled_while_running: bool = False
 
 
 class Page(BaseModel):

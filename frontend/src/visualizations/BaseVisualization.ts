@@ -15,6 +15,8 @@ export abstract class BaseVisualization {
   protected canvas: HTMLCanvasElement;
   protected apiEndpoint: string | undefined;
   protected container: HTMLElement;
+  /** AbortController for cancelling API requests on destroy/re-run */
+  protected abortController: AbortController | null = null;
   private status: VisualizationStatus = "idle";
   private statusBeforePause: VisualizationStatus = "idle";
   private statusListeners = new Set<(status: VisualizationStatus) => void>();
@@ -69,6 +71,7 @@ export abstract class BaseVisualization {
   /** Stop rendering and clean up. */
   destroy(): void {
     this.onUnmount();
+    this.cancelRequests();
     this.resizeObserver?.disconnect();
     this.renderer.stop();
     this.mouseHandler?.destroy();
@@ -77,6 +80,24 @@ export abstract class BaseVisualization {
     this.controlValueListeners.clear();
     this.canvas.remove();
   }
+
+  /** Cancel any in-flight API requests. */
+  protected cancelRequests(): void {
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+  }
+
+  /** Get or create an AbortController for API requests. Previous one is aborted. */
+  protected getAbortSignal(): AbortSignal {
+    this.cancelRequests();
+    this.abortController = new AbortController();
+    return this.abortController.signal;
+  }
+
+  /** Called when a text-type control changes. Override in subclasses. */
+  onTextChange(_key: string, _text: string): void {}
 
   pause(): void {
     if (this.status === "paused" || this.status === "completed" || this.status === "error") return;

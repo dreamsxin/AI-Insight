@@ -54,8 +54,8 @@ export class SelfAttentionViz extends BaseVisualization {
 
   onControlChange(_key: string, _value: number): void {
     // The focus slider only affects local rendering; no re-fetch needed.
+    // Restart the animation cycle from the beginning for the new focus.
     if (this.apiResponse) this.startFlowLoop();
-    this.render();
   }
 
   onUnmount(): void {
@@ -86,18 +86,22 @@ export class SelfAttentionViz extends BaseVisualization {
     }
   }
 
-  /** Loop the flowing particles forever. */
+  /** Animate a single flow cycle, then hold "completed", pause, and loop. */
   private startFlowLoop(): void {
     const gen = ++this.flowGen;
     this.renderer.clearAnimations();
     this.setVisualizationStatus("running");
     this.flow.progress = 0;
+    this.render();
     const tw = new Tween(this.flow, { progress: 1 }, 1600, Easing.linear);
     tw.onUpdate(() => this.render());
     tw.onComplete(() => {
       if (gen !== this.flowGen) return;
-      tw.reset();
-      this.renderer.addTween(tw);
+      this.setVisualizationStatus("completed");
+      void this.waitForAnimation(2000).then(() => {
+        if (gen !== this.flowGen) return;
+        this.startFlowLoop();
+      });
     });
     this.renderer.addTween(tw);
   }

@@ -15,6 +15,8 @@ interface StageView {
   group: THREE.Group;
   mesh: THREE.Mesh<THREE.BoxGeometry, THREE.MeshStandardMaterial>;
   material: THREE.MeshStandardMaterial;
+  /** Bright wireframe outline shown only for the selected component. */
+  edges: THREE.LineSegments;
 }
 
 export const ARCHITECTURE_STAGES: Stage[] = [
@@ -221,8 +223,15 @@ export class ArchitectureViz extends BaseVisualization {
       const group = new THREE.Group();
       group.add(mesh);
       group.add(this.makeLabel(stage));
+      // Bright wireframe outline used to highlight the selected component.
+      const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(mesh.geometry),
+        new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 }),
+      );
+      edges.raycast = () => {}; // clicks hit the box mesh, not the outline
+      group.add(edges);
       this.scene3d!.add(group);
-      return { group, mesh, material };
+      return { group, mesh, material, edges };
     });
 
     this.connector = new THREE.LineSegments(
@@ -288,6 +297,10 @@ export class ArchitectureViz extends BaseVisualization {
       view.material.opacity = selected ? 1 : 0.72;
       view.material.transparent = !selected;
       view.group.scale.setScalar(selected ? 1.06 : 1);
+      // Bright border only on the selected component.
+      const edgeMat = view.edges.material as THREE.LineBasicMaterial;
+      edgeMat.opacity = selected ? 1 : 0;
+      view.edges.visible = selected;
     });
     const stage = ARCHITECTURE_STAGES[safeIndex];
     if (this.detailEl) {

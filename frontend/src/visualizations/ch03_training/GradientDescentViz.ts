@@ -89,9 +89,14 @@ export class GradientDescentViz extends BaseVisualization {
   }
 
   private animateStep(): void {
-    if (!this.isAnimating || this.stepIdx >= this.trajectory.length - 1) {
-      if (!this.isAnimating || this.trajectory.length === 0) return;
-      void this.waitForAnimation(1500).then(() => {
+    if (!this.isAnimating || this.trajectory.length === 0) return;
+
+    // Completion: the ball reached the last trajectory point or is near the
+    // loss minimum. Hold the "completed" state briefly, then loop back to
+    // "running" and restart the descent.
+    if (this.stepIdx >= this.trajectory.length - 1 || this.currentLoss < 0.01) {
+      this.setVisualizationStatus("completed");
+      void this.waitForAnimation(2000).then(() => {
         if (!this.isAnimating) return;
         this.trail = [];
         this.stepIdx = 0;
@@ -100,6 +105,7 @@ export class GradientDescentViz extends BaseVisualization {
         this.ball.loss = this.trajectory[0].loss;
         this.currentLoss = this.ball.loss;
         this.renderScene();
+        this.setVisualizationStatus("running");
         this.animateStep();
       });
       return;
