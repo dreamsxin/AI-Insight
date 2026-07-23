@@ -104,4 +104,26 @@ describe("ControlsPanel", () => {
     expect(input.value).toBe("2");
     expect(panel.el.textContent).toContain("缩放");
   });
+
+  it("keeps segmented controls in sync with visualization changes", () => {
+    const panel = new ControlsPanel();
+    const config: ControlConfig = {
+      key: "mode",
+      label: "观察层次",
+      type: "segmented",
+      min: 0,
+      max: 2,
+      step: 1,
+      default: 0,
+      options: ["故事", "原理", "数学"],
+    };
+
+    panel.setControls([config], { mode: 0 });
+    panel.setControlValue("mode", 2);
+
+    const buttons = [...panel.el.querySelectorAll<HTMLButtonElement>(".segmented-btn")];
+    expect(buttons).toHaveLength(3);
+    expect(buttons[2].classList.contains("active")).toBe(true);
+    expect(buttons[0].classList.contains("active")).toBe(false);
+  });
 });

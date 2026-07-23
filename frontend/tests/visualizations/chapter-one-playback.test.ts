@@ -111,4 +111,25 @@ describe("chapter one playback", () => {
     expect(viz.getControls().x).toBe(6);
     viz.destroy();
   });
+
+  it("moves through story, principle, and math drilldown levels", () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(mockContext());
+    const viz = new ActivationViz(container(), [
+      button("run", "播放数字通过闸门"),
+      { key: "activation", label: "闸门", type: "select", min: 0, max: 3, step: 1, default: 2, options: ["Step", "Sigmoid", "ReLU", "Tanh"] },
+      { key: "mode", label: "层次", type: "segmented", min: 0, max: 2, step: 1, default: 0, options: ["故事", "原理", "数学"] },
+      slider("x", "输入", -6, 6, 0.5, 1),
+    ]);
+    viz.onMount();
+
+    expect(viz.getDrilldownDepth()).toBe(0);
+    viz.setControl("mode", 0);
+    expect(viz.getDrilldownDepth()).toBe(1);
+    viz.setControl("mode", 1);
+    expect(viz.getDrilldownDepth()).toBe(2);
+    viz.setControl("mode", 2);
+    expect(viz.getDrilldownDepth()).toBe(3);
+    expect(viz.getDrilldownPath()).toEqual(["激活函数总览", "单向闸门 ReLU", "内部原理", "数学曲线"]);
+    viz.destroy();
+  });
 });

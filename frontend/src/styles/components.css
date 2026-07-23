@@ -265,6 +265,54 @@
   overflow: hidden;
 }
 
+.drilldown-nav {
+  position: absolute;
+  z-index: 12;
+  top: 8px;
+  left: 10px;
+  right: 10px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.drilldown-link,
+.drilldown-current {
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drilldown-link {
+  padding: 4px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.drilldown-link:hover {
+  color: var(--accent);
+}
+
+.drilldown-current {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.drilldown-separator {
+  flex: 0 0 auto;
+  color: var(--border-strong);
+}
+
 .canvas-container--3d {
   border: 0;
   border-radius: 0;

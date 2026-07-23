@@ -31,3 +31,4 @@ import "./ch09_terms";
 // These ensure the registry is populated when the app starts.
 
 export { VIZ_REGISTRY, registerViz } from "./registry";
+export { DrilldownVisualization } from "./DrilldownVisualization";

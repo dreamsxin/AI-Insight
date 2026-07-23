@@ -324,7 +324,17 @@ export class ControlsPanel {
   setControlValue(key: string, value: number): void {
     const config = this.controlConfigs.get(key);
     const control = this.controlElements.get(key);
-    if (!config || !control || control instanceof HTMLButtonElement) return;
+    if (!config) return;
+
+    if (config.type === "segmented") {
+      const wrapper = this.grid?.querySelector(`[data-key="${key}"]`);
+      wrapper?.querySelectorAll<HTMLButtonElement>(".segmented-btn").forEach((button, index) => {
+        button.classList.toggle("active", index === Math.round(value));
+      });
+      return;
+    }
+
+    if (!control || control instanceof HTMLButtonElement) return;
 
     control.value = String(value);
     if (control instanceof HTMLInputElement) {
