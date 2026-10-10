@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="Hermes 会话与运行时：会话创建 → 上下文绑定 → 工具共享 → 记忆压缩 → 跨入口续聊，逐屏动画演示（共享的不是界面，而是运行时）">
+<title>Hermes 会话与运行时 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14;
+    --bg1: #0c1322;
+    --ink: #e8eefc;
+    --dim: #8b96ad;
+    --cyan: #22d3ee;
+    --purple: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #fb7185;
+    --card: rgba(255,255,255,.05);
+    --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+
+  /* ===== 右侧进度圆点 ===== */
+  .dots {
+    position: fixed; right: 9px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 11px; z-index: 60;
+  }
+  .dots button {
+    width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0;
+    background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s;
+  }
+  .dots button.on {
+    background: var(--cyan); transform: scale(1.4);
+    box-shadow: 0 0 10px rgba(34,211,238,.85);
+  }
+
+  /* ===== 整屏骨架 ===== */
+  .screen {
+    position: relative; z-index: 1;
+    height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always;
+    overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before {
+    content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%);
+  }
+  .s-hero    { --glow: rgba(34,211,238,.10); }
+  .s-create  { --glow: rgba(34,211,238,.12); }
+  .s-bind    { --glow: rgba(52,211,153,.10); }
+  .s-tools   { --glow: rgba(167,139,250,.12); }
+  .s-mem     { --glow: rgba(251,191,36,.09); }
+  .s-cross   { --glow: rgba(52,211,153,.10); }
+  .s-sum     { --glow: rgba(244,114,182,.08); }
+
+  .scr-head {
+    width: 100%; max-width: 640px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .step-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07);
+    padding: 4px 13px; border-radius: 999px;
+  }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code {
+    color: var(--cyan); font-size: .92em;
+    background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px;
+  }
+  .code-chip {
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage {
+    position: relative; z-index: 1; flex: 1; min-height: 0;
+    width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 13px;
+  }
+  .scr-foot {
+    width: 100%; max-width: 640px; text-align: center;
+    font-size: 12px; line-height: 1.65; color: var(--dim);
+  }
+  .scr-foot b { color: #c3cde2; }
+
+  /* ===== 通用入场动画（进入屏幕时播放，离开重置） ===== */
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; }
+  .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; }
+  .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; }
+  .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  /* ===== 通用小组件 ===== */
+  .meta-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.65; }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(16px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+  .sess-badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 11px; color: var(--cyan);
+    background: rgba(34,211,238,.08); border: 1px solid rgba(34,211,238,.4);
+    padding: 6px 13px; border-radius: 999px;
+    opacity: 0;
+  }
+  .sess-badge::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 8px var(--green);
+  }
+
+  /* ============ 屏1 · 封面 ============ */
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker {
+    font-size: 10px; letter-spacing: .28em; color: var(--dim);
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 6px 16px; border-radius: 999px;
+  }
+  h1 { font-size: clamp(36px, 10vw, 58px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad {
+    background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node {
+    font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line); white-space: nowrap;
+  }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i {
+    position: absolute; top: 50%; transform: translateY(-50%); left: 0;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan); opacity: 0;
+  }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint {
+    position: absolute; bottom: calc(16px + env(safe-area-inset-bottom));
+    left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em;
+  }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* ============ 屏2 · STEP 1 会话创建 ============ */
+  .sess-card {
+    width: 100%; max-width: 560px; background: #0b1424;
+    border: 1px solid rgba(34,211,238,.4); border-radius: 14px; overflow: hidden;
+    font-family: var(--mono); font-size: 12.5px;
+  }
+  .sess-head {
+    display: flex; align-items: center; gap: 7px;
+    padding: 8px 14px; font-size: 10px; letter-spacing: .12em; color: var(--dim);
+    border-bottom: 1px solid var(--line); background: rgba(255,255,255,.03);
+  }
+  .sess-head::before {
+    content: ""; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--cyan); box-shadow: 0 0 8px var(--cyan);
+  }
+  .srow {
+    display: grid; grid-template-columns: 92px 1fr; gap: 10px;
+    padding: 8px 14px; color: #9fb3d1;
+    opacity: 0;
+  }
+  .srow .k { color: var(--dim); font-size: 11px; }
+  .srow .v { color: #e8eefc; }
+  .srow .v b { color: var(--amber); font-weight: 700; }
+  .srow .v .st { color: var(--green); }
+  .srow .v .st::before { content: "● "; }
+  .s-create.active .srow { animation: msgIn .45s ease both; }
+  .s-create.active .srow:nth-child(2) { animation-delay: .5s; }
+  .s-create.active .srow:nth-child(3) { animation-delay: .9s; }
+  .s-create.active .srow:nth-child(4) { animation-delay: 1.3s; }
+  .s-create.active .srow:nth-child(5) { animation-delay: 1.7s; }
+  .s-create.active .sess-badge { animation: rise .6s ease 2.2s both, sessGlow 2.4s ease-in-out 2.8s infinite; }
+  @keyframes sessGlow { 0%,100% { box-shadow: 0 0 0 rgba(34,211,238,0) } 50% { box-shadow: 0 0 18px rgba(34,211,238,.35) } }
+
+  /* ============ 屏3 · STEP 2 上下文绑定 ============ */
+  .msg-stack { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 560px; }
+  .msg {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 9px 14px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 12px; line-height: 1.6; color: #c3cde2;
+    opacity: 0;
+  }
+  .msg .role {
+    flex: none; font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
+    padding: 2px 8px; border-radius: 999px; margin-top: 1px;
+  }
+  .r-sys  { color: var(--purple); background: rgba(167,139,250,.1); border: 1px solid rgba(167,139,250,.4); }
+  .r-user { color: var(--cyan); background: rgba(34,211,238,.1); border: 1px solid rgba(34,211,238,.4); }
+  .r-asst { color: var(--green); background: rgba(52,211,153,.1); border: 1px solid rgba(52,211,153,.4); }
+  .s-bind.active .m-sys { animation: msgIn .5s ease .4s both; }
+  .s-bind.active .m-his { animation: msgIn .5s ease .9s both; }
+  .s-bind.active .m-new { animation: msgIn .5s ease 1.4s both; }
+  .s-bind.active .sess-badge { animation: rise .6s ease 2s both, sessGlow 2.4s ease-in-out 2.6s infinite; }
+
+  /* ============ 屏4 · STEP 3 工具清单共享 ============ */
+  .tool-grid {
+    display: flex; flex-wrap: wrap; gap: 9px; justify-content: center;
+    width: 100%; max-width: 560px;
+  }
+  .tool-chip {
+    font-family: var(--mono); font-size: 12px; padding: 9px 14px;
+    border-radius: 12px; background: var(--card); border: 1px solid var(--line);
+    color: #c3cde2; opacity: 0;
+  }
+  .tool-chip b { color: #c4b5fd; font-weight: 700; }
+  .s-tools.active .tool-chip { animation: msgIn .45s ease both, chipGlow 2.8s ease-in-out infinite; }
+  .s-tools.active .tool-chip:nth-child(1) { animation-delay: .4s, 1.4s; }
+  .s-tools.active .tool-chip:nth-child(2) { animation-delay: .6s, 1.9s; }
+  .s-tools.active .tool-chip:nth-child(3) { animation-delay: .8s, 2.4s; }
+  .s-tools.active .tool-chip:nth-child(4) { animation-delay: 1s, 2.9s; }
+  .s-tools.active .tool-chip:nth-child(5) { animation-delay: 1.2s, 1.7s; }
+  .s-tools.active .tool-chip:nth-child(6) { animation-delay: 1.4s, 2.2s; }
+  @keyframes chipGlow {
+    0%,100% { box-shadow: 0 0 0 rgba(167,139,250,0); }
+    50% { box-shadow: 0 0 16px rgba(167,139,250,.3); }
+  }
+
+  /* ============ 屏5 · STEP 4 记忆与压缩 ============ */
+  .ctx-rows { display: flex; flex-direction: column; gap: 7px; width: 100%; max-width: 560px; }
+  .ctx-row {
+    display: grid; grid-template-columns: 74px 1fr 76px;
+    align-items: center; gap: 10px;
+    padding: 7px 12px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line);
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    opacity: 0;
+  }
+  .ctx-row .bar { height: 8px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .ctx-row .bar i { display: block; height: 100%; width: 0; border-radius: 99px; background: var(--amber); }
+  .ctx-row .val { text-align: right; color: #fde68a; }
+  .s-mem.active .ctx-row { animation: msgIn .5s ease both; }
+  .s-mem.active .ctx-row .bar i { animation: barGrow 1s cubic-bezier(.25,1,.4,1) both; }
+  .s-mem.active .ctx-row:nth-child(1) { animation-delay: .4s; }
+  .s-mem.active .ctx-row:nth-child(1) .bar i { animation-delay: .5s; }
+  .s-mem.active .ctx-row:nth-child(2) { animation-delay: .9s; }
+  .s-mem.active .ctx-row:nth-child(2) .bar i { animation-delay: 1s; }
+  .s-mem.active .ctx-row:nth-child(3) { animation-delay: 1.4s; }
+  .s-mem.active .ctx-row:nth-child(3) .bar i { animation-delay: 1.5s; }
+  @keyframes barGrow { to { width: var(--w); } }
+  .compress-arrow { font-size: 11px; color: var(--dim); display: flex; align-items: center; gap: 7px; letter-spacing: .06em; }
+  .s-mem.active .compress-arrow span { animation: bob 1.4s ease-in-out infinite; }
+  .ctx-row.compact { border-color: rgba(52,211,153,.45); }
+  .ctx-row.compact .bar i { background: var(--green); }
+  .ctx-row.compact .val { color: #6ee7b7; }
+  .s-mem.active .ctx-row.compact { animation: msgIn .55s ease 2.4s both; }
+  .s-mem.active .ctx-row.compact .bar i { animation: barGrow .9s cubic-bezier(.25,1,.4,1) 2.6s both; }
+
+  /* ============ 屏6 · STEP 5 跨入口续聊 ============ */
+  .chat-list { display: flex; flex-direction: column; gap: 9px; width: 100%; max-width: 560px; }
+  .chat {
+    padding: 10px 14px; font-size: 12.5px; line-height: 1.65;
+    border-radius: 14px; opacity: 0;
+  }
+  .chat .src {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em;
+    margin-bottom: 4px; opacity: .8;
+  }
+  .chat-user { background: var(--card); border: 1px solid var(--line); border-radius: 14px 14px 14px 4px; }
+  .chat-bot  { background: rgba(34,211,238,.06); border-left: 3px solid var(--cyan); border-radius: 4px 14px 14px 4px; color: #d7e2f5; }
+  .chat-bot code { color: #7dd3fc; font-size: .92em; }
+  .chat .src-c { color: var(--cyan); }
+  .chat .src-g { color: var(--green); }
+  .s-cross.active .chat:nth-child(1) { animation: msgIn .5s ease .4s both; }
+  .s-cross.active .chat:nth-child(2) { animation: msgIn .5s ease 1s both; }
+  .s-cross.active .chat:nth-child(3) { animation: msgIn .5s ease 1.6s both; }
+  .s-cross.active .chat:nth-child(4) { animation: msgIn .5s ease 2.2s both, glowBot 2.4s ease-in-out 2.8s infinite; }
+  @keyframes glowBot { 0%,100% { box-shadow: 0 0 0 rgba(34,211,238,0) } 50% { box-shadow: 0 0 20px rgba(34,211,238,.3) } }
+  .s-cross.active .sess-badge { animation: rise .6s ease 2.8s both; }
+
+  /* ============ 屏7 · 总结 ============ */
+  .sum-flow {
+    display: flex; gap: 4px; align-items: center; justify-content: center;
+    flex-wrap: wrap; font-size: 10px; color: var(--dim);
+  }
+  .sum-flow span {
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv {
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px 15px;
+  }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote {
+    font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center;
+    line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .replay {
+    font-size: 12.5px; color: #06121c; background: var(--cyan);
+    border: none; padding: 10px 26px; border-radius: 999px;
+    font-weight: 700; cursor: pointer; letter-spacing: .06em;
+  }
+  .replay:active { transform: scale(.96); }
+  .series-badge {
+    position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px;
+    font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em;
+  }
+
+  /* ============ 通用关键帧 ============ */
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+
+  /* ============ 兜底与无障碍 ============ */
+  @media (max-height: 560px) {
+    .screen { overflow-y: auto; justify-content: flex-start; }
+    .stage { flex: 0 0 auto; padding: 14px 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition: none !important; scroll-behavior: auto !important;
+    }
+    .rv, .srow, .msg, .tool-chip, .ctx-row, .chat, .sess-badge {
+      opacity: 1 !important; transform: none !important; filter: none !important;
+    }
+    .ctx-row .bar i { width: var(--w) !important; }
+    .ctx-row:nth-child(n+2):not(.compact) { opacity: .75 !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面" aria-label="封面"></button>
+  <button title="STEP 1 会话创建" aria-label="会话创建"></button>
+  <button title="STEP 2 上下文绑定" aria-label="上下文绑定"></button>
+  <button title="STEP 3 工具清单共享" aria-label="工具清单共享"></button>
+  <button title="STEP 4 记忆与压缩" aria-label="记忆与压缩"></button>
+  <button title="STEP 5 跨入口续聊" aria-label="跨入口续聊"></button>
+  <button title="总结" aria-label="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">HERMES AGENT 对象拆解 · 02</div>
+    <h1 class="rv d2">Hermes<br><span class="grad">会话与运行时</span></h1>
+    <p class="hero-sub rv d3">共享的不是界面，而是运行时 · 逐屏动画演示</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">💬 会话</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">🔧 工具</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">🧠 记忆</span>
+    </div>
+    <p class="hero-quote rv d5">「界面只是门面，运行时才是大脑的家」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 会话创建 -->
+<section class="screen s-create">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>会话创建</div>
+    <h2 class="rv d1">会话创建</h2>
+    <p class="scr-desc rv d2">任务通过适配层的第一件事：创建会话 —— 之后所有状态都挂在它身上</p>
+    <div class="code-chip rv d2">session = <b>create_session</b>(entry="cli")</div>
+  </header>
+  <div class="stage">
+    <div class="sess-card rv d2">
+      <div class="sess-head">session · 运行时档案袋</div>
+      <div class="srow"><span class="k">session_id</span><span class="v"><b>s_7f3a</b></span></div>
+      <div class="srow"><span class="k">entry</span><span class="v">cli（从哪扇门进来的）</span></div>
+      <div class="srow"><span class="k">created</span><span class="v">14:02:11</span></div>
+      <div class="srow"><span class="k">status</span><span class="v"><span class="st">running</span></span></div>
+    </div>
+    <div class="sess-badge">session s_7f3a · 一切状态的挂载点</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 会话是「<b>档案袋</b>」：入口是谁、聊到哪了、用了什么工具，全记在这一个 ID 下</footer>
+</section>
+
+<!-- 屏3 · STEP 2 上下文绑定 -->
+<section class="screen s-bind">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>上下文绑定</div>
+    <h2 class="rv d1">上下文绑定</h2>
+    <p class="scr-desc rv d2">会话创建后立刻绑定上下文 —— 把 system 人设、历史消息、新任务装进 <code>messages</code></p>
+    <div class="code-chip rv d2">messages = [system, ...session.<b>history</b>, user_msg]</div>
+  </header>
+  <div class="stage">
+    <div class="msg-stack">
+      <div class="msg m-sys"><span class="role r-sys">system</span><span>你是 Hermes，专业、安全、合规的自动化助手……</span></div>
+      <div class="msg m-his"><span class="role r-asst">history</span><span>上一轮：已分析 auth 模块结构，找到 3 个候选函数……</span></div>
+      <div class="msg m-new"><span class="role r-user">user</span><span>处理用户登录的函数在哪？</span></div>
+    </div>
+    <div class="sess-badge">绑定到 session s_7f3a</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 「绑定」不是复制 —— 换一扇门进来的任务，绑定的可以是<b>同一个档案袋</b></footer>
+</section>
+
+<!-- 屏4 · STEP 3 工具清单共享 -->
+<section class="screen s-tools">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>工具清单共享</div>
+    <h2 class="rv d1">工具清单共享</h2>
+    <p class="scr-desc rv d2">不管你从 CLI 还是微信进来，Agent 手里的工具箱是<b>同一个</b></p>
+    <div class="code-chip rv d2">tools = [bash, read_file, …] · <b>一次注册，全局可用</b></div>
+  </header>
+  <div class="stage">
+    <div class="tool-grid">
+      <span class="tool-chip"><b>bash</b> 执行命令</span>
+      <span class="tool-chip"><b>read_file</b> 读文件</span>
+      <span class="tool-chip"><b>edit_file</b> 改文件</span>
+      <span class="tool-chip"><b>grep</b> 文本搜索</span>
+      <span class="tool-chip"><b>codegraph_query</b> 代码图谱</span>
+      <span class="tool-chip"><b>browser_*</b> 浏览器操作</span>
+    </div>
+    <div class="meta-note rv d5">工具 schema 只注册一次 —— 所有入口的任务共用同一份清单</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 工具不认入口 —— 同一个 codegraph_query，终端能用，<b>微信里一样能用</b></footer>
+</section>
+
+<!-- 屏5 · STEP 4 记忆与压缩 -->
+<section class="screen s-mem">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>记忆与压缩</div>
+    <h2 class="rv d1">记忆与压缩</h2>
+    <p class="scr-desc rv d2">历史越滚越长，运行时的另一项工作就是压缩 —— 昂贵的上下文只留精华</p>
+    <div class="code-chip rv d2">if tokens &gt; LIMIT: history = <b>summarize</b>(history)</div>
+  </header>
+  <div class="stage">
+    <div class="ctx-rows">
+      <div class="ctx-row"><span>第 1 轮</span><span class="bar"><i style="--w:18%"></i></span><span class="val">1.2k tok</span></div>
+      <div class="ctx-row"><span>第 2 轮</span><span class="bar"><i style="--w:44%"></i></span><span class="val">2.8k tok</span></div>
+      <div class="ctx-row"><span>第 3 轮</span><span class="bar"><i style="--w:76%"></i></span><span class="val">4.6k tok</span></div>
+    </div>
+    <div class="compress-arrow rv d4">触发上限 · 运行时自动压缩<span>⌄</span></div>
+    <div class="ctx-rows">
+      <div class="ctx-row compact"><span>压缩后</span><span class="bar"><i style="--w:26%"></i></span><span class="val">1.4k tok</span></div>
+    </div>
+    <div class="meta-note rv d6">摘要替换原文 —— 关键结论保留，过程细节让路</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 压缩发生在运行时 —— 五个入口共享的是<b>同一条</b>被压过的记忆，而不是五份</footer>
+</section>
+
+<!-- 屏6 · STEP 5 跨入口续聊 -->
+<section class="screen s-cross">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>跨入口续聊</div>
+    <h2 class="rv d1">跨入口续聊</h2>
+    <p class="scr-desc rv d2">运行时共享的直观效果：换个门，<b>接着聊</b></p>
+    <div class="code-chip rv d2">session s_7f3a · entry: cli → gateway</div>
+  </header>
+  <div class="stage">
+    <div class="chat-list">
+      <div class="chat chat-user"><span class="src src-c">🖥️ CLI · 14:02</span><br>帮我分析 auth 模块里处理用户登录的函数</div>
+      <div class="chat chat-bot"><span class="src src-c">🤖 Hermes</span><br>已定位到候选：<code>auth/login.py</code> 中的登录处理逻辑……</div>
+      <div class="chat chat-user"><span class="src src-g">💬 微信 · 14:05</span><br>刚才那个函数具体在哪一行？</div>
+      <div class="chat chat-bot"><span class="src src-g">🤖 Hermes</span><br><code>auth/login.py:42</code> 的 <code>handle_login()</code> —— 不用重复上下文，直接回答</div>
+    </div>
+    <div class="sess-badge">同一个 session s_7f3a · 记忆无缝衔接</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 换设备、换平台、换时间 —— 只要 <b>session 还在，记忆就在</b></footer>
+</section>
+
+<!-- 屏7 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">运行时即共享层</h2>
+    <p class="scr-desc rv d2">会话创建 → 上下文绑定 → 工具共享 → 记忆压缩 → 跨门续聊</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>会话创建</span><i>→</i><span>上下文绑定</span><i>→</i><span>工具共享</span><i>→</i><span>记忆压缩</span><i>→</i><span>跨门续聊</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">🧾</div>
+        <div><b>会话即档案</b><p>一个 session ID 挂起全部状态：入口、历史、工具轨迹、压缩快照</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🧰</div>
+        <div><b>运行时即共享层</b><p>工具与上下文只装一份，五个入口复用 —— 这是「统一大脑」的底层支撑</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">♾️</div>
+        <div><b>记忆不随门切换</b><p>压缩后的记忆全局生效：CLI 里聊过的，微信里接着聊，无需自我介绍</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“共享的不是界面，<br>而是会话、工具与记忆。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">HERMES AGENT 对象拆解 · 02 / 会话与运行时篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else {
+    secs.forEach((s) => s.classList.add('active'));
+  }
+
+  dots.forEach((d, i) => d.addEventListener('click', () => {
+    secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+</script>
+</body>
+</html>

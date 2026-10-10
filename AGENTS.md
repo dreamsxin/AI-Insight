@@ -68,8 +68,8 @@ Frontend (run from `frontend/`):
 - Trained models persist as individual JSON files under
   `backend/app/data/saved_models/` (no database). The directory is git-ignored and
   created at runtime by `services/model_store.py`; don't commit model files.
-- `docs/*.html` is a series of standalone animated demo pages (hermes-mcp /
-  llm-prompt / agent-loop / mcp-cdp `*-animation.html`), not part of the Vite
+- `docs/*-animation.html` is a series of standalone animated demo pages
+  (Hermes 拆解系列 ·01–03, AI 运作原理拆解 ·04–06), not part of the Vite
   app — each is a self-contained single file (no build step, no external deps)
   using full-screen CSS scroll-snap sections where one animation segment plays
   per screen. Keep new demos in this same self-contained pattern; editing
