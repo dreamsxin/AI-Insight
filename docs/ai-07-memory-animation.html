@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="AI 记忆管理：模型天生失忆 → 短期记忆=上下文窗口 → 长期记忆=外部存储 → 写入时机 → 检索注入 → 压缩遗忘 → 三类记忆地图，逐屏动画演示（上下文是内存，记忆是磁盘）">
+<title>记忆管理 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14;
+    --bg1: #0c1322;
+    --ink: #e8eefc;
+    --dim: #8b96ad;
+    --cyan: #22d3ee;
+    --purple: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #fb7185;
+    --card: rgba(255,255,255,.05);
+    --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+
+  /* ===== 右侧进度圆点 ===== */
+  .dots {
+    position: fixed; right: 9px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 11px; z-index: 60;
+  }
+  .dots button {
+    width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0;
+    background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s;
+  }
+  .dots button.on {
+    background: var(--cyan); transform: scale(1.4);
+    box-shadow: 0 0 10px rgba(34,211,238,.85);
+  }
+
+  /* ===== 整屏骨架 ===== */
+  .screen {
+    position: relative; z-index: 1;
+    height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always;
+    overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before {
+    content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%);
+  }
+  .s-hero    { --glow: rgba(34,211,238,.10); }
+  .s-amnesia { --glow: rgba(251,113,133,.09); }
+  .s-short   { --glow: rgba(34,211,238,.12); }
+  .s-long    { --glow: rgba(52,211,153,.10); }
+  .s-write   { --glow: rgba(167,139,250,.12); }
+  .s-fetch   { --glow: rgba(34,211,238,.10); }
+  .s-compact { --glow: rgba(251,191,36,.09); }
+  .s-map     { --glow: rgba(167,139,250,.12); }
+  .s-sum     { --glow: rgba(244,114,182,.08); }
+
+  .scr-head {
+    width: 100%; max-width: 640px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .step-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07);
+    padding: 4px 13px; border-radius: 999px;
+  }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code {
+    color: var(--cyan); font-size: .92em;
+    background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px;
+  }
+  .code-chip {
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage {
+    position: relative; z-index: 1; flex: 1; min-height: 0;
+    width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 13px;
+  }
+  .scr-foot {
+    width: 100%; max-width: 640px; text-align: center;
+    font-size: 12px; line-height: 1.65; color: var(--dim);
+  }
+  .scr-foot b { color: #c3cde2; }
+
+  /* ===== 通用入场动画（进入屏幕时播放，离开重置） ===== */
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; }
+  .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; }
+  .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; }
+  .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  /* ===== 通用小组件 ===== */
+  .meta-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.65; }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(16px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+  .packet {
+    position: absolute; top: 50%; transform: translate(-50%,-50%);
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    padding: 4px 11px; border-radius: 999px; white-space: nowrap;
+    opacity: 0; z-index: 2;
+  }
+  .mini-node {
+    font-size: 12px; padding: 8px 12px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line); white-space: nowrap;
+  }
+
+  /* ============ 屏1 · 封面 ============ */
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker {
+    font-size: 10px; letter-spacing: .28em; color: var(--dim);
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 6px 16px; border-radius: 999px;
+  }
+  h1 { font-size: clamp(34px, 9vw, 54px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad {
+    background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node {
+    font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line); white-space: nowrap;
+  }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i {
+    position: absolute; top: 50%; transform: translateY(-50%); left: 0;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan); opacity: 0;
+  }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint {
+    position: absolute; bottom: calc(16px + env(safe-area-inset-bottom));
+    left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em;
+  }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* ============ 屏2 · STEP 1 天生失忆 ============ */
+  .chat-list { display: flex; flex-direction: column; gap: 9px; width: 100%; max-width: 560px; }
+  .chat {
+    padding: 10px 14px; font-size: 12.5px; line-height: 1.65;
+    border-radius: 14px; opacity: 0;
+  }
+  .chat .src {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em;
+    margin-bottom: 4px; opacity: .8;
+  }
+  .chat-user { background: var(--card); border: 1px solid var(--line); border-radius: 14px 14px 14px 4px; }
+  .chat-bot { background: rgba(34,211,238,.06); border-left: 3px solid var(--cyan); border-radius: 4px 14px 14px 4px; color: #d7e2f5; }
+  .s-amnesia.active .chat:nth-child(1) { animation: msgIn .5s ease .4s both; }
+  .s-amnesia.active .chat:nth-child(2) { animation: msgIn .5s ease 1.1s both; }
+  .s-amnesia.active .amn-note { animation: rise .6s ease 1.9s both; }
+  .amn-note {
+    font-family: var(--mono); font-size: 11.5px; color: var(--cyan);
+    opacity: 0; letter-spacing: .03em; text-align: center;
+  }
+
+  /* ============ 屏3 · STEP 2 短期记忆 ============ */
+  .ram-frame {
+    position: relative;
+    width: 100%; max-width: 560px; border-radius: 16px;
+    border: 2px solid rgba(34,211,238,.55);
+    box-shadow: 0 0 30px rgba(34,211,238,.16);
+    padding: 12px; background: #0b1424;
+  }
+  .ram-label {
+    position: absolute; top: -11px; left: 50%; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 10px; letter-spacing: .14em;
+    color: var(--cyan); background: var(--bg0);
+    border: 1px solid rgba(34,211,238,.4); border-radius: 999px;
+    padding: 2px 12px;
+  }
+  .ram-rows { display: flex; flex-direction: column; gap: 6px; }
+  .rrow {
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 9px; padding: 6px 12px; opacity: 0;
+  }
+  .rrow .tag { color: var(--cyan); margin-right: 8px; }
+  .s-short.active .rrow { animation: msgIn .45s ease both; }
+  .s-short.active .rrow:nth-child(1) { animation-delay: .5s; }
+  .s-short.active .rrow:nth-child(2) { animation-delay: .8s; }
+  .s-short.active .rrow:nth-child(3) { animation-delay: 1.1s; }
+  .s-short.active .ram-note { animation: rise .6s ease 1.6s both; }
+  .ram-note {
+    font-size: 11px; color: var(--dim); opacity: 0; text-align: center; line-height: 1.65;
+  }
+  .ram-note b { color: #67e8f9; }
+
+  /* ============ 屏4 · STEP 3 长期记忆 ============ */
+  .disk-card {
+    width: 100%; max-width: 560px; background: #0b1424;
+    border: 1px solid rgba(52,211,153,.45); border-radius: 14px; overflow: hidden;
+    font-family: var(--mono); font-size: 12px;
+  }
+  .disk-head {
+    display: flex; align-items: center; gap: 7px;
+    padding: 8px 14px; font-size: 10px; letter-spacing: .12em; color: var(--dim);
+    border-bottom: 1px solid var(--line); background: rgba(255,255,255,.03);
+  }
+  .disk-head::before {
+    content: ""; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 8px var(--green);
+  }
+  .mrow {
+    display: grid; grid-template-columns: 88px 1fr; gap: 10px;
+    padding: 8px 14px; color: #c3cde2; font-size: 11.5px; opacity: 0;
+  }
+  .mrow .k { color: var(--green); }
+  .s-long.active .mrow { animation: msgIn .45s ease both; }
+  .s-long.active .mrow:nth-child(2) { animation-delay: .5s; }
+  .s-long.active .mrow:nth-child(3) { animation-delay: .9s; }
+  .s-long.active .mrow:nth-child(4) { animation-delay: 1.3s; }
+  .s-long.active .disk-note { animation: rise .6s ease 1.8s both; }
+  .disk-note {
+    font-size: 11px; color: var(--dim); opacity: 0; text-align: center; line-height: 1.65;
+  }
+  .disk-note b { color: #6ee7b7; }
+
+  /* ============ 屏5 · STEP 4 写入时机 ============ */
+  .w-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .wcard {
+    display: flex; gap: 13px; align-items: flex-start;
+    padding: 12px 15px; border-radius: 14px;
+    background: var(--card); border: 1px solid var(--line);
+    opacity: 0;
+  }
+  .wcard .t-ico { font-size: 22px; flex: none; }
+  .wcard b { font-size: 13.5px; display: block; }
+  .wcard code { font-size: .85em; }
+  .wcard p { font-size: 11.5px; color: var(--dim); line-height: 1.65; margin-top: 3px; }
+  .w1 { border-color: rgba(34,211,238,.45); }
+  .w2 { border-color: rgba(167,139,250,.45); }
+  .s-write.active .wcard { animation: msgIn .55s ease both; }
+  .s-write.active .w1 { animation-delay: .5s; }
+  .s-write.active .w2 { animation-delay: 1.2s; }
+  .s-write.active .w-note { animation: rise .6s ease 2s both; }
+  .w-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; }
+
+  /* ============ 屏6 · STEP 5 检索与注入 ============ */
+  .fetch-flow { display: flex; align-items: center; width: 100%; max-width: 560px; justify-content: center; }
+  .flink { position: relative; flex: 0 1 130px; height: 34px; }
+  .flink::before {
+    content: ""; position: absolute; top: 50%; left: 6%; right: 6%; height: 2px;
+    transform: translateY(-50%);
+    background: repeating-linear-gradient(90deg, rgba(52,211,153,.45) 0 8px, transparent 8px 16px);
+    border-radius: 2px;
+  }
+  .pkt-back { left: 100%; color: #052015; background: var(--green); box-shadow: 0 0 14px rgba(52,211,153,.5); font-size: 10px; padding: 3px 8px; }
+  .s-fetch.active .pkt-back { animation: pktBack 3.8s cubic-bezier(.5,.05,.35,1) infinite; }
+  .s-fetch.active .mn-a { animation: nodePing 3.8s ease-out infinite; }
+  .inject-card {
+    width: 100%; max-width: 560px; background: #0b1424;
+    border: 1px solid rgba(34,211,238,.4); border-radius: 14px; overflow: hidden;
+    font-family: var(--mono); font-size: 11.5px; line-height: 1.75;
+  }
+  .inject-head {
+    display: flex; align-items: center; gap: 7px;
+    padding: 8px 14px; font-size: 10px; letter-spacing: .12em; color: var(--dim);
+    border-bottom: 1px solid var(--line); background: rgba(255,255,255,.03);
+  }
+  .inject-head::before {
+    content: ""; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--cyan); box-shadow: 0 0 8px var(--cyan);
+  }
+  .iline { padding: 0 14px; color: #9fb3d1; white-space: pre-wrap; opacity: 0; }
+  .iline b { color: var(--amber); font-weight: 700; }
+  .s-fetch.active .iline { animation: rise .45s ease both; }
+  .s-fetch.active .iline:nth-child(2) { animation-delay: 1s; }
+  .s-fetch.active .iline:nth-child(3) { animation-delay: 1.4s; }
+  .s-fetch.active .iline:nth-child(4) { animation-delay: 1.8s; }
+  @keyframes pktBack {
+    0% { left: 100%; opacity: 0 } 6% { left: 95%; opacity: 1 }
+    42% { left: 5%; opacity: 1 } 50% { left: 0%; opacity: 0 } 100% { left: 0%; opacity: 0 }
+  }
+  @keyframes nodePing {
+    0%,40% { box-shadow: 0 0 0 0 rgba(34,211,238,0); border-color: var(--line); }
+    48% { box-shadow: 0 0 0 10px rgba(34,211,238,.22); border-color: var(--cyan); }
+    64%,100% { box-shadow: 0 0 0 0 rgba(34,211,238,0); border-color: var(--line); }
+  }
+  .s-fetch.active .fetch-note { animation: rise .6s ease 2.3s both; }
+  .fetch-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; }
+
+  /* ============ 屏7 · STEP 6 压缩与遗忘 ============ */
+  .compact-wrap { width: 100%; max-width: 560px; }
+  .c-row {
+    display: grid; grid-template-columns: 88px 1fr 70px;
+    align-items: center; gap: 10px;
+    padding: 7px 12px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line);
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    opacity: 0;
+  }
+  .c-row .bar { height: 8px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .c-row .bar i { display: block; height: 100%; width: 0; border-radius: 99px; }
+  .c-row .val { text-align: right; }
+  .c-before .bar i { background: var(--red); } .c-before .val { color: #ffb9c4; }
+  .c-after { border-color: rgba(52,211,153,.45); }
+  .c-after .bar i { background: var(--green); } .c-after .val { color: #6ee7b7; }
+  .s-compact.active .c-row { animation: msgIn .5s ease both; }
+  .s-compact.active .c-row .bar i { animation: barGrow 1s cubic-bezier(.25,1,.4,1) both; }
+  .s-compact.active .c-before { animation-delay: .4s; }
+  .s-compact.active .c-before .bar i { animation-delay: .5s; }
+  .s-compact.active .c-after { animation-delay: 1.3s; }
+  .s-compact.active .c-after .bar i { animation-delay: 1.5s; }
+  @keyframes barGrow { to { width: var(--w); } }
+  .keep-list { display: flex; gap: 7px; flex-wrap: wrap; justify-content: center; width: 100%; max-width: 560px; }
+  .keep-chip {
+    font-size: 10.5px; padding: 4px 10px; border-radius: 999px;
+    background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.4);
+    color: #a7f3d0; opacity: 0;
+  }
+  .keep-chip.drop { background: rgba(251,113,133,.07); border-color: rgba(251,113,133,.4); color: #ffb9c4; text-decoration: line-through; }
+  .s-compact.active .keep-chip { animation: msgIn .4s ease both; }
+  .s-compact.active .keep-chip:nth-child(1) { animation-delay: 1.6s; }
+  .s-compact.active .keep-chip:nth-child(2) { animation-delay: 1.75s; }
+  .s-compact.active .keep-chip:nth-child(3) { animation-delay: 1.9s; }
+  .s-compact.active .keep-chip:nth-child(4) { animation-delay: 2.05s; }
+  .s-compact.active .keep-chip:nth-child(5) { animation-delay: 2.2s; }
+  .s-compact.active .comp-note { animation: rise .6s ease 2.5s both; }
+  .comp-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.65; }
+
+  /* ============ 屏8 · STEP 7 三类记忆地图 ============ */
+  .map-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .mapc {
+    display: flex; gap: 13px; align-items: flex-start;
+    padding: 12px 15px; border-radius: 14px;
+    background: var(--card); border: 1px solid var(--line);
+    opacity: 0;
+  }
+  .mapc .t-ico { font-size: 22px; flex: none; }
+  .mapc b { font-size: 13.5px; display: block; }
+  .mapc code { font-size: .85em; }
+  .mapc p { font-size: 11.5px; color: var(--dim); line-height: 1.65; margin-top: 3px; }
+  .mp1 { border-color: rgba(34,211,238,.45); }
+  .mp2 { border-color: rgba(251,191,36,.45); }
+  .mp3 { border-color: rgba(167,139,250,.45); }
+  .s-map.active .mapc { animation: msgIn .5s ease both; }
+  .s-map.active .mp1 { animation-delay: .4s; }
+  .s-map.active .mp2 { animation-delay: .9s; }
+  .s-map.active .mp3 { animation-delay: 1.4s; }
+  .s-map.active .map-note { animation: rise .6s ease 2s both; }
+  .map-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; }
+
+  /* ============ 屏9 · 总结 ============ */
+  .sum-flow {
+    display: flex; gap: 4px; align-items: center; justify-content: center;
+    flex-wrap: wrap; font-size: 10px; color: var(--dim);
+  }
+  .sum-flow span {
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv {
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px 15px;
+  }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote {
+    font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center;
+    line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .replay {
+    font-size: 12.5px; color: #06121c; background: var(--cyan);
+    border: none; padding: 10px 26px; border-radius: 999px;
+    font-weight: 700; cursor: pointer; letter-spacing: .06em;
+  }
+  .replay:active { transform: scale(.96); }
+  .series-badge {
+    position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px;
+    font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em;
+  }
+
+  /* ============ 通用关键帧 ============ */
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+
+  /* ============ 兜底与无障碍 ============ */
+  @media (max-height: 560px) {
+    .screen { overflow-y: auto; justify-content: flex-start; }
+    .stage { flex: 0 0 auto; padding: 14px 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition: none !important; scroll-behavior: auto !important;
+    }
+    .rv, .chat, .amn-note, .rrow, .ram-note, .mrow, .disk-note,
+    .wcard, .w-note, .iline, .fetch-note, .c-row, .keep-chip,
+    .comp-note, .mapc, .map-note, .packet {
+      opacity: 1 !important; transform: none !important; filter: none !important;
+    }
+    .c-row .bar i { width: var(--w) !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面" aria-label="封面"></button>
+  <button title="STEP 1 天生失忆" aria-label="天生失忆"></button>
+  <button title="STEP 2 短期记忆" aria-label="短期记忆"></button>
+  <button title="STEP 3 长期记忆" aria-label="长期记忆"></button>
+  <button title="STEP 4 写入时机" aria-label="写入时机"></button>
+  <button title="STEP 5 检索与注入" aria-label="检索与注入"></button>
+  <button title="STEP 6 压缩与遗忘" aria-label="压缩与遗忘"></button>
+  <button title="STEP 7 三类记忆地图" aria-label="三类记忆地图"></button>
+  <button title="总结" aria-label="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">AI 运作原理拆解 · 07</div>
+    <h1 class="rv d2">记忆<br><span class="grad">管理</span></h1>
+    <p class="hero-sub rv d3">上下文是内存，记忆是磁盘 · 逐屏动画演示</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">🪟 上下文</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">💾 外部存储</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">🔍 检索</span>
+    </div>
+    <p class="hero-quote rv d5">「上下文是内存，记忆是磁盘」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 天生失忆 -->
+<section class="screen s-amnesia">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>天生失忆</div>
+    <h2 class="rv d1">天生失忆</h2>
+    <p class="scr-desc rv d2">新会话开一场，模型对昨天发生的一切一无所知 —— 历史要靠调用方重新发</p>
+    <div class="code-chip rv d2">新请求 = 全新窗口 · <b>messages 从零开始</b></div>
+  </header>
+  <div class="stage">
+    <div class="chat-list">
+      <div class="chat chat-user"><span class="src">🧑 用户 · 新会话</span><br>还记得昨天我们聊到哪了吗？</div>
+      <div class="chat chat-bot"><span class="src">🤖 模型</span><br>我们的对话才刚开始 —— 我这边没有昨天的任何记录。</div>
+    </div>
+    <div class="amn-note rv d4">它没说谎 —— 窗口里真的只有这一句（呼应 04 期：每轮请求完整重发）</div>
+  </div>
+  <footer class="scr-foot rv d5">💡 模型天生失忆 —— <b>「记得」从来都是系统的事</b></footer>
+</section>
+
+<!-- 屏3 · STEP 2 短期记忆 -->
+<section class="screen s-short">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>短期记忆</div>
+    <h2 class="rv d1">短期记忆</h2>
+    <p class="scr-desc rv d2">上下文窗口就是模型的「内存」—— 快，但小、贵、断电即失</p>
+    <div class="code-chip rv d2">main context ≈ <b>RAM</b> · 快 / 贵 / 会话结束即失</div>
+  </header>
+  <div class="stage">
+    <div class="ram-frame rv d2">
+      <span class="ram-label">RAM · 上下文窗口</span>
+      <div class="ram-rows">
+        <div class="rrow"><span class="tag">本轮</span>用户刚问的问题</div>
+        <div class="rrow"><span class="tag">本轮</span>刚检索回来的资料</div>
+        <div class="rrow"><span class="tag">本轮</span>当前任务的工作状态</div>
+      </div>
+    </div>
+    <div class="ram-note rv d4"><b>优点</b>：随手可用、零延迟　<b>代价</b>：容量有限（02 期）、请求结束就没了</div>
+  </div>
+  <footer class="scr-foot rv d5">💡 窗口里的短期记忆：<b>快，但小、贵、断电即忘</b></footer>
+</section>
+
+<!-- 屏4 · STEP 3 长期记忆 -->
+<section class="screen s-long">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>长期记忆</div>
+    <h2 class="rv d1">长期记忆</h2>
+    <p class="scr-desc rv d2">把值得记的写到窗口外面 —— 像磁盘一样跨会话持久保存</p>
+    <div class="code-chip rv d2">external context ≈ <b>磁盘</b> · 慢一点 / 便宜 / 永久</div>
+  </header>
+  <div class="stage">
+    <div class="disk-card rv d2">
+      <div class="disk-head">💾 记忆库 · 跨会话持久化</div>
+      <div class="mrow"><span class="k">memory_01</span><span>用户偏好：喜欢简洁回答 + 代码示例</span></div>
+      <div class="mrow"><span class="k">memory_02</span><span>项目背景：技术栈 FastAPI + Vite</span></div>
+      <div class="mrow"><span class="k">memory_03</span><span>未完成任务：重构登录模块（上周三）</span></div>
+    </div>
+    <div class="disk-note rv d5">断电不失 · 下次会话按需「换入」窗口 —— <b>MemGPT 的分页思想</b></div>
+  </div>
+  <footer class="scr-foot rv d6">💡 长期记忆存在窗口外 —— <b>需要时再「换入」</b>，像操作系统的内存分页</footer>
+</section>
+
+<!-- 屏5 · STEP 4 写入时机 -->
+<section class="screen s-write">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>写入时机</div>
+    <h2 class="rv d1">写入时机</h2>
+    <p class="scr-desc rv d2">什么时候把东西写进记忆库？两条路线，各有代价</p>
+    <div class="code-chip rv d2">hot-path write · <b>background</b> write</div>
+  </header>
+  <div class="stage">
+    <div class="w-grid">
+      <div class="wcard w1"><div class="t-ico">⚡</div><div><b>热路径写入 <code>hot-path</code></b><p>回复之前，模型用工具显式记一条（「记住：用户偏好简洁」）—— 立即生效，但增加响应延迟</p></div></div>
+      <div class="wcard w2"><div class="t-ico">🌙</div><div><b>后台写入 <code>background</code></b><p>对话结束后，后台进程悄悄总结入库 —— 零延迟，但记忆稍滞后、需要触发逻辑</p></div></div>
+    </div>
+    <div class="w-note rv d5">关键记忆走热路径，琐碎记忆走后台 —— ChatGPT 的「记忆」就是热路径写入</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 两种写入各有代价 —— <b>按记忆的重要性分流</b></footer>
+</section>
+
+<!-- 屏6 · STEP 5 检索与注入 -->
+<section class="screen s-fetch">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>检索与注入</div>
+    <h2 class="rv d1">检索与注入</h2>
+    <p class="scr-desc rv d2">新问题进来时，从记忆库里捞出相关的几条，塞回 system —— 模型就「想起来了」</p>
+    <div class="code-chip rv d2">recall(question) → <b>top-k memories</b> → inject</div>
+  </header>
+  <div class="stage">
+    <div class="fetch-flow rv d2">
+      <div class="mini-node">💬 新问题</div>
+      <div class="flink"><div class="packet pkt-back">相关记忆 ×2</div></div>
+      <div class="mini-node mn-a">💾 记忆库</div>
+      <div class="flink"><div class="packet pkt-back">塞回 system</div></div>
+      <div class="mini-node">📜 窗口</div>
+    </div>
+    <div class="inject-card rv d3">
+      <div class="inject-head">system 消息 · 注入后</div>
+      <div class="iline">你是助手。以下是关于该用户的<b>已知记忆</b>：</div>
+      <div class="iline">· 偏好简洁回答 + 代码示例</div>
+      <div class="iline">· 项目技术栈 FastAPI + Vite</div>
+    </div>
+    <div class="fetch-note rv d6">不是全塞回去 —— 窗口预算有限（02 期），只捞最相关的几条</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 记忆不是全量回灌 —— <b>只捞相关的几条</b>塞进窗口</footer>
+</section>
+
+<!-- 屏7 · STEP 6 压缩与遗忘 -->
+<section class="screen s-compact">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 6</b>压缩与遗忘</div>
+    <h2 class="rv d1">压缩与遗忘</h2>
+    <p class="scr-desc rv d2">历史逼近上限时，把旧对话总结成高保真摘要，用摘要重启新窗口</p>
+    <div class="code-chip rv d2">compact: history 5.8k tok → <b>summary 1.6k tok</b></div>
+  </header>
+  <div class="stage">
+    <div class="compact-wrap">
+      <div class="c-row c-before"><span>压缩前</span><span class="bar"><i style="--w:92%"></i></span><span class="val">5.8k tok</span></div>
+      <div class="c-row c-after"><span>压缩后</span><span class="bar"><i style="--w:26%"></i></span><span class="val">1.6k tok</span></div>
+    </div>
+    <div class="keep-list">
+      <span class="keep-chip">保留：架构决策</span>
+      <span class="keep-chip">保留：未解决问题</span>
+      <span class="keep-chip">保留：用户偏好</span>
+      <span class="keep-chip drop">丢弃：工具原始输出</span>
+      <span class="keep-chip drop">丢弃：冗余来回</span>
+    </div>
+    <div class="comp-note rv d6">先保召回，再提精度 —— 过度压缩会丢「当时不起眼、后来才发现关键」的细节（Anthropic）</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 压缩 = 保留结论、<b>丢弃原料</b> —— 召回优先于精简</footer>
+</section>
+
+<!-- 屏8 · STEP 7 三类记忆地图 -->
+<section class="screen s-map">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 7</b>三类记忆地图</div>
+    <h2 class="rv d1">三类记忆地图</h2>
+    <p class="scr-desc rv d2">像人脑一样分库管理 —— CoALA 框架把长期记忆分成三类</p>
+    <div class="code-chip rv d2">semantic · episodic · <b>procedural</b>（CoALA）</div>
+  </header>
+  <div class="stage">
+    <div class="map-grid">
+      <div class="mapc mp1"><div class="t-ico">🧠</div><div><b>语义记忆 <code>semantic</code></b><p>事实与偏好：「用户是前端工程师」「喜欢深色主题」—— 用来个性化回答</p></div></div>
+      <div class="mapc mp2"><div class="t-ico">🎬</div><div><b>情景记忆 <code>episodic</code></b><p>过去的行为序列：「上次这类任务是这样做的」—— 用来做少样本示范</p></div></div>
+      <div class="mapc mp3"><div class="t-ico">🛠</div><div><b>程序性记忆 <code>procedural</code></b><p>怎么做任务：藏在提示词与代码里 —— 最稳定，也很少被自动改写</p></div></div>
+    </div>
+    <div class="map-note rv d5">不同记忆类型适合不同写入与检索策略 —— 先想清楚「记什么」，再选「怎么记」</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 像人脑一样<b>分库管理</b>—— 而不是一个口袋全塞进去</footer>
+</section>
+
+<!-- 屏9 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">上下文是内存，记忆是磁盘</h2>
+    <p class="scr-desc rv d2">失忆 → 分层 → 写入 → 检索 → 压缩 → 分库</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>天生失忆</span><i>→</i><span>内存+磁盘分层</span><i>→</i><span>写入分流</span><i>→</i><span>检索注入</span><i>→</i><span>压缩遗忘</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">🧊</div>
+        <div><b>窗口 = RAM</b><p>快、贵、断电即失 —— 只放当前正在用的东西</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">💾</div>
+        <div><b>记忆 = 磁盘</b><p>跨会话持久化，按需换入 —— MemGPT 用操作系统的思想管上下文</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">⚖️</div>
+        <div><b>写入有代价</b><p>热路径即时但加延迟，后台省心但滞后 —— 分流是工程的关键</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“上下文是内存，<br>记忆是磁盘。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">AI 运作原理拆解 · 07 / 记忆管理篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else {
+    secs.forEach((s) => s.classList.add('active'));
+  }
+
+  dots.forEach((d, i) => d.addEventListener('click', () => {
+    secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+</script>
+</body>
+</html>
