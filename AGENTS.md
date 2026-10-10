@@ -69,8 +69,9 @@ Frontend (run from `frontend/`):
   `backend/app/data/saved_models/` (no database). The directory is git-ignored and
   created at runtime by `services/model_store.py`; don't commit model files.
 - `docs/` holds a self-contained animated demo series with an index page
-  (`index.html` links all of them): HERMES AGENT 对象拆解 ·01–06 and
-  AI 运作原理拆解 ·01–09. None are part of the Vite app — each demo is a single
+  (`index.html` links all of them): HERMES AGENT 对象拆解 ·01–08 (08 跨会话
+  记忆篇 is 前瞻演绎/designed extrapolation) and AI 运作原理拆解 ·01–09. None
+  are part of the Vite app — each demo is a single
   file (no build step, no external deps) using full-screen CSS scroll-snap
   sections where one animation segment plays per screen. Keep new demos in this
   same self-contained pattern and add them to the index; editing frontend code

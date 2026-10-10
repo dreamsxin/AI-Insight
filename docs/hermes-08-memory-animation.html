@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="Hermes 跨会话记忆篇（前瞻演绎）：偏好沉淀 → 记忆入库 → 新会话注入 → 冲突更新 → 遗忘清理 → 情景复用，逐屏动画演示（会话会结束，偏好该留下）">
+<title>Hermes 跨会话记忆 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14;
+    --bg1: #0c1322;
+    --ink: #e8eefc;
+    --dim: #8b96ad;
+    --cyan: #22d3ee;
+    --purple: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #fb7185;
+    --card: rgba(255,255,255,.05);
+    --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+
+  /* ===== 右侧进度圆点 ===== */
+  .dots {
+    position: fixed; right: 9px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 11px; z-index: 60;
+  }
+  .dots button {
+    width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0;
+    background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s;
+  }
+  .dots button.on {
+    background: var(--cyan); transform: scale(1.4);
+    box-shadow: 0 0 10px rgba(34,211,238,.85);
+  }
+
+  /* ===== 整屏骨架 ===== */
+  .screen {
+    position: relative; z-index: 1;
+    height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always;
+    overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before {
+    content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%);
+  }
+  .s-hero    { --glow: rgba(34,211,238,.10); }
+  .s-what    { --glow: rgba(34,211,238,.12); }
+  .s-save    { --glow: rgba(52,211,153,.10); }
+  .s-inject  { --glow: rgba(34,211,238,.10); }
+  .s-conflict{ --glow: rgba(251,191,36,.09); }
+  .s-forget  { --glow: rgba(148,163,184,.10); }
+  .s-episodic{ --glow: rgba(167,139,250,.12); }
+  .s-sum     { --glow: rgba(244,114,182,.08); }
+
+  .scr-head {
+    width: 100%; max-width: 640px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .step-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07);
+    padding: 4px 13px; border-radius: 999px;
+  }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code {
+    color: var(--cyan); font-size: .92em;
+    background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px;
+  }
+  .code-chip {
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage {
+    position: relative; z-index: 1; flex: 1; min-height: 0;
+    width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 13px;
+  }
+  .scr-foot {
+    width: 100%; max-width: 640px; text-align: center;
+    font-size: 12px; line-height: 1.65; color: var(--dim);
+  }
+  .scr-foot b { color: #c3cde2; }
+
+  /* ===== 通用入场动画（进入屏幕时播放，离开重置） ===== */
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; }
+  .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; }
+  .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; }
+  .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  /* ===== 通用小组件 ===== */
+  .meta-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.65; }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(16px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+  .packet {
+    position: absolute; top: 50%; transform: translate(-50%,-50%);
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    padding: 4px 11px; border-radius: 999px; white-space: nowrap;
+    opacity: 0; z-index: 2;
+  }
+  .mini-node {
+    font-size: 12px; padding: 8px 12px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line); white-space: nowrap;
+  }
+  @keyframes pktBack {
+    0% { left: 100%; opacity: 0 } 6% { left: 95%; opacity: 1 }
+    42% { left: 5%; opacity: 1 } 50% { left: 0%; opacity: 0 } 100% { left: 0%; opacity: 0 }
+  }
+  @keyframes nodePing {
+    0%,40% { box-shadow: 0 0 0 0 rgba(34,211,238,0); border-color: var(--line); }
+    48% { box-shadow: 0 0 0 10px rgba(34,211,238,.22); border-color: var(--cyan); }
+    64%,100% { box-shadow: 0 0 0 0 rgba(34,211,238,0); border-color: var(--line); }
+  }
+  .mem-tag {
+    display: inline-flex; align-items: center;
+    font-family: var(--mono); font-size: 9px; font-weight: 700; letter-spacing: .08em;
+    padding: 2px 8px; border-radius: 999px; flex: none;
+  }
+  .mt-pref { color: var(--cyan); background: rgba(34,211,238,.1); border: 1px solid rgba(34,211,238,.4); }
+  .mt-fact { color: var(--green); background: rgba(52,211,153,.1); border: 1px solid rgba(52,211,153,.4); }
+  .mt-les  { color: var(--amber); background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.4); }
+
+  /* ============ 屏1 · 封面 ============ */
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker {
+    font-size: 10px; letter-spacing: .28em; color: var(--dim);
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 6px 16px; border-radius: 999px;
+  }
+  h1 { font-size: clamp(34px, 9vw, 54px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad {
+    background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node {
+    font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line); white-space: nowrap;
+  }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i {
+    position: absolute; top: 50%; transform: translateY(-50%); left: 0;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan); opacity: 0;
+  }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint {
+    position: absolute; bottom: calc(16px + env(safe-area-inset-bottom));
+    left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em;
+  }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* ============ 屏2 · STEP 1 哪些值得记 ============ */
+  .chat-list { display: flex; flex-direction: column; gap: 9px; width: 100%; max-width: 560px; }
+  .chat {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 14px; border-radius: 14px;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 12.5px; line-height: 1.65; color: #c3cde2;
+    opacity: 0;
+  }
+  .chat .say { flex: 1; }
+  .chat .say b { color: #67e8f9; }
+  .s-what.active .chat { animation: msgIn .5s ease both; }
+  .s-what.active .chat:nth-child(1) { animation-delay: .4s; }
+  .s-what.active .chat:nth-child(2) { animation-delay: 1s; }
+  .s-what.active .chat:nth-child(3) { animation-delay: 1.6s; }
+  .s-what.active .what-note { animation: rise .6s ease 2.3s both; }
+  .what-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; }
+
+  /* ============ 屏3 · STEP 2 写入记忆库 ============ */
+  .disk-card {
+    width: 100%; max-width: 560px; background: #0b1424;
+    border: 1px solid rgba(52,211,153,.45); border-radius: 14px; overflow: hidden;
+    font-family: var(--mono); font-size: 11.5px;
+  }
+  .disk-head {
+    display: flex; align-items: center; gap: 7px;
+    padding: 8px 14px; font-size: 10px; letter-spacing: .12em; color: var(--dim);
+    border-bottom: 1px solid var(--line); background: rgba(255,255,255,.03);
+  }
+  .disk-head::before {
+    content: ""; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 8px var(--green);
+  }
+  .mrow {
+    display: grid; grid-template-columns: 88px 1fr 74px; gap: 8px;
+    padding: 8px 14px; color: #c3cde2; align-items: center; opacity: 0;
+  }
+  .mrow .k { color: var(--green); }
+  .mrow .src { color: var(--dim); font-size: 10px; text-align: right; }
+  .s-save.active .mrow { animation: msgIn .45s ease both; }
+  .s-save.active .mrow:nth-child(2) { animation-delay: .5s; }
+  .s-save.active .mrow:nth-child(3) { animation-delay: .9s; }
+  .s-save.active .mrow:nth-child(4) { animation-delay: 1.3s; }
+  .s-save.active .save-badge { animation: rise .6s ease 1.8s both; }
+  .save-badge { font-size: 12px; color: var(--green); opacity: 0; letter-spacing: .03em; }
+
+  /* ============ 屏4 · STEP 3 新会话注入 ============ */
+  .when-chip {
+    font-family: var(--mono); font-size: 11px; color: var(--cyan);
+    background: rgba(34,211,238,.08); border: 1px solid rgba(34,211,238,.4);
+    border-radius: 999px; padding: 5px 13px; opacity: 0;
+  }
+  .fetch-flow { display: flex; align-items: center; width: 100%; max-width: 560px; justify-content: center; }
+  .flink { position: relative; flex: 0 1 120px; height: 34px; }
+  .flink::before {
+    content: ""; position: absolute; top: 50%; left: 6%; right: 6%; height: 2px;
+    transform: translateY(-50%);
+    background: repeating-linear-gradient(90deg, rgba(52,211,153,.45) 0 8px, transparent 8px 16px);
+    border-radius: 2px;
+  }
+  .pkt-back { left: 100%; color: #052015; background: var(--green); box-shadow: 0 0 14px rgba(52,211,153,.5); font-size: 10px; padding: 3px 8px; }
+  .s-inject.active .pkt-back { animation: pktBack 3.8s cubic-bezier(.5,.05,.35,1) infinite; }
+  .s-inject.active .mn-a { animation: nodePing 3.8s ease-out infinite; }
+  .inject-card {
+    width: 100%; max-width: 560px; background: #0b1424;
+    border: 1px solid rgba(34,211,238,.4); border-radius: 14px; overflow: hidden;
+    font-family: var(--mono); font-size: 11.5px; line-height: 1.75;
+  }
+  .inject-head {
+    display: flex; align-items: center; gap: 7px;
+    padding: 8px 14px; font-size: 10px; letter-spacing: .12em; color: var(--dim);
+    border-bottom: 1px solid var(--line); background: rgba(255,255,255,.03);
+  }
+  .inject-head::before {
+    content: ""; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--cyan); box-shadow: 0 0 8px var(--cyan);
+  }
+  .iline { padding: 0 14px; color: #9fb3d1; white-space: pre-wrap; opacity: 0; }
+  .iline b { color: var(--amber); font-weight: 700; }
+  .s-inject.active .iline { animation: rise .45s ease both; }
+  .s-inject.active .iline:nth-child(2) { animation-delay: 1.2s; }
+  .s-inject.active .iline:nth-child(3) { animation-delay: 1.5s; }
+  .s-inject.active .inject-note { animation: rise .6s ease 2s both; }
+  .inject-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; }
+
+  /* ============ 屏5 · STEP 4 记忆冲突 ============ */
+  .cf-list { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 560px; }
+  .cf {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line);
+    font-family: var(--mono); font-size: 12px; color: #c3cde2;
+    opacity: 0;
+  }
+  .cf .mid { color: var(--cyan); font-weight: 700; flex: none; }
+  .cf .txt { flex: 1; }
+  .cf .when { font-size: 10px; color: var(--dim); flex: none; }
+  .cf.old { border-style: dashed; color: rgba(139,150,173,.55); }
+  .cf.old .txt { text-decoration: line-through; }
+  .cf.new { border-color: rgba(52,211,153,.5); background: rgba(52,211,153,.06); }
+  .cf.new .txt { color: #a7f3d0; }
+  .s-conflict.active .cf { animation: msgIn .5s ease both; }
+  .s-conflict.active .cf:nth-child(1) { animation-delay: .5s; }
+  .s-conflict.active .cf:nth-child(2) { animation-delay: 1.2s, 1.9s; }
+  .s-conflict.active .cf:nth-child(2) { animation-name: msgIn, cfGlow; animation-duration: .5s, 2.4s; animation-iteration-count: 1, infinite; animation-delay: 1.2s, 1.9s; }
+  @keyframes cfGlow { 0%,100% { box-shadow: 0 0 0 rgba(52,211,153,0) } 50% { box-shadow: 0 0 18px rgba(52,211,153,.3) } }
+  .s-conflict.active .cf-note { animation: rise .6s ease 2.3s both; }
+  .cf-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; }
+
+  /* ============ 屏6 · STEP 5 遗忘与清理 ============ */
+  .fg-list { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 560px; }
+  .fg {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line);
+    font-family: var(--mono); font-size: 11.5px; color: #c3cde2;
+    opacity: 0;
+  }
+  .fg .mid { color: var(--cyan); flex: none; }
+  .fg .txt { flex: 1; }
+  .fg .act { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .06em; padding: 2px 9px; border-radius: 999px; }
+  .fg-arch { opacity: 0; border-style: dashed; color: rgba(139,150,173,.55); }
+  .fg-arch .act { color: var(--dim); background: rgba(148,163,184,.1); border: 1px solid rgba(148,163,184,.35); }
+  .fg-watch .act { color: var(--amber); background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.4); }
+  .fg-keep { border-color: rgba(52,211,153,.4); }
+  .fg-keep .act { color: var(--green); background: rgba(52,211,153,.1); border: 1px solid rgba(52,211,153,.45); }
+  .s-forget.active .fg { animation: msgIn .5s ease both; }
+  .s-forget.active .fg:nth-child(1) { animation-delay: .5s; }
+  .s-forget.active .fg:nth-child(2) { animation-delay: 1s; }
+  .s-forget.active .fg:nth-child(3) { animation-delay: 1.5s; }
+  .s-forget.active .fg-note { animation: rise .6s ease 2s both; }
+  .fg-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; }
+
+  /* ============ 屏7 · STEP 6 情景记忆复用 ============ */
+  .chat-list { display: flex; flex-direction: column; gap: 9px; width: 100%; max-width: 560px; }
+  .chat {
+    padding: 10px 14px; font-size: 12.5px; line-height: 1.65;
+    border-radius: 14px; opacity: 0;
+  }
+  .chat .src {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em;
+    margin-bottom: 4px; opacity: .8;
+  }
+  .chat-user { background: var(--card); border: 1px solid var(--line); border-radius: 14px 14px 14px 4px; }
+  .chat-bot { background: rgba(34,211,238,.06); border-left: 3px solid var(--cyan); border-radius: 4px 14px 14px 4px; color: #d7e2f5; }
+  .chat-bot code { color: #7dd3fc; }
+  .chat-bot .cite { color: var(--green); font-family: var(--mono); font-size: 10px; }
+  .s-episodic.active .chat:nth-child(1) { animation: msgIn .5s ease .4s both; }
+  .s-episodic.active .chat:nth-child(2) { animation: msgIn .5s ease 1.3s both, botGlow 2.4s ease-in-out 2s infinite; }
+  @keyframes botGlow { 0%,100% { box-shadow: 0 0 0 rgba(34,211,238,0) } 50% { box-shadow: 0 0 20px rgba(34,211,238,.28) } }
+  .s-episodic.active .ep-note { animation: rise .6s ease 2.4s both; }
+  .ep-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; }
+
+  /* ============ 屏8 · 总结 ============ */
+  .sum-flow {
+    display: flex; gap: 4px; align-items: center; justify-content: center;
+    flex-wrap: wrap; font-size: 10px; color: var(--dim);
+  }
+  .sum-flow span {
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv {
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px 15px;
+  }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote {
+    font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center;
+    line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .replay {
+    font-size: 12.5px; color: #06121c; background: var(--cyan);
+    border: none; padding: 10px 26px; border-radius: 999px;
+    font-weight: 700; cursor: pointer; letter-spacing: .06em;
+  }
+  .replay:active { transform: scale(.96); }
+  .series-badge {
+    position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px;
+    font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em;
+  }
+
+  /* ============ 通用关键帧 ============ */
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+
+  /* ============ 兜底与无障碍 ============ */
+  @media (max-height: 560px) {
+    .screen { overflow-y: auto; justify-content: flex-start; }
+    .stage { flex: 0 0 auto; padding: 14px 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition: none !important; scroll-behavior: auto !important;
+    }
+    .rv, .chat, .what-note, .mrow, .save-badge, .when-chip, .iline,
+    .inject-note, .cf, .cf-note, .fg, .fg-note, .ep-note, .packet {
+      opacity: 1 !important; transform: none !important; filter: none !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面" aria-label="封面"></button>
+  <button title="STEP 1 哪些值得记" aria-label="哪些值得记"></button>
+  <button title="STEP 2 写入记忆库" aria-label="写入记忆库"></button>
+  <button title="STEP 3 新会话注入" aria-label="新会话注入"></button>
+  <button title="STEP 4 记忆冲突" aria-label="记忆冲突"></button>
+  <button title="STEP 5 遗忘与清理" aria-label="遗忘与清理"></button>
+  <button title="STEP 6 情景记忆复用" aria-label="情景记忆复用"></button>
+  <button title="总结" aria-label="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">HERMES AGENT 对象拆解 · 08 · 前瞻演绎</div>
+    <h1 class="rv d2">Hermes<br><span class="grad">跨会话记忆</span></h1>
+    <p class="hero-sub rv d3">把 AI 07 的记忆原理落到 Hermes · 逐屏动画演示</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">💬 会话</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">💾 记忆库</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">🔜 下一次会话</span>
+    </div>
+    <p class="hero-quote rv d5">「会话会结束，偏好该留下」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 哪些值得记 -->
+<section class="screen s-what">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>哪些值得记</div>
+    <h2 class="rv d1">哪些值得记</h2>
+    <p class="scr-desc rv d2">日常对话里浮现三类可沉淀的信息 —— 记偏好、事实、教训，不记寒暄</p>
+    <div class="code-chip rv d2">extract(chat) → <b>偏好 / 事实 / 教训</b></div>
+  </header>
+  <div class="stage">
+    <div class="chat-list">
+      <div class="chat"><span class="say">「以后统一用 <b>pnpm</b> 装依赖。」</span><span class="mem-tag mt-pref">偏好</span></div>
+      <div class="chat"><span class="say">「我们内部叫它 <b>风铃项目</b>。」</span><span class="mem-tag mt-fact">事实</span></div>
+      <div class="chat"><span class="say">「上次部署失败，是<b>端口没放行</b>。」</span><span class="mem-tag mt-les">教训</span></div>
+    </div>
+    <div class="what-note rv d5">寒暄与过程性聊天不入库 —— 记忆库只收高信号内容</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 记<b>偏好、事实、教训</b>—— 不记寒暄</footer>
+</section>
+
+<!-- 屏3 · STEP 2 写入记忆库 -->
+<section class="screen s-save">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>写入记忆库</div>
+    <h2 class="rv d1">写入记忆库</h2>
+    <p class="scr-desc rv d2">会话里识别出的信息，以热路径方式当场入库（AI 07 期）</p>
+    <div class="code-chip rv d2">memory.write(<b>hot-path</b>) · 挂在用户档案下</div>
+  </header>
+  <div class="stage">
+    <div class="disk-card rv d2">
+      <div class="disk-head">💾 记忆库 · user/dreamsxin</div>
+      <div class="mrow"><span class="k">memory_08</span><span>偏好：包管理器用 pnpm</span><span class="src">s_7f3a · 热路径</span></div>
+      <div class="mrow"><span class="k">memory_09</span><span>事实：项目代号「风铃」</span><span class="src">s_7f3a · 热路径</span></div>
+      <div class="mrow"><span class="k">memory_10</span><span>教训：部署前检查端口放行</span><span class="src">s_7f3a · 热路径</span></div>
+    </div>
+    <div class="save-badge rv d5">✓ 会话结束 —— 这三张卡片留在磁盘上，不随窗口消失</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 热路径写入 —— 关键信息<b>当场入账</b></footer>
+</section>
+
+<!-- 屏4 · STEP 3 新会话注入 -->
+<section class="screen s-inject">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>新会话注入</div>
+    <h2 class="rv d1">新会话注入</h2>
+    <p class="scr-desc rv d2">三天后用户再次打开 Hermes —— 相关记忆先他一步到岗</p>
+    <div class="code-chip rv d2">recall(新问题) → <b>top-k</b> → inject(system)</div>
+  </header>
+  <div class="stage">
+    <div class="when-chip rv d2">3 天后 · 新会话 s_9c2e</div>
+    <div class="fetch-flow rv d2">
+      <div class="mini-node">💬 新问题</div>
+      <div class="flink"><div class="packet pkt-back">相关记忆 ×2</div></div>
+      <div class="mini-node mn-a">💾 记忆库</div>
+      <div class="flink"><div class="packet pkt-back">塞回 system</div></div>
+      <div class="mini-node">📜 窗口</div>
+    </div>
+    <div class="inject-card rv d3">
+      <div class="inject-head">system 消息 · 注入后</div>
+      <div class="iline">你是 Hermes。以下是关于该用户的<b>已知记忆</b>：</div>
+      <div class="iline">· 项目代号「风铃」</div>
+      <div class="iline">· 偏好：包管理器用 pnpm</div>
+    </div>
+    <div class="inject-note rv d6">用户无需自我介绍 —— 记忆已经替他打过招呼</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 用户不用自我介绍 —— <b>记忆先他一步到岗</b></footer>
+</section>
+
+<!-- 屏5 · STEP 4 记忆冲突 -->
+<section class="screen s-conflict">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>记忆冲突</div>
+    <h2 class="rv d1">记忆冲突</h2>
+    <p class="scr-desc rv d2">偏好会变 —— 新说法带时间戳覆盖旧记忆，而不是追加一条矛盾的</p>
+    <div class="code-chip rv d2">conflict → <b>update</b>(latest wins) · not append</div>
+  </header>
+  <div class="stage">
+    <div class="cf-list">
+      <div class="cf old"><span class="mid">memory_08</span><span class="txt">偏好：包管理器用 pnpm</span><span class="when">06-30</span></div>
+      <div class="cf new"><span class="mid">memory_11</span><span class="txt">偏好：包管理器改用 npm（用户明确更正）</span><span class="when">07-03</span></div>
+    </div>
+    <div class="cf-note rv d6">没有时间戳的记忆库，迟早精神分裂 —— 新说永远压旧说</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 偏好会变 —— <b>新说永远压旧说</b></footer>
+</section>
+
+<!-- 屏6 · STEP 5 遗忘与清理 -->
+<section class="screen s-forget">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>遗忘与清理</div>
+    <h2 class="rv d1">遗忘与清理</h2>
+    <p class="scr-desc rv d2">长期不命中的记忆降权归档 —— 记忆库不是越大越好</p>
+    <div class="code-chip rv d2">gc: 未命中 &gt; <b>180 天</b> → archive</div>
+  </header>
+  <div class="stage">
+    <div class="fg-list">
+      <div class="fg fg-arch"><span class="mid">memory_03</span><span class="txt">旧项目偏好（180 天未命中）</span><span class="act">归档</span></div>
+      <div class="fg fg-watch"><span class="mid">memory_05</span><span class="txt">临时清单（90 天未命中）</span><span class="act">观察</span></div>
+      <div class="fg fg-keep"><span class="mid">memory_11</span><span class="txt">包管理器偏好（命中 12 次）</span><span class="act">保留</span></div>
+    </div>
+    <div class="fg-note rv d5">留高信号、归低命中 —— 检索质量随库的「干净度」上升</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 会遗忘的记忆才健康 —— <b>留下高信号的</b></footer>
+</section>
+
+<!-- 屏7 · STEP 6 情景记忆复用 -->
+<section class="screen s-episodic">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 6</b>情景记忆复用</div>
+    <h2 class="rv d1">情景记忆复用</h2>
+    <p class="scr-desc rv d2">「上次是怎么解决的？」—— 情景记忆让 Hermes 吃一堑长一智</p>
+    <div class="code-chip rv d2">recall(事件) → <b>当时的步骤</b> → 少样本示范</div>
+  </header>
+  <div class="stage">
+    <div class="chat-list">
+      <div class="chat chat-user"><span class="src">🧑 用户</span><br>上周部署失败那次，最后是怎么解决的来着？</div>
+      <div class="chat chat-bot"><span class="src">🤖 Hermes</span><br>按你上次的处理顺序：先检查安全组放行 <code>443</code> 端口，再重启 agent，最后回滚了那次配置变更。<span class="cite">　（来自 memory_10 · 部署教训）</span></div>
+    </div>
+    <div class="ep-note rv d5">同样的坑不踩第二次 —— 情景记忆是团队的「共同经历」</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 情景记忆让 Hermes <b>吃一堑长一智</b></footer>
+</section>
+
+<!-- 屏8 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">会话会结束，偏好该留下</h2>
+    <p class="scr-desc rv d2">沉淀 → 入库 → 注入 → 冲突更新 → 遗忘 → 情景复用</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>沉淀</span><i>→</i><span>入库</span><i>→</i><span>注入</span><i>→</i><span>冲突更新</span><i>→</i><span>遗忘清理</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">🧩</div>
+        <div><b>运行时共享的延伸</b><p>01 期说「记忆共享」，这一期把它从 session 内推向跨 session —— 用户档案跟着人走</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🧪</div>
+        <div><b>前瞻演绎</b><p>运行说明文档未定稿此能力 —— 接口与行为以最终实现为准，本篇是设计推演</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">🔒</div>
+        <div><b>隐私是红线</b><p>敏感信息不入库；用户可查看、可更正、可一键删除自己的记忆</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“会话会结束，<br>偏好该留下。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">HERMES AGENT 对象拆解 · 08 / 跨会话记忆篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else {
+    secs.forEach((s) => s.classList.add('active'));
+  }
+
+  dots.forEach((d, i) => d.addEventListener('click', () => {
+    secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+</script>
+</body>
+</html>
