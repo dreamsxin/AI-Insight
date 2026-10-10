@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-06 + AI 运作原理拆解，共 9 个自包含逐屏动画">
+<title>AI 运作原理 · 动画演示索引</title>
+<style>
+  :root {
+    --bg0: #070b14;
+    --ink: #e8eefc;
+    --dim: #8b96ad;
+    --cyan: #22d3ee;
+    --purple: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --pink: #f472b6;
+    --card: rgba(255,255,255,.05);
+    --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: var(--bg0);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  .wrap {
+    position: relative; z-index: 1;
+    max-width: 860px; margin: 0 auto;
+    padding: calc(40px + env(safe-area-inset-top)) 22px calc(50px + env(safe-area-inset-bottom));
+  }
+  .kicker {
+    display: inline-block;
+    font-size: 10px; letter-spacing: .28em; color: var(--dim);
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 6px 16px; border-radius: 999px;
+  }
+  h1 { font-size: clamp(28px, 6.4vw, 40px); font-weight: 800; margin: 18px 0 8px; letter-spacing: .02em; }
+  .grad {
+    background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .sub { font-size: 13.5px; color: #aab6cf; line-height: 1.7; }
+  .sub code {
+    font-family: var(--mono); font-size: .9em; color: var(--cyan);
+    background: rgba(34,211,238,.08); padding: 1px 6px; border-radius: 5px;
+  }
+  .series { margin-top: 34px; }
+  .series-head {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 12px; letter-spacing: .16em; color: var(--dim);
+    margin-bottom: 14px;
+  }
+  .series-head::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .series-head b { color: #c3cde2; font-weight: 700; }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 12px;
+  }
+  a.card {
+    display: flex; flex-direction: column; gap: 8px;
+    text-decoration: none; color: inherit;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 16px; padding: 15px 17px;
+    transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+  }
+  a.card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(34,211,238,.55);
+    box-shadow: 0 8px 30px rgba(34,211,238,.14);
+  }
+  .card-top { display: flex; align-items: center; gap: 9px; }
+  .card-ico { font-size: 22px; }
+  .num {
+    font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .1em;
+    padding: 2px 8px; border-radius: 999px;
+  }
+  .n-h1 { color: var(--cyan); background: rgba(34,211,238,.1); border: 1px solid rgba(34,211,238,.4); }
+  .n-h2 { color: var(--green); background: rgba(52,211,153,.1); border: 1px solid rgba(52,211,153,.4); }
+  .n-h3 { color: var(--amber); background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.4); }
+  .n-h4 { color: var(--purple); background: rgba(167,139,250,.1); border: 1px solid rgba(167,139,250,.4); }
+  .n-h5 { color: var(--pink); background: rgba(244,114,182,.1); border: 1px solid rgba(244,114,182,.4); }
+  .n-h6 { color: #7dd3fc; background: rgba(125,211,252,.1); border: 1px solid rgba(125,211,252,.4); }
+  .card b { font-size: 14.5px; }
+  .card p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .card .go {
+    margin-top: auto; padding-top: 8px;
+    font-family: var(--mono); font-size: 10.5px; color: var(--cyan);
+    letter-spacing: .08em; opacity: .75;
+  }
+  footer {
+    margin-top: 44px; padding-top: 16px;
+    border-top: 1px solid var(--line);
+    font-size: 11px; color: var(--dim); line-height: 1.8;
+  }
+  footer code { font-family: var(--mono); color: var(--cyan); }
+  @media (prefers-reduced-motion: reduce) {
+    a.card { transition: none; }
+    a.card:hover { transform: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="kicker">AI-INSIGHT · DOCS</span>
+  <h1>运作动画<span class="grad">演示索引</span></h1>
+  <p class="sub">9 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
+
+  <div class="series">
+    <div class="series-head"><b>HERMES AGENT 对象拆解</b></div>
+    <div class="grid">
+      <a class="card" href="hermes-01-architecture-animation.html">
+        <div class="card-top"><span class="card-ico">🚪</span><span class="num n-h1">· 01</span></div>
+        <b>多入口架构</b>
+        <p>CLI / Gateway / ACP / API / Batch 五扇门，进门以后走进的是同一个 Agent</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="hermes-02-runtime-animation.html">
+        <div class="card-top"><span class="card-ico">💬</span><span class="num n-h2">· 02</span></div>
+        <b>会话与运行时</b>
+        <p>会话创建、上下文绑定、工具共享、记忆压缩 —— 共享的不是界面，而是运行时</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="hermes-mcp-animation.html">
+        <div class="card-top"><span class="card-ico">🔌</span><span class="num n-h3">· 03</span></div>
+        <b>MCP 自动引导</b>
+        <p>initialize 握手带回 instructions，动态拼接进 system —— 行为对齐发生在 LLM 侧</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="hermes-04-loop-animation.html">
+        <div class="card-top"><span class="card-ico">📜</span><span class="num n-h4">· 04</span></div>
+        <b>主循环消息流</b>
+        <p>messages 数组逐轮生长：亮菜单 → 拦意图 → 调外包 → 塞回 → 收敛退出</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="hermes-05-slim-animation.html">
+        <div class="card-top"><span class="card-ico">✂️</span><span class="num n-h5">· 05</span></div>
+        <b>工具结果瘦身</b>
+        <p>51 万字符网页 → 截取 / 提取 / 总结 → 2.3k 摘要塞回 —— 原始长文永不进上下文</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="hermes-06-entry-animation.html">
+        <div class="card-top"><span class="card-ico">🧩</span><span class="num n-h6">· 06</span></div>
+        <b>新增一个入口</b>
+        <p>明天要接飞书？协议解析 + 会话桥接两层胶水，核心零改动</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="series">
+    <div class="series-head"><b>AI 运作原理拆解</b></div>
+    <div class="grid">
+      <a class="card" href="llm-prompt-animation.html">
+        <div class="card-top"><span class="card-ico">🧠</span><span class="num n-h1">· 04</span></div>
+        <b>LLM 提示词交互</b>
+        <p>组装 messages → 分词 → 预测下一个 token → 流式生成 → 多轮循环</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="agent-loop-animation.html">
+        <div class="card-top"><span class="card-ico">🤖</span><span class="num n-h2">· 05</span></div>
+        <b>Agent 运作原理</b>
+        <p>接收目标 → 思考规划 → 工具调用 → 执行观察 → 循环收敛（LLM + 工具 + 循环）</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="mcp-cdp-animation.html">
+        <div class="card-top"><span class="card-ico">🖥️</span><span class="num n-h3">· 06</span></div>
+        <b>MCP × Chrome CDP</b>
+        <p>工具调用 → 协议翻译 → WebSocket → Chrome 执行 → 快照交付的完整链路</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+    </div>
+  </div>
+
+  <footer>
+    每个演示均为单文件零依赖页面，可直接分享 · 播放时上滑逐屏观看，右侧圆点可跳转 ·
+    本地预览：<code>python -m http.server 8899 --directory docs</code>
+  </footer>
+</div>
+</body>
+</html>
