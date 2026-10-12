@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#070b14">
-<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-11 + AI 运作原理拆解 01-12 + Agent 开发避坑指南 01-04 + AGENT 实战工坊 01-04，共 31 个自包含逐屏动画">
+<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-15 + AI 运作原理拆解 01-14 + Agent 开发避坑指南 01-04 + AGENT 实战工坊 01-04，共 37 个自包含逐屏动画">
 <title>AI 运作原理 · 动画演示索引</title>
 <style>
   :root {
@@ -125,7 +125,7 @@
 <div class="wrap">
   <span class="kicker">AI-INSIGHT · DOCS</span>
   <h1>运作动画<span class="grad">演示索引</span></h1>
-  <p class="sub">31 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
+  <p class="sub">37 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
 
   <div class="series">
     <div class="series-head"><b>HERMES AGENT 对象拆解</b></div>
@@ -194,6 +194,30 @@
         <div class="card-top"><span class="card-ico">🧯</span><span class="num n-h5">· 11</span></div>
         <b>错误恢复</b>
         <p>报错回填 → 退避重试 → 熔断上报 —— 错误不是崩溃，是塞回循环的观察</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="hermes-12-toolcall-animation.html">
+        <div class="card-top"><span class="card-ico">🧾</span><span class="num n-h6">· 12</span></div>
+        <b>工具调用协议</b>
+        <p>tool_use / tool_result 严格配对 → schema 校验 → 并行按序回填 —— 协议即状态机</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="hermes-13-context-animation.html">
+        <div class="card-top"><span class="card-ico">🧱</span><span class="num n-h1">· 13</span></div>
+        <b>上下文组装</b>
+        <p>五层拼装 → 静态前置命中缓存 → 超线裁剪 → 按需注入 —— 它决定模型看见什么</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="hermes-14-distributed-animation.html">
+        <div class="card-top"><span class="card-ico">🛰️</span><span class="num n-h2">· 14</span></div>
+        <b>分布式 Agent</b>
+        <p>名片发现 → 委托状态机 → 事件重放恢复 —— 并行不是免费的，是用 token 买的</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="hermes-15-sandbox-animation.html">
+        <div class="card-top"><span class="card-ico">📦</span><span class="num n-h3">· 15</span></div>
+        <b>沙箱两兄弟</b>
+        <p>OS 过滤式（namespace/cgroups/seccomp）vs WASM 能力式 —— 跑模型写的代码，先选笼子</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
     </div>
@@ -272,6 +296,18 @@
         <div class="card-top"><span class="card-ico">🎲</span><span class="num n-h3">· 12</span></div>
         <b>采样策略</b>
         <p>概率表 → top-k / top-p 过滤 → 温度调形 → 抽签 —— 打分归模型，拍板归采样</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="ai-13-thinking-animation.html">
+        <div class="card-top"><span class="card-ico">🤔</span><span class="num n-h4">· 13</span></div>
+        <b>推理模型与思维链</b>
+        <p>思考 token → 测试时算力换性能 → 预算旋钮 —— 先打草稿再交卷</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="ai-14-speed-animation.html">
+        <div class="card-top"><span class="card-ico">⚡</span><span class="num n-h5">· 14</span></div>
+        <b>推理加速四件套</b>
+        <p>KV Cache → 量化 → 投机解码 → MoE —— 快不是算得猛，是算得少</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
     </div>
