@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#070b14">
-<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-11 + AI 运作原理拆解 01-12，共 23 个自包含逐屏动画">
+<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-11 + AI 运作原理拆解 01-12 + Agent 开发避坑指南 01-04 + AGENT 实战工坊 01-03，共 30 个自包含逐屏动画">
 <title>AI 运作原理 · 动画演示索引</title>
 <style>
   :root {
@@ -115,7 +115,7 @@
 <div class="wrap">
   <span class="kicker">AI-INSIGHT · DOCS</span>
   <h1>运作动画<span class="grad">演示索引</span></h1>
-  <p class="sub">23 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
+  <p class="sub">30 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
 
   <div class="series">
     <div class="series-head"><b>HERMES AGENT 对象拆解</b></div>
@@ -262,6 +262,60 @@
         <div class="card-top"><span class="card-ico">🎲</span><span class="num n-h3">· 12</span></div>
         <b>采样策略</b>
         <p>概率表 → top-k / top-p 过滤 → 温度调形 → 抽签 —— 打分归模型，拍板归采样</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="series">
+    <div class="series-head"><b>AGENT 开发避坑指南</b></div>
+    <div class="grid">
+      <a class="card" href="dev-01-tools-animation.html">
+        <div class="card-top"><span class="card-ico">🔧</span><span class="num n-h1">· 01</span></div>
+        <b>工具设计</b>
+        <p>选错工具 / 参数幻觉 / 选择过载 —— 工具说明书是写给模型的 prompt</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="dev-02-loop-animation.html">
+        <div class="card-top"><span class="card-ico">💸</span><span class="num n-h2">· 02</span></div>
+        <b>循环失控与成本</b>
+        <p>死循环现场 → 三道保险丝 → 卡住就升级 —— 没有保险丝的循环是烧钱机</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="dev-03-context-animation.html">
+        <div class="card-top"><span class="card-ico">🧹</span><span class="num n-h3">· 03</span></div>
+        <b>上下文工程</b>
+        <p>context rot → 认清三类垃圾 → 裁剪 / 压缩 / 外置 —— 塞得越多反而越笨</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="dev-04-evals-animation.html">
+        <div class="card-top"><span class="card-ico">📊</span><span class="num n-h4">· 04</span></div>
+        <b>评估与可观测</b>
+        <p>全链路 trace → 最小评估集 → 断言分层 → 回归进 CI —— 没有评估就是掷骰子</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="series">
+    <div class="series-head"><b>AGENT 实战工坊 · 知识问答</b></div>
+    <div class="grid">
+      <a class="card" href="rag-01-ingest-animation.html">
+        <div class="card-top"><span class="card-ico">🗄️</span><span class="num n-h1">· 01</span></div>
+        <b>语料入库</b>
+        <p>定任务 → 清洗 → 切块 → 嵌入 → 20 问自检 —— RAG 的上限入库那天就定了</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="rag-02-dialog-animation.html">
+        <div class="card-top"><span class="card-ico">💬</span><span class="num n-h2">· 02</span></div>
+        <b>检索与多轮</b>
+        <p>查询改写 → 混合检索 → rerank 20 进 4 → 敢追问 —— 客服体验的分水岭</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="rag-03-ship-animation.html">
+        <div class="card-top"><span class="card-ico">🚀</span><span class="num n-h3">· 03</span></div>
+        <b>拒答引用与上线</b>
+        <p>强制引用 → 阈值拒答 → 语义缓存 → 换语料复用 —— 架构通用，语料是你的</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
     </div>
