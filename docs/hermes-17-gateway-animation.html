@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="Hermes AI 网关：统一接入多供应商、路由与降级链、虚拟密钥托管、限流配额与成本记账、PII 过滤、可观测 —— 塔台不飞飞机，逐屏动画演示">
+<title>Hermes AI 网关 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14;
+    --bg1: #0c1322;
+    --ink: #e8eefc;
+    --dim: #8b96ad;
+    --cyan: #22d3ee;
+    --purple: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #fb7185;
+    --card: rgba(255,255,255,.05);
+    --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+
+  /* ===== 右侧进度圆点 ===== */
+  .dots {
+    position: fixed; right: 9px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 11px; z-index: 60;
+  }
+  .dots button {
+    width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0;
+    background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s;
+  }
+  .dots button.on {
+    background: var(--cyan); transform: scale(1.4);
+    box-shadow: 0 0 10px rgba(34,211,238,.85);
+  }
+
+  /* ===== 整屏骨架 ===== */
+  .screen {
+    position: relative; z-index: 1;
+    height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always;
+    overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before {
+    content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%);
+  }
+  .s-hero  { --glow: rgba(34,211,238,.10); }
+  .s-unify { --glow: rgba(52,211,153,.10); }
+  .s-route { --glow: rgba(34,211,238,.11); }
+  .s-key   { --glow: rgba(167,139,250,.11); }
+  .s-budget{ --glow: rgba(251,191,36,.09); }
+  .s-obs   { --glow: rgba(251,113,133,.08); }
+  .s-sum   { --glow: rgba(244,114,182,.08); }
+
+  .scr-head {
+    width: 100%; max-width: 640px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .step-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07);
+    padding: 4px 13px; border-radius: 999px;
+  }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code {
+    color: var(--cyan); font-size: .92em;
+    background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px;
+  }
+  .code-chip {
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage {
+    position: relative; z-index: 1; flex: 1; min-height: 0;
+    width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 13px;
+  }
+  .scr-foot {
+    width: 100%; max-width: 640px; text-align: center;
+    font-size: 12px; line-height: 1.65; color: var(--dim);
+  }
+  .scr-foot b { color: #c3cde2; }
+
+  /* ===== 通用入场动画 ===== */
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; }
+  .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; }
+  .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; }
+  .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  /* ===== 通用小组件 ===== */
+  .meta-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.65; }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(16px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes glowGood { 0%,100% { box-shadow: 0 0 0 rgba(52,211,153,0) } 50% { box-shadow: 0 0 22px rgba(52,211,153,.3) } }
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+
+  /* ============ 屏1 · 封面 ============ */
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker {
+    font-size: 10px; letter-spacing: .28em; color: var(--dim);
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 6px 16px; border-radius: 999px;
+  }
+  h1 { font-size: clamp(36px, 10vw, 58px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad {
+    background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node {
+    font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line); white-space: nowrap;
+  }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i {
+    position: absolute; top: 50%; transform: translateY(-50%); left: 0;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan); opacity: 0;
+  }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint {
+    position: absolute; bottom: calc(16px + env(safe-area-inset-bottom));
+    left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em;
+  }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* ============ 屏2 · STEP 1 统一接入 ============ */
+  .uni-scene { width: 100%; max-width: 560px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .uni-provs { display: flex; gap: 7px; flex-wrap: wrap; justify-content: center; }
+  .up {
+    font-family: var(--mono); font-size: 10.5px; padding: 5px 10px; border-radius: 999px;
+    background: var(--card); border: 1px solid var(--line); color: #9fb3d1;
+    opacity: 0;
+  }
+  .uni-gate {
+    padding: 11px 20px; border-radius: 14px; text-align: center;
+    background: rgba(52,211,153,.07); border: 1px solid rgba(52,211,153,.5);
+    opacity: 0;
+  }
+  .uni-gate b { font-size: 13.5px; color: #a7f3d0; }
+  .uni-gate small { display: block; font-size: 10px; color: var(--dim); margin-top: 3px; }
+  .uni-app {
+    font-family: var(--mono); font-size: 11px; color: #67e8f9;
+    border: 1px solid rgba(34,211,238,.45); background: rgba(34,211,238,.07);
+    border-radius: 10px; padding: 7px 14px; opacity: 0;
+  }
+  .uni-arrows { display: flex; gap: 26px; }
+  .uni-arrows i { color: var(--dim); font-size: 12px; font-style: normal; opacity: 0; }
+  .s-unify.active .up { animation: msgIn .4s ease both; }
+  .s-unify.active .up:nth-child(1) { animation-delay: .4s; }
+  .s-unify.active .up:nth-child(2) { animation-delay: .55s; }
+  .s-unify.active .up:nth-child(3) { animation-delay: .7s; }
+  .s-unify.active .up:nth-child(4) { animation-delay: .85s; }
+  .s-unify.active .uni-arrows i { animation: rise .3s ease 1.2s both; }
+  .s-unify.active .uni-gate { animation: msgIn .5s ease 1.4s both, glowGood 2.4s ease-in-out 2s infinite; }
+  .s-unify.active .uni-arrows2 i { animation: rise .3s ease 1.9s both; }
+  .s-unify.active .uni-app { animation: msgIn .5s ease 2.1s both; }
+  .s-unify.active .uni-note { animation: rise .6s ease 2.6s both; }
+  .uni-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .uni-note b { color: #a7f3d0; }
+
+  /* ============ 屏3 · STEP 2 路由与降级 ============ */
+  .route-list { display: flex; flex-direction: column; gap: 7px; width: 100%; max-width: 560px; }
+  .rl {
+    display: flex; align-items: center; gap: 9px;
+    padding: 8px 13px; border-radius: 11px;
+    background: var(--card); border: 1px solid var(--line);
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    opacity: 0; white-space: nowrap; overflow: hidden;
+  }
+  .rl .r-ico { flex: none; font-style: normal; }
+  .rl span b { color: #c3cde2; }
+  .rl .r-res { margin-left: auto; flex: none; }
+  .rr-ok { color: var(--green); }
+  .rr-hot { color: var(--red); }
+  .s-route.active .rl { animation: msgIn .45s ease both; }
+  .s-route.active .rl:nth-child(1) { animation-delay: .4s; }
+  .s-route.active .rl:nth-child(2) { animation-delay: .7s; }
+  .s-route.active .rl:nth-child(3) { animation-delay: 1s; }
+  .s-route.active .rl:nth-child(4) { animation-delay: 1.3s; }
+  .s-route.active .rl:nth-child(5) { animation-delay: 1.6s; }
+  .s-route.active .route-fb { animation: msgIn .55s ease 2.1s both, fbGlow 2.4s ease-in-out 2.7s infinite; }
+  @keyframes fbGlow { 0%,100% { box-shadow: 0 0 0 rgba(52,211,153,0) } 50% { box-shadow: 0 0 20px rgba(52,211,153,.3) } }
+  .route-fb {
+    width: 100%; max-width: 560px;
+    padding: 10px 14px; border-radius: 12px;
+    background: rgba(52,211,153,.05); border: 1px solid rgba(52,211,153,.5);
+    font-family: var(--mono); font-size: 11px; color: #6ee7b7; line-height: 1.8; opacity: 0;
+  }
+  .route-fb s { color: #ffb9c4; }
+  .s-route.active .route-note { animation: rise .6s ease 3s both; }
+  .route-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .route-note b { color: #6ee7b7; }
+
+  /* ============ 屏4 · STEP 3 密钥托管 ============ */
+  .key-flow { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 8px; opacity: 0; }
+  .kf {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line);
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    opacity: 0; white-space: nowrap; overflow: hidden;
+  }
+  .kf i { font-style: normal; font-size: 15px; flex: none; }
+  .kf span { overflow: hidden; text-overflow: ellipsis; }
+  .kf span b { color: #c3cde2; }
+  .kf .k-chip { margin-left: auto; flex: none; font-size: 9.5px; padding: 2px 8px; border-radius: 999px; }
+  .kc-real { color: var(--red); border: 1px solid rgba(251,113,133,.4); background: rgba(251,113,133,.07); }
+  .kc-virt { color: var(--amber); border: 1px solid rgba(251,191,36,.4); background: rgba(251,191,36,.07); }
+  .s-key.active .key-flow { animation: msgIn .55s ease .4s both; }
+  .s-key.active .kf { animation: msgIn .45s ease both; }
+  .s-key.active .kf:nth-child(2) { animation-delay: .9s; }
+  .s-key.active .kf:nth-child(3) { animation-delay: 1.4s; }
+  .s-key.active .kf:nth-child(4) { animation-delay: 1.9s; }
+  .s-key.active .key-note { animation: rise .6s ease 2.5s both; }
+  .key-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .key-note b { color: #c4b5fd; }
+
+  /* ============ 屏5 · STEP 4 限流与成本 ============ */
+  .bud-grid { display: flex; flex-direction: column; gap: 9px; width: 100%; max-width: 560px; }
+  .budg {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 11px 14px; border-radius: 13px;
+    background: var(--card); border: 1px solid var(--line);
+    opacity: 0;
+  }
+  .budg .t-ico { font-size: 19px; flex: none; }
+  .budg b { font-size: 13px; display: block; }
+  .budg code { color: #7dd3fc; font-size: .9em; }
+  .budg p { font-size: 11.5px; color: var(--dim); line-height: 1.65; margin-top: 3px; }
+  .b1 { border-color: rgba(251,191,36,.4); }
+  .b2 { border-color: rgba(52,211,153,.4); }
+  .b3 { border-color: rgba(251,113,133,.45); }
+  .s-budget.active .budg { animation: msgIn .5s ease both; }
+  .s-budget.active .b1 { animation-delay: .4s; }
+  .s-budget.active .b2 { animation-delay: .95s; }
+  .s-budget.active .b3 { animation-delay: 1.5s, 2.3s; animation-name: msgIn, badGlow; animation-duration: .5s, 2.4s; animation-iteration-count: 1, infinite; }
+  @keyframes badGlow { 0%,100% { box-shadow: 0 0 0 rgba(251,113,133,0) } 50% { box-shadow: 0 0 20px rgba(251,113,133,.25) } }
+  .s-budget.active .budget-note { animation: rise .6s ease 2.4s both; }
+  .budget-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .budget-note b { color: #fde68a; }
+
+  /* ============ 屏6 · STEP 5 可观测 ============ */
+  .obs-list { display: flex; flex-direction: column; gap: 7px; width: 100%; max-width: 560px; }
+  .obs {
+    display: grid; grid-template-columns: 58px 1fr 92px; gap: 8px; align-items: center;
+    padding: 8px 13px; border-radius: 11px;
+    background: var(--card); border: 1px solid var(--line);
+    font-family: var(--mono); font-size: 10.5px; color: #9fb3d1;
+    opacity: 0; white-space: nowrap; overflow: hidden;
+  }
+  .obs .tm { color: var(--dim); }
+  .obs .ev { color: #67e8f9; overflow: hidden; text-overflow: ellipsis; }
+  .obs .mt { text-align: right; }
+  .obs .mt .ok { color: var(--green); }
+  .obs .mt .warn { color: var(--amber); }
+  .s-obs.active .obs { animation: msgIn .45s ease both; }
+  .s-obs.active .obs:nth-child(1) { animation-delay: .4s; }
+  .s-obs.active .obs:nth-child(2) { animation-delay: .7s; }
+  .s-obs.active .obs:nth-child(3) { animation-delay: 1s; }
+  .s-obs.active .obs:nth-child(4) { animation-delay: 1.3s; }
+  .s-obs.active .obs:nth-child(5) { animation-delay: 1.6s; }
+  .s-obs.active .obs-note { animation: rise .6s ease 2.2s both; }
+  .obs-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .obs-note b { color: #6ee7b7; }
+
+  /* ============ 屏7 · 总结 ============ */
+  .sum-flow {
+    display: flex; gap: 4px; align-items: center; justify-content: center;
+    flex-wrap: wrap; font-size: 10px; color: var(--dim);
+  }
+  .sum-flow span {
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv {
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px 15px;
+  }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote {
+    font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center;
+    line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .replay {
+    font-size: 12.5px; color: #06121c; background: var(--cyan);
+    border: none; padding: 10px 26px; border-radius: 999px;
+    font-weight: 700; cursor: pointer; letter-spacing: .06em;
+  }
+  .replay:active { transform: scale(.96); }
+  .series-badge {
+    position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px;
+    font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em;
+  }
+
+  /* ============ 兜底与无障碍 ============ */
+  @media (max-height: 560px) {
+    .screen { overflow-y: auto; justify-content: flex-start; }
+    .stage { flex: 0 0 auto; padding: 14px 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition: none !important; scroll-behavior: auto !important;
+    }
+    .rv, .up, .uni-gate, .uni-app, .uni-arrows i, .uni-arrows2 i, .uni-note,
+    .rl, .route-fb, .route-note, .key-flow, .kf, .key-note, .budg, .budget-note,
+    .obs, .obs-note {
+      opacity: 1 !important; transform: none !important; filter: none !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面" aria-label="封面"></button>
+  <button title="STEP 1 统一接入" aria-label="统一接入"></button>
+  <button title="STEP 2 路由与降级" aria-label="路由与降级"></button>
+  <button title="STEP 3 密钥托管" aria-label="密钥托管"></button>
+  <button title="STEP 4 限流与成本" aria-label="限流与成本"></button>
+  <button title="STEP 5 可观测" aria-label="可观测"></button>
+  <button title="总结" aria-label="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">HERMES AGENT 对象拆解 · 17</div>
+    <h1 class="rv d2">AI 网关<br><span class="grad">塔台不飞飞机</span></h1>
+    <p class="hero-sub rv d3">Agent 身下的基础设施 · 逐屏动画演示</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">🛫 统一接入</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">🚦 路由降级</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">💰 限流记账</span>
+    </div>
+    <p class="hero-quote rv d5">「网关不生成一个 token —— 却决定谁先起飞、走哪条跑道」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 统一接入 -->
+<section class="screen s-unify">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>统一接入</div>
+    <h2 class="rv d1">N 家供应商，收敛成一套 API</h2>
+    <p class="scr-desc rv d2">LiteLLM / Portkey / Cloudflare / Kong 都在做同一件事：把多供应商抹平成 OpenAI 兼容接口</p>
+    <div class="code-chip rv d2">应用只认一套 API —— <b>换模型不改一行代码</b></div>
+  </header>
+  <div class="stage">
+    <div class="uni-scene">
+      <div class="uni-provs">
+        <span class="up">OpenAI</span><span class="up">Anthropic</span><span class="up">Gemini</span><span class="up">本地模型</span>
+      </div>
+      <div class="uni-arrows"><i>↘</i><i>↓</i><i>↙</i><i>↓</i></div>
+      <div class="uni-gate"><b>🛫 AI 网关</b><small>路由 · 降级 · 限流 · 记账 · 托管密钥</small></div>
+      <div class="uni-arrows uni-arrows2"><i>↓</i></div>
+      <div class="uni-app">你的 Agent · 一套 OpenAI 兼容 API</div>
+    </div>
+    <div class="uni-note rv d6">网关不生成一个 token —— <b>它是塔台，不是航空公司</b>：管调度，不管飞行</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 接入收敛一次，<b>后面每个 Agent 都白捡这层能力</b></footer>
+</section>
+
+<!-- 屏3 · STEP 2 路由与降级 -->
+<section class="screen s-route">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>路由与降级</div>
+    <h2 class="rv d1">五种策略 + 一条备降跑道</h2>
+    <p class="scr-desc rv d2">LiteLLM 的五种路由策略：加权随机 / 用量最低 / 延迟最快 / 最闲 / 成本最低</p>
+    <div class="code-chip rv d2">allowed_fails <b>3 次</b> → 冷却 5s · 到期自愈</div>
+  </header>
+  <div class="stage">
+    <div class="route-list">
+      <div class="rl"><i class="r-ico">🎲</i><span><b>simple-shuffle</b> 加权随机分摊</span><span class="r-res rr-ok">✓</span></div>
+      <div class="rl"><i class="r-ico">📉</i><span><b>usage-based</b> 当分钟 TPM 最低者优先</span><span class="r-res rr-ok">✓</span></div>
+      <div class="rl"><i class="r-ico">⚡</i><span><b>latency-based</b> 响应最快 + 缓冲带防打满</span><span class="r-res rr-ok">✓</span></div>
+      <div class="rl"><i class="r-ico">💸</i><span><b>cost-based</b> 每 token 单价最低者优先</span><span class="r-res rr-ok">✓</span></div>
+      <div class="rl"><i class="r-ico">🔥</i><span><b>main-lane</b> 连续失败 3 次 → 冷却 5 秒</span><span class="r-res rr-hot">✕ 冷却</span></div>
+    </div>
+    <div class="route-fb">✕ <s>主力供应商 429 限流</s> → 自动切换备降跑道：Anthropic → Gemini → 本地模型<br>RetryPolicy 按错误类型分别配重试 · 同组重试穷尽再跨组 fallback</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 用户看到的只是「答出来了」—— <b>换了几条跑道他不知道</b></footer>
+</section>
+
+<!-- 屏4 · STEP 3 密钥托管 -->
+<section class="screen s-key">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>密钥托管</div>
+    <h2 class="rv d1">真钥匙锁保险柜，员工只拿房卡</h2>
+    <p class="scr-desc rv d2">下游调用方拿「虚拟 key」—— 可注销、带限额；真实供应商密钥只存在网关里</p>
+    <div class="code-chip rv d2">虚拟 key 泄露 = 换一张卡 · <b>门锁不动</b></div>
+  </header>
+  <div class="stage">
+    <div class="key-flow">
+      <div class="kf"><i>🔑</i><span><b>真实供应商密钥</b> sk-ant-…（全部供应商）</span><span class="k-chip kc-real">🔒 只存网关保险柜</span></div>
+      <div class="kf"><i>🎫</i><span>网关签发<b>虚拟 key</b>：sk-vt-team-a（带 tpm/rpm 限额 + 预算）</span><span class="k-chip kc-virt">发给大家用</span></div>
+      <div class="kf"><i>📤</i><span>Agent / 应用拿虚拟 key 调网关</span><span class="k-chip kc-virt">随时可注销</span></div>
+      <div class="kf"><i>🛡️</i><span>PII 过滤：Presidio 检测姓名/信用卡/邮箱 → <b>MASK 替换或 BLOCK 拒绝</b></span><span class="k-chip kc-virt">可只扫一侧</span></div>
+    </div>
+    <div class="key-note rv d5">泄露处理：注销虚拟 key、换一张即可 —— <b>真实门锁一个都不用换</b>；Kong 的 Prompt Guard 还能抓越狱与注入</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 密钥分级的意义：<b>事故半径从「全部供应商」缩到「一张房卡」</b></footer>
+</section>
+
+<!-- 屏5 · STEP 4 限流与成本 -->
+<section class="screen s-budget">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>限流与成本</div>
+    <h2 class="rv d1">钱和速度，都在这里管</h2>
+    <p class="scr-desc rv d2">按 key / team / user 三级限流记账 —— 超额直接 429，不排队</p>
+    <div class="code-chip rv d2">max_budget + <b>budget_duration</b> 周期重置</div>
+  </header>
+  <div class="stage">
+    <div class="bud-grid">
+      <div class="budg b1">
+        <div class="t-ico">🚦</div>
+        <div><b>限流配额</b>
+        <p><code>tpm_limit / rpm_limit / max_parallel_requests</code> 按虚拟 key 生效；超限 429（不排队）—— 上层自己决定退避（11 期）</p></div>
+      </div>
+      <div class="budg b2">
+        <div class="t-ico">🧾</div>
+        <div><b>成本记账</b>
+        <p>每次调用自动按单价记美元，key → user → team 三级汇总入库，<code>/key/info</code> 随时查账</p></div>
+      </div>
+      <div class="budg b3">
+        <div class="t-ico">💣</div>
+        <div><b>反直觉：语义缓存对 Agent 是坑</b>
+        <p>同一问题换个措辞就命中「别人的答案」，而 Agent 每轮上下文都不同 —— <b>官方自己都警告别在 agentic 流量上开</b></p></div>
+      </div>
+    </div>
+    <div class="budget-note rv d5">精确缓存按整个请求体 hash —— 对话任何一点改动即 miss；<b>多 worker 生产环境必须用共享 Redis</b></div>
+  </div>
+  <footer class="scr-foot rv d6">💡 网关是<b>财务 + 保安 + 调度</b>三合一 —— Agent 只管干活</footer>
+</section>
+
+<!-- 屏6 · STEP 5 可观测 -->
+<section class="screen s-obs">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>可观测</div>
+    <h2 class="rv d1">每一次调用，都有航班记录</h2>
+    <p class="scr-desc rv d2">requests / tokens / cost / latency 全部落账，日志接 Langfuse 或 OTLP</p>
+    <div class="code-chip rv d2">重试与冷却统计 —— <b>哪家供应商不靠谱，一目了然</b></div>
+  </header>
+  <div class="stage">
+    <div class="obs-list">
+      <div class="obs"><span class="tm">10:02:11</span><span class="ev">chat → gpt-4o · 1,842 tokens</span><span class="mt">$0.0041 <span class="ok">✓ 212ms</span></span></div>
+      <div class="obs"><span class="tm">10:02:12</span><span class="ev">chat → anthropic · fallback</span><span class="mt">$0.0063 <span class="ok">✓ 188ms</span></span></div>
+      <div class="obs"><span class="tm">10:02:14</span><span class="ev">chat → gemini · 超过 allowed_fails</span><span class="mt"><span class="warn">⏳ 冷却 5s</span></span></div>
+      <div class="obs"><span class="tm">10:02:15</span><span class="ev">guardrail · PII MASK ×2（姓名/邮箱）</span><span class="mt"><span class="ok">✓</span></span></div>
+      <div class="obs"><span class="tm">10:02:19</span><span class="ev">key=team-a · 本月花费 rollup</span><span class="mt">$41.27</span></div>
+    </div>
+    <div class="obs-note rv d5">这份日志向上接 Langfuse / OTLP —— <b>与 dev-04 期的全链路 trace 在网关层汇合</b></div>
+  </div>
+  <footer class="scr-foot rv d6">💡 网关日志是<b>成本与可靠性的总账本</b> —— 哪家慢、哪家贵、哪家挂，一目了然</footer>
+</section>
+
+<!-- 屏7 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">塔台不飞飞机</h2>
+    <p class="scr-desc rv d2">统一接入 → 路由降级 → 密钥托管 → 限流记账 → 全量可观测</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>一套 API 接 N 家</span><i>→</i><span>五种路由 + fallback</span><i>→</i><span>虚拟 key 托管</span><i>→</i><span>限流记账</span><i>→</i><span>全量可观测</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">🛫</div>
+        <div><b>塔台逻辑</b><p>网关不生成 token，却管优先级、跑道与备降 —— 换供应商不改代码</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🎫</div>
+        <div><b>房卡不是门锁</b><p>虚拟 key 带限额可注销，真实密钥锁保险柜 —— 事故半径一张卡</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">🧾</div>
+        <div><b>账本即洞察</b><p>token/成本/延迟全落账 —— 语义缓存别乱开，Agent 流量是例外</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“网关不生成一个 token——<br>却决定谁先起飞、走哪条跑道。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">HERMES AGENT 对象拆解 · 17 / AI 网关篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else {
+    secs.forEach((s) => s.classList.add('active'));
+  }
+
+  dots.forEach((d, i) => d.addEventListener('click', () => {
+    secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+</script>
+</body>
+</html>
