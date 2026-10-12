@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>古诗文知识问答 · Demo</title>
+<style>
+  :root {
+    --bg0: #070b14; --ink: #e8eefc; --dim: #8b96ad;
+    --cyan: #22d3ee; --green: #34d399; --amber: #fbbf24;
+    --card: rgba(255,255,255,.05); --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh; background: var(--bg0); color: var(--ink);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  .wrap { position: relative; max-width: 760px; margin: 0 auto; padding: 40px 20px 60px; }
+  .kicker {
+    display: inline-block; font-size: 10px; letter-spacing: .28em; color: var(--dim);
+    border: 1px solid var(--line); padding: 6px 16px; border-radius: 999px;
+  }
+  h1 { font-size: 28px; font-weight: 800; margin: 16px 0 6px; }
+  h1 .grad {
+    background: linear-gradient(92deg, #22d3ee, #a78bfa, #f472b6);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .stats { font-size: 12px; color: var(--dim); font-family: var(--mono); }
+  .search { display: flex; gap: 10px; margin-top: 26px; }
+  input {
+    flex: 1; font-size: 15px; padding: 13px 18px; border-radius: 14px;
+    background: var(--card); border: 1px solid var(--line); color: var(--ink); outline: none;
+  }
+  input:focus { border-color: rgba(34,211,238,.55); }
+  button {
+    font-size: 14px; font-weight: 700; padding: 0 26px; border-radius: 14px;
+    background: var(--cyan); color: #06121c; border: none; cursor: pointer;
+  }
+  button:active { transform: scale(.97); }
+  .samples { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .samples span {
+    font-size: 12px; color: var(--dim); border: 1px solid var(--line);
+    padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  }
+  .samples span:hover { color: var(--cyan); border-color: rgba(34,211,238,.5); }
+  .refuse {
+    margin-top: 22px; padding: 14px 16px; border-radius: 14px;
+    border: 1px dashed rgba(251,113,133,.5); background: rgba(251,113,133,.05);
+    color: #ffb9c4; font-size: 13px; line-height: 1.7; display: none;
+  }
+  .answer {
+    margin-top: 22px; padding: 15px 17px; border-radius: 14px;
+    background: rgba(34,211,238,.05); border: 1px solid rgba(34,211,238,.5);
+  }
+  .answer .a-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 10px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.45); background: rgba(34,211,238,.08);
+    padding: 3px 11px; border-radius: 999px; margin-bottom: 9px;
+  }
+  .answer .a-body { font-size: 14px; line-height: 1.9; color: #e8eefc; white-space: pre-wrap; }
+  .hint {
+    margin-top: 22px; padding: 10px 14px; border-radius: 12px;
+    background: rgba(251,191,36,.05); border: 1px dashed rgba(251,191,36,.45);
+    color: #fde68a; font-size: 12px; line-height: 1.7; display: none;
+  }
+  .hits { margin-top: 22px; display: flex; flex-direction: column; gap: 12px; }
+  .hit {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 14px 16px;
+  }
+  .hit-head {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+    font-size: 12px; color: var(--dim); font-family: var(--mono);
+  }
+  .hit-head .poem {
+    font-size: 13px; font-weight: 700; color: #67e8f9;
+    font-family: -apple-system, "PingFang SC", sans-serif;
+  }
+  .hit-head .score { margin-left: auto; }
+  .bar { width: 90px; height: 5px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 99px; background: var(--green); }
+  .hit-text { font-size: 13.5px; line-height: 1.85; color: #c3cde2; white-space: pre-wrap; }
+  .cite {
+    display: inline-block; font-family: var(--mono); font-size: 10px; color: var(--green);
+    border: 1px solid rgba(52,211,153,.45); background: rgba(52,211,153,.08);
+    border-radius: 6px; padding: 1px 7px; margin-top: 9px;
+  }
+  footer { margin-top: 40px; font-size: 11px; color: var(--dim); line-height: 1.8; border-top: 1px solid var(--line); padding-top: 14px; }
+  footer code { font-family: var(--mono); color: var(--cyan); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="kicker">AGENT 实战工坊 · RAG DEMO</span>
+  <h1>古诗文<span class="grad">知识问答</span></h1>
+  <div class="stats" id="stats">语料加载中…</div>
+
+  <div class="search">
+    <input id="q" placeholder="试试：静夜思 / 疑是地上霜 / 温故而知新…" autofocus>
+    <button onclick="ask()">检索</button>
+  </div>
+  <div class="samples">
+    <span onclick="fill('静夜思')">静夜思</span>
+    <span onclick="fill('疑是地上霜')">疑是地上霜</span>
+    <span onclick="fill('温故而知新')">温故而知新</span>
+    <span onclick="fill('将进酒的作者是谁')">将进酒的作者是谁</span>
+    <span onclick="fill('今天天气怎么样')">今天天气怎么样（拒答演示）</span>
+  </div>
+
+  <div class="refuse" id="refuse"></div>
+  <div class="answer" id="answer" style="display:none"></div>
+  <div class="hint" id="hint"></div>
+  <div class="hits" id="hits"></div>
+
+  <footer>
+    流程：检索 top-k 证据 → 阈值拒答 → （可选）LLM 依据证据生成带 [编号] 引用的回答 ·
+    语料：《经典古诗文诵读》<code>examples/经典古诗文诵读.pdf</code> ·
+    检索：字符 n-gram TF-IDF · LLM 接入见 <code>scripts/llm.py</code> 与 <code>examples/rag-demo/README.md</code>
+  </footer>
+</div>
+
+<script>
+  const hitsEl = document.getElementById('hits');
+  const refuseEl = document.getElementById('refuse');
+  const answerEl = document.getElementById('answer');
+  const hintEl = document.getElementById('hint');
+
+  fetch('/api/stats').then(r => r.json()).then(s => {
+    document.getElementById('stats').textContent =
+      `${s.chunks} 个语料块 · ${s.poems} 个识别篇名 · ${s.pages} 页 PDF` +
+      (s.llm_configured ? ' · LLM 已接入' : ' · 证据模式（未配置 LLM）');
+  });
+
+  function fill(t) { document.getElementById('q').value = t; ask(); }
+  document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') ask(); });
+
+  function esc(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function renderHits(hits) {
+    hitsEl.innerHTML = '';
+    for (const h of hits) {
+      const page = `PDF 第${h.page_start}页` + (h.printed_page ? `（印刷页 ${h.printed_page}）` : '');
+      const div = document.createElement('div');
+      div.className = 'hit';
+      div.innerHTML = `
+        <div class="hit-head">
+          <span class="poem">${esc(h.poem)}</span>
+          <span>${page}</span>
+          <span class="score">${h.score.toFixed(3)}
+            <span class="bar"><i style="width:${Math.min(100, h.score * 100)}%"></i></span>
+          </span>
+        </div>
+        <div class="hit-text">${esc(h.text)}</div>
+        <span class="cite">📎 引用：《经典古诗文诵读》${esc(h.poem)} · ${page}</span>`;
+      hitsEl.appendChild(div);
+    }
+  }
+
+  async function ask() {
+    const q = document.getElementById('q').value.trim();
+    if (!q) return;
+    hitsEl.innerHTML = '';
+    refuseEl.style.display = 'none';
+    answerEl.style.display = 'none';
+    hintEl.style.display = 'none';
+
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q }),
+    });
+    const data = await res.json();
+
+    if (data.mode === 'refuse') {
+      refuseEl.innerHTML = `资料中未找到与「${esc(q)}」匹配的内容（最高相似度 ${data.best_score.toFixed(3)}）。<br>换个问法试试 —— 宁可说不知道，不可编造。`;
+      refuseEl.style.display = 'block';
+      return;
+    }
+
+    if (data.mode === 'llm') {
+      answerEl.innerHTML = `
+        <span class="a-tag">🤖 LLM 依据语料生成</span>
+        <div class="a-body">${esc(data.answer)}</div>`;
+      answerEl.style.display = 'block';
+    } else {
+      // 证据模式：未配置 LLM 或调用失败
+      if (data.error) {
+        hintEl.textContent = '⚠️ ' + data.error;
+      } else {
+        hintEl.innerHTML = 'ℹ️ 当前为证据模式（未配置 LLM）。在 <code>examples/rag-demo/.env</code> 写入 <code>OPENAI_API_KEY</code> 即可启用生成式回答，方法见 README 步骤 7。';
+      }
+      hintEl.style.display = 'block';
+    }
+    renderHits(data.hits);
+  }
+</script>
+</body>
+</html>
