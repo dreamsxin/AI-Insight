@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#070b14">
-<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-11 + AI 运作原理拆解 01-12 + Agent 开发避坑指南 01-04 + AGENT 实战工坊 01-03，共 30 个自包含逐屏动画">
+<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-11 + AI 运作原理拆解 01-12 + Agent 开发避坑指南 01-04 + AGENT 实战工坊 01-04，共 31 个自包含逐屏动画">
 <title>AI 运作原理 · 动画演示索引</title>
 <style>
   :root {
@@ -64,6 +64,16 @@
   }
   .series-head::after { content: ""; flex: 1; height: 1px; background: var(--line); }
   .series-head b { color: #c3cde2; font-weight: 700; }
+  .series-note {
+    font-size: 11.5px; color: var(--dim); line-height: 1.7;
+    margin: -6px 0 14px;
+  }
+  .series-note a { color: var(--green); text-decoration: none; }
+  .series-note a:hover { text-decoration: underline; }
+  .series-note code {
+    font-family: var(--mono); font-size: .9em; color: var(--cyan);
+    background: rgba(34,211,238,.08); padding: 1px 6px; border-radius: 5px;
+  }
   .grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     gap: 12px;
@@ -115,7 +125,7 @@
 <div class="wrap">
   <span class="kicker">AI-INSIGHT · DOCS</span>
   <h1>运作动画<span class="grad">演示索引</span></h1>
-  <p class="sub">30 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
+  <p class="sub">31 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
 
   <div class="series">
     <div class="series-head"><b>HERMES AGENT 对象拆解</b></div>
@@ -299,6 +309,7 @@
 
   <div class="series">
     <div class="series-head"><b>AGENT 实战工坊 · 知识问答</b></div>
+    <div class="series-note">🎬 本系列配套<b>可运行 demo</b>：<a href="../examples/rag-demo/README.md">examples/rag-demo/README.md</a> —— 把《经典古诗文诵读.pdf》整本入库，六个 Python 脚本走完 提取→清洗→切块→TF-IDF 检索→LLM 有据回答 全流程（含拒答与页码引用），命令与真实输出全部记录在案</div>
     <div class="grid">
       <a class="card" href="rag-01-ingest-animation.html">
         <div class="card-top"><span class="card-ico">🗄️</span><span class="num n-h1">· 01</span></div>
@@ -316,6 +327,12 @@
         <div class="card-top"><span class="card-ico">🚀</span><span class="num n-h3">· 03</span></div>
         <b>拒答引用与上线</b>
         <p>强制引用 → 阈值拒答 → 语义缓存 → 换语料复用 —— 架构通用，语料是你的</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="rag-04-selection-animation.html">
+        <div class="card-top"><span class="card-ico">🧭</span><span class="num n-h4">· 04</span></div>
+        <b>选题指南</b>
+        <p>九大实战类型 · 难度星级 · 推荐路线 —— 选项目不是选架构，是选你拿得到的数据</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
     </div>
