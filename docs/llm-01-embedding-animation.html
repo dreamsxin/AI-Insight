@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#070b14">
-<meta name="description" content="LLM 模型算法原理 · 01 词向量几何学：词语变坐标、余弦相似度=夹角、king−man+woman≈queen 语义算术、skip-gram 与 embedding 表 —— 逐屏动画演示">
+<meta name="description" content="LLM 模型算法原理 · 01 词向量几何学：词语变坐标、余弦相似度=夹角、语境改造向量、king−man+woman≈queen、整句猜下一词（上下文向量×词表点积）—— 逐屏动画演示">
 <title>词向量几何学 · 逐屏动画演示</title>
 <style>
   :root {
@@ -61,7 +61,9 @@
   .s-hero { --glow: rgba(34,211,238,.10); }
   .s-map  { --glow: rgba(52,211,153,.11); }
   .s-ang  { --glow: rgba(34,211,238,.11); }
+  .s-ctx  { --glow: rgba(167,139,250,.11); }
   .s-ari  { --glow: rgba(167,139,250,.11); }
+  .s-next { --glow: rgba(52,211,153,.11); }
   .s-learn{ --glow: rgba(251,191,36,.09); }
   .s-sum  { --glow: rgba(244,114,182,.08); }
 
@@ -166,8 +168,8 @@
   .wdot.zone {
     font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: .08em;
   }
-  .s-map.active .wdot { animation: msgIn .45s ease both; }
   .s-map.active .wordmap { animation: msgIn .55s ease .3s both; }
+  .s-map.active .wdot { animation: msgIn .45s ease both; }
   .s-map.active .wdot:nth-of-type(1) { animation-delay: .6s; }
   .s-map.active .wdot:nth-of-type(2) { animation-delay: .75s; }
   .s-map.active .wdot:nth-of-type(3) { animation-delay: .9s; }
@@ -231,7 +233,38 @@
   .ang-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
   .ang-note b { color: #67e8f9; }
 
-  /* ============ 屏4 · 语义算术 ============ */
+  /* ============ 屏4 · 语境改造（新） ============ */
+  .ctx-cards { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .ctx {
+    padding: 12px 15px; border-radius: 14px;
+    background: var(--card); border: 1px solid var(--line);
+    opacity: 0;
+  }
+  .ctx .c-say { font-size: 13.5px; color: #c3cde2; }
+  .ctx .c-say mark { background: none; font-weight: 800; border-bottom: 2px solid var(--cyan); padding: 0 1px; }
+  .ctx.fruit .c-say mark { border-color: var(--green); }
+  .ctx .c-pull {
+    margin-top: 8px; display: flex; align-items: center; gap: 8px;
+    font-size: 11.5px; color: var(--dim);
+  }
+  .ctx .c-pull .from {
+    font-family: var(--mono); font-size: 10px; color: var(--dim);
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    border-radius: 999px; padding: 2px 9px;
+  }
+  .ctx .c-pull .to { font-weight: 700; padding: 2px 10px; border-radius: 999px; }
+  .ctx.tech .c-pull .to { color: #fde68a; border: 1px solid rgba(251,191,36,.45); background: rgba(251,191,36,.08); }
+  .ctx.fruit .c-pull .to { color: #a7f3d0; border: 1px solid rgba(52,211,153,.45); background: rgba(52,211,153,.08); }
+  .ctx.tech { border-color: rgba(251,191,36,.4); }
+  .ctx.fruit { border-color: rgba(52,211,153,.4); }
+  .s-ctx.active .ctx { animation: msgIn .55s ease both; }
+  .s-ctx.active .ctx.tech { animation-delay: .4s; }
+  .s-ctx.active .ctx.fruit { animation-delay: 1.2s; }
+  .s-ctx.active .ctx-note { animation: rise .6s ease 2.2s both; }
+  .ctx-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .ctx-note b { color: #c4b5fd; }
+
+  /* ============ 屏5 · 语义算术 ============ */
   .ari-flow { display: flex; flex-direction: column; gap: 9px; width: 100%; max-width: 560px; }
   .ari-line {
     display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: center;
@@ -255,7 +288,47 @@
   .ari-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
   .ari-note b { color: #a7f3d0; }
 
-  /* ============ 屏5 · 向量从哪来 ============ */
+  /* ============ 屏6 · 整句猜下一词（新） ============ */
+  .sent-box {
+    width: 100%; max-width: 560px;
+    padding: 11px 15px; border-radius: 13px;
+    background: var(--card); border: 1px solid var(--line);
+    text-align: center; opacity: 0;
+  }
+  .sent-box .s-txt { font-size: 13.5px; color: #c3cde2; letter-spacing: .04em; }
+  .sent-box .s-txt b { color: #fde68a; border-bottom: 2px dashed rgba(251,191,36,.6); padding: 0 2px; }
+  .sent-box .s-cap { margin-top: 7px; font-family: var(--mono); font-size: 10px; color: var(--dim); }
+  .ctx-arrow { text-align: center; font-size: 12px; color: var(--dim); opacity: 0; }
+  .ctx-arrow b { color: var(--cyan); }
+  .rank-list { display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 560px; }
+  .rank {
+    display: grid; grid-template-columns: 76px 1fr 56px;
+    align-items: center; gap: 10px;
+    padding: 7px 12px; border-radius: 11px;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 12px; font-weight: 700; opacity: 0;
+  }
+  .rank .bar { height: 8px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .rank .bar i { display: block; height: 100%; width: 0; border-radius: 99px; }
+  .rank .pct { font-family: var(--mono); font-size: 10.5px; font-weight: 400; color: var(--dim); text-align: right; }
+  .rk1 { border-color: rgba(52,211,153,.5); color: #a7f3d0; } .rk1 .bar i { background: var(--green); }
+  .rk2 { color: #67e8f9; } .rk2 .bar i { background: var(--cyan); }
+  .rk3 { color: #c4b5fd; } .rk3 .bar i { background: var(--purple); }
+  .rkx { color: var(--dim); font-weight: 400; border-color: var(--line); }
+  .rkx .bar i { background: rgba(148,163,184,.5); }
+  .s-next.active .sent-box { animation: msgIn .5s ease .4s both; }
+  .s-next.active .ctx-arrow { animation: rise .4s ease 1.1s both; }
+  .s-next.active .rank { animation: msgIn .45s ease both; }
+  .s-next.active .rank:nth-of-type(1) { animation-delay: 1.4s; }
+  .s-next.active .rank:nth-of-type(2) { animation-delay: 1.6s; }
+  .s-next.active .rank:nth-of-type(3) { animation-delay: 1.8s; }
+  .s-next.active .rank:nth-of-type(4) { animation-delay: 2s; }
+  .s-next.active .rank:nth-of-type(5) { animation-delay: 2.2s; }
+  .s-next.active .next-note { animation: rise .6s ease 2.7s both; }
+  .next-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .next-note b { color: #a7f3d0; }
+
+  /* ============ 屏7 · 向量从哪来 ============ */
   .sg-box {
     width: 100%; max-width: 560px;
     padding: 11px 14px; border-radius: 13px;
@@ -285,7 +358,7 @@
   .learn-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
   .learn-note b { color: #fde68a; }
 
-  /* ============ 屏6 · 总结 ============ */
+  /* ============ 屏8 · 总结 ============ */
   .sum-flow {
     display: flex; gap: 4px; align-items: center; justify-content: center;
     flex-wrap: wrap; font-size: 10px; color: var(--dim);
@@ -327,10 +400,11 @@
       animation-duration: .01ms !important; animation-iteration-count: 1 !important;
       transition: none !important; scroll-behavior: auto !important;
     }
-    .rv, .wordmap, .wdot, .map-note, .ang, .ang-note, .ari-line, .ari-note,
-    .sg-box, .learn, .learn-note {
+    .rv, .wordmap, .wdot, .map-note, .ang, .ang-note, .ctx, .ctx-note, .ari-line, .ari-note,
+    .sent-box, .ctx-arrow, .rank, .next-note, .sg-box, .learn, .learn-note {
       opacity: 1 !important; transform: none !important; filter: none !important;
     }
+    .rank .bar i { width: var(--w) !important; }
   }
 </style>
 </head>
@@ -340,8 +414,10 @@
   <button class="on" title="封面" aria-label="封面"></button>
   <button title="STEP 1 语义地图" aria-label="语义地图"></button>
   <button title="STEP 2 相似=夹角" aria-label="相似=夹角"></button>
-  <button title="STEP 3 语义算术" aria-label="语义算术"></button>
-  <button title="STEP 4 向量从哪来" aria-label="向量从哪来"></button>
+  <button title="STEP 3 语境改造" aria-label="语境改造"></button>
+  <button title="STEP 4 语义算术" aria-label="语义算术"></button>
+  <button title="STEP 5 整句猜下一词" aria-label="整句猜下一词"></button>
+  <button title="STEP 6 向量从哪来" aria-label="向量从哪来"></button>
   <button title="总结" aria-label="总结"></button>
 </nav>
 
@@ -354,9 +430,9 @@
     <div class="hero-chain rv d4">
       <span class="hc-node">📍 词→箭头</span>
       <span class="hc-arrow"><i></i></span>
-      <span class="hc-node">📐 相似=夹角</span>
+      <span class="hc-node">📐 夹角相似</span>
       <span class="hc-arrow hc-arrow-2"><i></i></span>
-      <span class="hc-node">🧮 语义算术</span>
+      <span class="hc-node">🎯 整句猜词</span>
     </div>
     <p class="hero-quote rv d5">「在模型眼里，每个词是一根指向语义空间的箭头」</p>
   </div>
@@ -423,10 +499,42 @@
   <footer class="scr-foot rv d6">💡 相似度不看词的「身价」—— <b>只看两根箭头指向多接近</b></footer>
 </section>
 
-<!-- 屏4 · STEP 3 语义算术 -->
+<!-- 屏4 · STEP 3 语境改造（新） -->
+<section class="screen s-ctx">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>语境改造</div>
+    <h2 class="rv d1">查表的向量，会被句子改造</h2>
+    <p class="scr-desc rv d2">「苹果」在两张表里是<b>同一个起点</b> —— 进了不同句子，注意力（11 期）会把它拉向不同街区</p>
+    <div class="code-chip rv d2">查表向量 = 出发点 · <b>语境向量 = 出发点 + 邻居的拉扯</b></div>
+  </header>
+  <div class="stage">
+    <div class="ctx-cards">
+      <div class="ctx tech">
+        <div class="c-say">「我买了个新 <mark>苹果</mark>，手感真好」</div>
+        <div class="c-pull">
+          <span class="from">查表：水果区边缘</span>
+          <i>→</i>
+          <span class="to">被拉向「电子产品」街区</span>
+        </div>
+      </div>
+      <div class="ctx fruit">
+        <div class="c-say">「我洗了个 <mark>苹果</mark>，咔嚓一口」</div>
+        <div class="c-pull">
+          <span class="from">查表：同一个起点</span>
+          <i>→</i>
+          <span class="to">被拉向「水果」街区深处</span>
+        </div>
+      </div>
+    </div>
+    <div class="ctx-note rv d5">所以词向量有两态：<b>查表时静态，进句子后被注意力动态改造</b> —— 同一个词，两种语境两种向量</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 静态向量是「出生地」—— <b>语境向量才是它此刻的身份</b></footer>
+</section>
+
+<!-- 屏5 · STEP 4 语义算术 -->
 <section class="screen s-ari">
   <header class="scr-head">
-    <div class="step-badge rv d1"><b>STEP 3</b>语义算术</div>
+    <div class="step-badge rv d1"><b>STEP 4</b>语义算术</div>
     <h2 class="rv d1">向量会做加减法</h2>
     <p class="scr-desc rv d2">Word2Vec 的经典发现（Mikolov 2013）：方向本身携带语义 —— 「性别」「首都」是一条条可运算的方向</p>
     <div class="code-chip rv d2">结果向量<b>最接近</b> queen —— 不是「等于」（原文：closest to）</div>
@@ -447,10 +555,36 @@
   <footer class="scr-foot rv d6">💡 语义能做算术 —— <b>因为含义被装进了几何结构里</b></footer>
 </section>
 
-<!-- 屏5 · STEP 4 向量从哪来 -->
+<!-- 屏6 · STEP 5 整句猜下一词（新） -->
+<section class="screen s-next">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>整句猜下一词</div>
+    <h2 class="rv d1">猜下一词，用的还是那套夹角</h2>
+    <p class="scr-desc rv d2">整句经注意力压缩成一个<b>上下文向量</b>，再与词表里<b>每一个候选词</b>的向量做点积打分</p>
+    <div class="code-chip rv d2">分数 = 上下文向量 · <b>候选词输出向量</b>（点积 ≈ 未归一化的夹角）</div>
+  </header>
+  <div class="stage">
+    <div class="sent-box">
+      <div class="s-txt">今天天气很好，我去公园里 <b>____</b></div>
+      <div class="s-cap">上下文向量 ← 注意力压缩整句（11 期）</div>
+    </div>
+    <div class="ctx-arrow">⬇ 与词表所有词的输出向量逐一点积 <b>· softmax</b> ⬇</div>
+    <div class="rank-list">
+      <div class="rank rk1"><span>走走</span><span class="bar"><i style="--w:100%"></i></span><span class="pct">46%</span></div>
+      <div class="rank rk2"><span>散步</span><span class="bar"><i style="--w:72%"></i></span><span class="pct">33%</span></div>
+      <div class="rank rk3"><span>晒太阳</span><span class="bar"><i style="--w:26%"></i></span><span class="pct">12%</span></div>
+      <div class="rank rkx"><span>编译</span><span class="bar"><i style="--w:2%"></i></span><span class="pct">0.3%</span></div>
+      <div class="rank rkx"><span>手术</span><span class="bar"><i style="--w:1%"></i></span><span class="pct">0.2%</span></div>
+    </div>
+    <div class="next-note rv d6">所以回答你的问题：<b>是同一套几何逻辑</b> —— 只是比较对象从「两个词」换成了「整句方向 vs 全部候选词的方向」，点积高分者胜出，softmax 后采样（12 期）</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 猜词不是查近义词典 —— <b>是整句的方向，在词表里找最合拍的箭头</b></footer>
+</section>
+
+<!-- 屏7 · STEP 6 向量从哪来 -->
 <section class="screen s-learn">
   <header class="scr-head">
-    <div class="step-badge rv d1"><b>STEP 4</b>向量从哪来</div>
+    <div class="step-badge rv d1"><b>STEP 6</b>向量从哪来</div>
     <h2 class="rv d1">常搭档的词，被推到一起</h2>
     <p class="scr-desc rv d2">Word2Vec skip-gram（2013）：用中心词预测前后邻居 —— 训练中不断挪动词的坐标</p>
     <div class="code-chip rv d2">LLM 的 embedding 表：每个 token 一行<b>可学习</b>向量</div>
@@ -465,34 +599,34 @@
       <p>「猫」常和「喜欢」「治愈」同句 —— 千万次预测后它们的向量挤进了同一片街区</p></div></div>
       <div class="learn"><i>🗺️</i><div><b>LLM 继承同一张表</b>
       <p>GPT-2 每行 <code>768 维</code>、LLaMA-7B 每行 <code>4096 维</code> —— 训练就是反复「拖动」这些行</p></div></div>
-      <div class="learn"><i>👁️</i><div><b>注意力搬运的就是它们</b>
-      <p>11 期的注意力算的不是文字，是这些箭头之间的关系（03 期位置编码再给它们加上顺序）</p></div></div>
+      <div class="learn"><i>👁️</i><div><b>输出层也是一张向量表</b>
+      <p>STEP 5 打分用的「候选词向量」= <b>unembedding 矩阵</b> —— 每个词一行，与输入表各自独立可学习</p></div></div>
     </div>
   </div>
   <footer class="scr-foot rv d6">💡 词向量是 LLM 一切理解的起点 —— <b>几何即语义</b></footer>
 </section>
 
-<!-- 屏6 · 总结 -->
+<!-- 屏8 · 总结 -->
 <section class="screen s-sum">
   <header class="scr-head">
     <div class="step-badge rv d1"><b>RECAP</b>全景</div>
     <h2 class="rv d1">几何即语义</h2>
-    <p class="scr-desc rv d2">词→坐标 → 相似=夹角 → 语义算术 → 搭档聚居</p>
+    <p class="scr-desc rv d2">词→坐标 → 相似=夹角 → 语境改造 → 整句打分 → 搭档聚居</p>
   </header>
   <div class="stage">
-    <div class="sum-flow rv d2"><span>token 查表</span><i>→</i><span>高维箭头</span><i>→</i><span>夹角量相似</span><i>→</i><span>方向可运算</span><i>→</i><span>搭档聚居</span></div>
+    <div class="sum-flow rv d2"><span>token 查表</span><i>→</i><span>夹角量相似</span><i>→</i><span>语境改造</span><i>→</i><span>整句×词表打分</span><i>→</i><span>搭档聚居</span></div>
     <div class="adv-grid">
       <div class="adv rv d3">
         <div class="adv-ico">📍</div>
         <div><b>位置即含义</b><p>embedding 表每个 token 一行可学习坐标 —— 768~4096 维的语义地图</p></div>
       </div>
       <div class="adv rv d4">
-        <div class="adv-ico">📐</div>
-        <div><b>夹角即相似</b><p>余弦只量方向 —— 猫狗相近、猫税法垂直，与词频身价无关</p></div>
+        <div class="adv-ico">🎭</div>
+        <div><b>静态两态</b><p>查表是出生地，语境改造后才是此刻身份 —— 同词不同句不同向量</p></div>
       </div>
       <div class="adv rv d5">
-        <div class="adv-ico">🧮</div>
-        <div><b>方向即语义</b><p>king−man+woman 落点最接近 queen —— 性别、首都都是可运算的方向</p></div>
+        <div class="adv-ico">🎯</div>
+        <div><b>猜词=几何打分</b><p>整句上下文向量 × 全词表点积 —— 那套夹角逻辑，从头用到尾</p></div>
       </div>
     </div>
     <blockquote class="sum-quote rv d6">“在模型眼里，每个词<br>是一根指向语义空间的箭头。”</blockquote>
