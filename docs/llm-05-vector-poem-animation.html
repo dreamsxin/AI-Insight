@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="LLM 模型算法原理 · 05 实例拆解：用向量写一句诗「秋风卷起满城霜」—— 16 维示意向量、查表、注意力互相拉扯、上下文向量、与词表打分选词、生成循环，逐屏动画演示">
+<title>用向量写一句诗 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14;
+    --ink: #e8eefc;
+    --dim: #8b96ad;
+    --cyan: #22d3ee;
+    --purple: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #fb7185;
+    --card: rgba(255,255,255,.05);
+    --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+
+  .dots {
+    position: fixed; right: 9px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 11px; z-index: 60;
+  }
+  .dots button {
+    width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0;
+    background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s;
+  }
+  .dots button.on { background: var(--cyan); transform: scale(1.4); box-shadow: 0 0 10px rgba(34,211,238,.85); }
+
+  .screen {
+    position: relative; z-index: 1;
+    height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always;
+    overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before {
+    content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%);
+  }
+  .s-hero  { --glow: rgba(34,211,238,.10); }
+  .s-dim   { --glow: rgba(52,211,153,.11); }
+  .s-table { --glow: rgba(34,211,238,.11); }
+  .s-attn  { --glow: rgba(167,139,250,.11); }
+  .s-merge { --glow: rgba(251,191,36,.09); }
+  .s-score { --glow: rgba(251,113,133,.08); }
+  .s-loop  { --glow: rgba(125,211,252,.09); }
+  .s-sum   { --glow: rgba(244,114,182,.08); }
+
+  .scr-head {
+    width: 100%; max-width: 640px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .step-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07);
+    padding: 4px 13px; border-radius: 999px;
+  }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code { color: var(--cyan); font-size: .92em; background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px; }
+  .code-chip {
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap; scrollbar-width: none;
+  }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage {
+    position: relative; z-index: 1; flex: 1; min-height: 0;
+    width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 13px;
+  }
+  .scr-foot {
+    width: 100%; max-width: 640px; text-align: center;
+    font-size: 12px; line-height: 1.65; color: var(--dim);
+  }
+  .scr-foot b { color: #c3cde2; }
+
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; }
+  .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; }
+  .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; }
+  .screen.active .d6 { animation-delay: 1.15s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+  @keyframes msgIn { from { opacity: 0; transform: translateY(16px) scale(.97); } to { opacity: 1; transform: none; } }
+  @keyframes glowGood { 0%,100% { box-shadow: 0 0 0 rgba(52,211,153,0) } 50% { box-shadow: 0 0 22px rgba(52,211,153,.3) } }
+  @keyframes badGlow { 0%,100% { box-shadow: 0 0 0 rgba(251,113,133,0) } 50% { box-shadow: 0 0 20px rgba(251,113,133,.25) } }
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+
+  /* ============ 屏1 · 封面 ============ */
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker {
+    font-size: 10px; letter-spacing: .28em; color: var(--dim);
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 6px 16px; border-radius: 999px;
+  }
+  h1 { font-size: clamp(34px, 9vw, 54px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad { background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node {
+    font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line); white-space: nowrap;
+  }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i { position: absolute; top: 50%; transform: translateY(-50%); left: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); opacity: 0; }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint {
+    position: absolute; bottom: calc(16px + env(safe-area-inset-bottom));
+    left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em;
+  }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* ============ 向量条组件（全篇复用） ============ */
+  .vec-strip { display: flex; gap: 2px; align-items: flex-end; height: 30px; width: 168px; }
+  .vec-strip i {
+    flex: 1; height: var(--h); border-radius: 2px;
+    background: var(--c, var(--cyan)); opacity: .9;
+  }
+  .vec-strip i.hot { box-shadow: 0 0 6px rgba(251,191,36,.8); background: var(--amber); }
+  .vec-label { font-family: var(--mono); font-size: 9px; color: var(--dim); margin-top: 4px; letter-spacing: .06em; }
+
+  /* ============ 屏2 · STEP 1 向量显微镜 ============ */
+  .dim-rows { display: flex; flex-direction: column; gap: 11px; width: 100%; max-width: 560px; }
+  .dim-row {
+    display: grid; grid-template-columns: 84px 1fr; gap: 12px; align-items: center;
+    padding: 10px 14px; border-radius: 13px;
+    background: var(--card); border: 1px solid var(--line);
+    opacity: 0;
+  }
+  .dim-row .w { font-size: 14px; font-weight: 800; text-align: center; }
+  .dim-row.moon .w { color: #c4b5fd; }
+  .dim-row.frost .w { color: #a7f3d0; }
+  .dim-row.kebab .w { color: #ffb9c4; }
+  .dim-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .dim-note b { color: #a7f3d0; }
+  .s-dim.active .dim-row { animation: msgIn .5s ease both; }
+  .s-dim.active .dim-row.moon { animation-delay: .4s; }
+  .s-dim.active .dim-row.frost { animation-delay: .9s; }
+  .s-dim.active .dim-row.kebab { animation-delay: 1.4s; }
+  .s-dim.active .dim-note { animation: rise .6s ease 2.1s both; }
+
+  /* ============ 屏3 · STEP 2 查表 ============ */
+  .table-rows { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 560px; }
+  .trow {
+    display: grid; grid-template-columns: 84px 1fr; gap: 12px; align-items: center;
+    padding: 9px 14px; border-radius: 13px;
+    background: var(--card); border: 1px solid var(--line);
+    opacity: 0;
+  }
+  .trow .w { font-size: 13.5px; font-weight: 800; color: #c3cde2; text-align: center; }
+  .trow .pos { font-family: var(--mono); font-size: 9.5px; color: var(--dim); }
+  .s-table.active .trow { animation: msgIn .5s ease both; }
+  .s-table.active .trow:nth-of-type(1) { animation-delay: .4s; }
+  .s-table.active .trow:nth-of-type(2) { animation-delay: .8s; }
+  .s-table.active .trow:nth-of-type(3) { animation-delay: 1.2s; }
+  .s-table.active .table-note { animation: rise .6s ease 1.8s both; }
+  .table-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .table-note b { color: #67e8f9; }
+
+  /* ============ 屏4 · STEP 3 注意力 ============ */
+  .attn-box {
+    width: 100%; max-width: 560px;
+    border-radius: 14px; border: 1px solid var(--line); background: var(--card);
+    padding: 6px 8px 2px; opacity: 0;
+  }
+  .attn-box svg { display: block; width: 100%; height: auto; }
+  .s-attn.active .attn-box { animation: msgIn .55s ease .4s both; }
+  .attn-pull { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 560px; }
+  .pull {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 11.5px; color: var(--dim); line-height: 1.6; opacity: 0;
+  }
+  .pull i { font-style: normal; flex: none; }
+  .pull b { color: #c3cde2; }
+  .s-attn.active .pull { animation: msgIn .5s ease both; }
+  .s-attn.active .pull:nth-child(2) { animation-delay: 2.4s; }
+  .s-attn.active .pull:nth-child(3) { animation-delay: 2.9s; }
+  .s-attn.active .attn-note { animation: rise .6s ease 3.5s both; }
+  .attn-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .attn-note b { color: #c4b5fd; }
+
+  /* ============ 屏5 · STEP 4 上下文 ============ */
+  .merge-visual { width: 100%; max-width: 560px; display: flex; flex-direction: column; align-items: center; gap: 4px; opacity: 0; }
+  .merge-strips { display: flex; gap: 8px; align-items: flex-end; }
+  .ms { text-align: center; }
+  .ms .vec-strip { width: 76px; }
+  .ms .vec-label { text-align: center; }
+  .merge-plus { font-size: 16px; color: var(--amber); font-weight: 800; align-self: center; }
+  .merge-arrow { font-size: 14px; color: var(--cyan); opacity: 0; }
+  .merge-out { text-align: center; opacity: 0; }
+  .merge-out .vec-strip { width: 168px; margin: 0 auto; }
+  .merge-out b { font-size: 12px; color: #fde68a; display: block; margin-top: 5px; }
+  .s-merge.active .merge-visual { animation: msgIn .55s ease .4s both; }
+  .s-merge.active .merge-arrow { animation: rise .4s ease 1.3s both; }
+  .s-merge.active .merge-out { animation: msgIn .55s ease 1.8s both, glowGood 2.4s ease-in-out 2.4s infinite; }
+  .s-merge.active .merge-note { animation: rise .6s ease 2.9s both; }
+  .merge-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .merge-note b { color: #fde68a; }
+
+  /* ============ 屏6 · STEP 5 打分 ============ */
+  .score-list { display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 560px; }
+  .sc {
+    display: grid; grid-template-columns: 76px 1fr 56px;
+    align-items: center; gap: 10px;
+    padding: 7px 12px; border-radius: 11px;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 12px; font-weight: 700; opacity: 0;
+  }
+  .sc .bar { height: 8px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .sc .bar i { display: block; height: 100%; width: 0; border-radius: 99px; }
+  .sc .pct { font-family: var(--mono); font-size: 10.5px; font-weight: 400; color: var(--dim); text-align: right; }
+  .s1 { border-color: rgba(52,211,153,.5); color: #a7f3d0; } .s1 .bar i { background: var(--green); }
+  .s2 { color: #67e8f9; } .s2 .bar i { background: var(--cyan); }
+  .s3 { color: #c4b5fd; } .s3 .bar i { background: var(--purple); }
+  .sx { color: var(--dim); font-weight: 400; }
+  .sx .bar i { background: rgba(148,163,184,.5); }
+  .s-score.active .sc { animation: msgIn .45s ease both; }
+  .s-score.active .sc:nth-of-type(1) { animation-delay: .4s, 1.2s; animation-name: msgIn, glowGood; animation-duration: .45s, 2.4s; animation-iteration-count: 1, infinite; }
+  .s-score.active .sc:nth-of-type(2) { animation-delay: .65s; }
+  .s-score.active .sc:nth-of-type(3) { animation-delay: .9s; }
+  .s-score.active .sc:nth-of-type(4) { animation-delay: 1.15s; }
+  .s-score.active .sc:nth-of-type(5) { animation-delay: 1.4s; }
+  .s-score.active .score-note { animation: rise .6s ease 2.1s both; }
+  .score-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .score-note b { color: #a7f3d0; }
+
+  /* ============ 屏7 · STEP 6 生成循环 ============ */
+  .loop-cols { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .lcol {
+    flex: 1; padding: 11px 13px; border-radius: 13px;
+    background: var(--card); border: 1px solid var(--line); opacity: 0;
+  }
+  .lcol b { font-size: 12.5px; display: block; color: #c3cde2; margin-bottom: 7px; }
+  .lcol pre {
+    font-family: var(--mono); font-size: 9.5px; line-height: 1.85; color: #9fb3d1;
+    background: rgba(0,0,0,.28); border-radius: 9px; padding: 9px 11px;
+    overflow-x: auto; white-space: pre; scrollbar-width: none;
+  }
+  .lcol pre::-webkit-scrollbar { display: none; }
+  .lcol pre b { color: #67e8f9; font-weight: 600; display: inline; margin: 0; font-size: 9.5px; }
+  .lcol pre em { color: #fde68a; font-style: normal; }
+  .poem-box {
+    width: 100%; max-width: 560px; text-align: center;
+    padding: 14px 15px; border-radius: 14px;
+    background: rgba(34,211,238,.05); border: 1px solid rgba(34,211,238,.45);
+    opacity: 0;
+  }
+  .poem-box .pline { font-size: 16px; letter-spacing: .18em; color: #e8eefc; font-weight: 700; }
+  .poem-box .pline b { color: #6ee7b7; }
+  .poem-box .pnext { font-size: 10.5px; color: var(--dim); margin-top: 7px; }
+  .s-loop.active .loop-cols { animation: msgIn .55s ease .4s both; }
+  .s-loop.active .poem-box { animation: msgIn .55s ease 2.2s both, glowGood 2.6s ease-in-out 2.8s infinite; }
+  .s-loop.active .loop-note { animation: rise .6s ease 3.4s both; }
+  .loop-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .loop-note b { color: #7dd3fc; }
+
+  /* ============ 屏8 · 总结 ============ */
+  .sum-flow {
+    display: flex; gap: 4px; align-items: center; justify-content: center;
+    flex-wrap: wrap; font-size: 10px; color: var(--dim);
+  }
+  .sum-flow span { border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv {
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px 15px;
+  }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote {
+    font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center;
+    line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .replay {
+    font-size: 12.5px; color: #06121c; background: var(--cyan);
+    border: none; padding: 10px 26px; border-radius: 999px;
+    font-weight: 700; cursor: pointer; letter-spacing: .06em;
+  }
+  .replay:active { transform: scale(.96); }
+  .series-badge {
+    position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px;
+    font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em;
+  }
+
+  @media (max-height: 560px) {
+    .screen { overflow-y: auto; justify-content: flex-start; }
+    .stage { flex: 0 0 auto; padding: 14px 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition: none !important; scroll-behavior: auto !important;
+    }
+    .rv, .dim-row, .dim-note, .trow, .table-note, .attn-box, .pull, .attn-note,
+    .merge-visual, .merge-arrow, .merge-out, .merge-note, .sc, .score-note,
+    .loop-cols, .poem-box, .loop-note {
+      opacity: 1 !important; transform: none !important; filter: none !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面" aria-label="封面"></button>
+  <button title="STEP 1 向量显微镜" aria-label="向量显微镜"></button>
+  <button title="STEP 2 查表领箭头" aria-label="查表领箭头"></button>
+  <button title="STEP 3 注意力拉扯" aria-label="注意力拉扯"></button>
+  <button title="STEP 4 汇成上下文" aria-label="汇成上下文"></button>
+  <button title="STEP 5 与词表打分" aria-label="与词表打分"></button>
+  <button title="STEP 6 生成循环" aria-label="生成循环"></button>
+  <button title="总结" aria-label="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">LLM 模型算法原理 · 05 · 实例拆解</div>
+    <h1 class="rv d2">用向量<br><span class="grad">写一句诗</span></h1>
+    <p class="hero-sub rv d3">词向量 + 注意力的完整实战 · 逐屏动画演示</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">📍 16 维箭头</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">👁️ 注意力拉扯</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">🖋️ 逐词成诗</span>
+    </div>
+    <p class="hero-quote rv d5">「诗不是凭空来的 —— 是向量一步步选出来的」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 向量显微镜 -->
+<section class="screen s-dim">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>向量显微镜</div>
+    <h2 class="rv d1">维数 = 不同方向的强度刻度</h2>
+    <p class="scr-desc rv d2">真实模型每词 4096 维 —— 示意压缩成 <b>16 格</b>，每格是一个方向的强度。看三个词的差别：</p>
+    <div class="code-chip rv d2">「月」和「霜」共享<b>清冷·夜景</b>方向的格子 · 「烤串」完全不同</div>
+  </header>
+  <div class="stage">
+    <div class="dim-rows">
+      <div class="dim-row moon">
+        <span class="w">月 🌙</span>
+        <div>
+          <div class="vec-strip">
+            <i style="--h:88%;--c:#c4b5fd" class="hot"></i><i style="--h:30%"></i><i style="--h:76%;--c:#c4b5fd" class="hot"></i><i style="--h:24%"></i><i style="--h:40%"></i><i style="--h:22%"></i><i style="--h:70%;--c:#c4b5fd" class="hot"></i><i style="--h:28%"></i><i style="--h:18%"></i><i style="--h:36%"></i><i style="--h:20%"></i><i style="--h:30%"></i><i style="--h:16%"></i><i style="--h:44%"></i><i style="--h:24%"></i><i style="--h:32%"></i>
+          </div>
+          <div class="vec-label">清冷·夜景 · 高悬 · 阴晴圆缺…（3 格最亮）</div>
+        </div>
+      </div>
+      <div class="dim-row frost">
+        <span class="w">霜 ❄️</span>
+        <div>
+          <div class="vec-strip">
+            <i style="--h:82%;--c:#a7f3d0" class="hot"></i><i style="--h:26%"></i><i style="--h:72%;--c:#a7f3d0" class="hot"></i><i style="--h:52%;--c:#a7f3d0" class="hot"></i><i style="--h:34%"></i><i style="--h:20%"></i><i style="--h:66%;--c:#a7f3d0" class="hot"></i><i style="--h:22%"></i><i style="--h:14%"></i><i style="--h:28%"></i><i style="--h:18%"></i><i style="--h:24%"></i><i style="--h:12%"></i><i style="--h:38%"></i><i style="--h:20%"></i><i style="--h:26%"></i>
+          </div>
+          <div class="vec-label">清冷·夜景 · 凝结 · 深秋…（同样 3 格最亮）</div>
+        </div>
+      </div>
+      <div class="dim-row kebab">
+        <span class="w">烤串 🍢</span>
+        <div>
+          <div class="vec-strip">
+            <i style="--h:18%"></i><i style="--h:66%;--c:#fb7185" class="hot"></i><i style="--h:12%"></i><i style="--h:22%"></i><i style="--h:70%;--c:#fb7185" class="hot"></i><i style="--h:30%"></i><i style="--h:10%"></i><i style="--h:20%"></i><i style="--h:74%;--c:#fb7185" class="hot"></i><i style="--h:16%"></i><i style="--h:26%"></i><i style="--h:62%;--c:#fb7185" class="hot"></i><i style="--h:20%"></i><i style="--h:14%"></i><i style="--h:22%"></i><i style="--h:18%"></i>
+          </div>
+          <div class="vec-label">烟火气 · 烧烤 · 夜市…（亮格完全错开）</div>
+        </div>
+      </div>
+    </div>
+    <div class="dim-note rv d5">读法：<b>每格 = 一个方向的强度刻度</b>（示意 16 维；真实 4096 维）—— 「月」和「霜」在<b>清冷·夜景</b>等格子上都亮，所以它们是近亲</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 维数不是编号 —— <b>是 4096 个「语义方向」各自的音量旋钮</b></footer>
+</section>
+
+<!-- 屏3 · STEP 2 查表领箭头 -->
+<section class="screen s-table">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>查表领箭头</div>
+    <h2 class="rv d1">已写的三个词，各领各的向量</h2>
+    <p class="scr-desc rv d2">任务：接着写「秋风 卷起 满城」的下一个词。此刻三个词<b>各自查表</b>领到箭头 —— 还没互相影响</p>
+    <div class="code-chip rv d2">此刻的「满城」还只是<b>中性</b>的城 —— 注意力还没上场</div>
+  </header>
+  <div class="stage">
+    <div class="table-rows">
+      <div class="trow">
+        <span class="w">秋风</span>
+        <div>
+          <div class="vec-strip">
+            <i style="--h:64%;--c:#67e8f9" class="hot"></i><i style="--h:20%"></i><i style="--h:44%;--c:#67e8f9" class="hot"></i><i style="--h:56%;--c:#67e8f9" class="hot"></i><i style="--h:26%"></i><i style="--h:34%"></i><i style="--h:16%"></i><i style="--h:48%;--c:#67e8f9" class="hot"></i><i style="--h:30%"></i><i style="--h:18%"></i><i style="--h:26%"></i><i style="--h:14%"></i><i style="--h:38%"></i><i style="--h:20%"></i><i style="--h:16%"></i><i style="--h:28%"></i>
+          </div>
+          <div class="pos">秋 · 风 · 萧瑟…</div>
+        </div>
+      </div>
+      <div class="trow">
+        <span class="w">卷起</span>
+        <div>
+          <div class="vec-strip">
+            <i style="--h:22%"></i><i style="--h:60%;--c:#67e8f9" class="hot"></i><i style="--h:16%"></i><i style="--h:30%"></i><i style="--h:18%"></i><i style="--h:52%;--c:#67e8f9" class="hot"></i><i style="--h:24%"></i><i style="--h:14%"></i><i style="--h:64%;--c:#67e8f9" class="hot"></i><i style="--h:28%"></i><i style="--h:20%"></i><i style="--h:12%"></i><i style="--h:30%"></i><i style="--h:18%"></i><i style="--h:24%"></i><i style="--h:16%"></i>
+          </div>
+          <div class="pos">动作 · 卷动 · 掀起…</div>
+        </div>
+      </div>
+      <div class="trow">
+        <span class="w">满城</span>
+        <div>
+          <div class="vec-strip">
+            <i style="--h:34%"></i><i style="--h:26%"></i><i style="--h:20%"></i><i style="--h:44%;--c:#67e8f9" class="hot"></i><i style="--h:18%"></i><i style="--h:30%"></i><i style="--h:22%"></i><i style="--h:40%;--c:#67e8f9" class="hot"></i><i style="--h:16%"></i><i style="--h:26%"></i><i style="--h:20%"></i><i style="--h:18%"></i><i style="--h:56%;--c:#67e8f9" class="hot"></i><i style="--h:24%"></i><i style="--h:20%"></i><i style="--h:28%"></i>
+          </div>
+          <div class="pos">城市 · 范围 · 到处都是…（中性）</div>
+        </div>
+      </div>
+    </div>
+    <div class="table-note rv d5">「满城」此刻是中性的城 —— <b>在「秋风」语境里它会偏向什么？下一屏注意力说了算</b></div>
+  </div>
+  <footer class="scr-foot rv d6">💡 查表只是领材料 —— <b>材料之间还没发生化学反应</b></footer>
+</section>
+
+<!-- 屏4 · STEP 3 注意力拉扯 -->
+<section class="screen s-attn">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>注意力上场</div>
+    <h2 class="rv d1">谁看谁，看多深</h2>
+    <p class="scr-desc rv d2">注意力让已写词<b>互相看一眼</b>：每词吸收邻居的信息，向量被重新拉扯（语境改造，llm-01 期）</p>
+    <div class="code-chip rv d2">「卷起」看向：秋风 <b>60%</b> + 满城 <b>40%</b></div>
+  </header>
+  <div class="stage">
+    <div class="attn-box">
+      <svg viewBox="0 0 470 150" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="78" cy="95" r="7" fill="#67e8f9"/>
+        <text x="78" y="124" text-anchor="middle" font-size="13" fill="#c3cde2" font-family="sans-serif" font-weight="700">秋风</text>
+        <circle cx="235" cy="55" r="7" fill="#a78bfa"/>
+        <text x="235" y="30" text-anchor="middle" font-size="13" fill="#c3cde2" font-family="sans-serif" font-weight="700">卷起（焦点）</text>
+        <circle cx="392" cy="95" r="7" fill="#67e8f9"/>
+        <text x="392" y="124" text-anchor="middle" font-size="13" fill="#c3cde2" font-family="sans-serif" font-weight="700">满城</text>
+        <path d="M90,88 Q160,30 222,58" fill="none" stroke="#a78bfa" stroke-width="3.5" opacity=".9"/>
+        <text x="128" y="42" font-size="9.5" fill="#c4b5fd" font-family="monospace">0.6</text>
+        <path d="M380,88 Q300,35 250,55" fill="none" stroke="#a78bfa" stroke-width="2.2" opacity=".55" stroke-dasharray="5 4"/>
+        <text x="312" y="40" font-size="9.5" fill="#c4b5fd" font-family="monospace">0.4</text>
+      </svg>
+    </div>
+    <div class="attn-pull">
+      <div class="pull"><i>🧲</i><span><b>「满城」被改造</b>：吸收「秋风」的萧瑟 → 向量向<b>「清冷·秋意」</b>方向挪动 —— 不再是中性的城</span></div>
+      <div class="pull"><i>🧲</i><span><b>「秋风」也被改造</b>：吸收「卷起」的动作感 → <b>更「有劲」了</b> —— 每个词都被邻居重新捏过一遍</span></div>
+      <div class="pull"><i>🔁</i><span>注意力就是<b>有来有回的多次拉扯</b> —— 全部改完，才算语境改造完成</span></div>
+    </div>
+    <div class="attn-note rv d5">这轮拉扯完成的向量，才配叫<b>「语境向量」</b>—— llm-01 期说过的那一步</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 注意力的作用 = <b>让每个词染上邻居的颜色</b></footer>
+</section>
+
+<!-- 屏5 · STEP 4 汇成上下文 -->
+<section class="screen s-merge">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>汇成上下文</div>
+    <h2 class="rv d1">三个向量，压成一根「此刻方向」</h2>
+    <p class="scr-desc rv d2">改造后的向量按注意力权重加权合并 —— 得到<b>一根</b>上下文向量，代表「写到这里的全部语境」</p>
+    <div class="code-chip rv d2">0.6×秋风 + 0.4×满城 → <b>一根 16 维箭头</b>（示意）</div>
+  </header>
+  <div class="stage">
+    <div class="merge-visual">
+      <div class="merge-strips">
+        <div class="ms">
+          <div class="vec-strip">
+            <i style="--h:70%;--c:#67e8f9"></i><i style="--h:20%"></i><i style="--h:46%;--c:#67e8f9"></i><i style="--h:56%;--c:#67e8f9"></i><i style="--h:24%"></i><i style="--h:32%"></i><i style="--h:18%"></i><i style="--h:44%;--c:#67e8f9"></i><i style="--h:28%"></i><i style="--h:16%"></i><i style="--h:24%"></i><i style="--h:14%"></i><i style="--h:36%"></i><i style="--h:18%"></i><i style="--h:14%"></i><i style="--h:26%"></i>
+          </div>
+          <div class="vec-label">秋风 0.6</div>
+        </div>
+        <div class="merge-plus">+</div>
+        <div class="ms">
+          <div class="vec-strip">
+            <i style="--h:56%;--c:#a78bfa"></i><i style="--h:18%"></i><i style="--h:52%;--c:#a78bfa"></i><i style="--h:36%;--c:#a78bfa"></i><i style="--h:22%"></i><i style="--h:14%"></i><i style="--h:62%;--c:#a78bfa"></i><i style="--h:20%"></i><i style="--h:12%"></i><i style="--h:26%"></i><i style="--h:16%"></i><i style="--h:22%"></i><i style="--h:14%"></i><i style="--h:34%"></i><i style="--h:18%"></i><i style="--h:22%"></i>
+          </div>
+          <div class="vec-label">满城 0.4</div>
+        </div>
+      </div>
+      <div class="merge-arrow">▼ 加权合并 ▼</div>
+      <div class="merge-out">
+        <div class="vec-strip">
+          <i style="--h:78%;--c:#fde68a" class="hot"></i><i style="--h:22%"></i><i style="--h:58%;--c:#fde68a" class="hot"></i><i style="--h:60%;--c:#fde68a" class="hot"></i><i style="--h:26%"></i><i style="--h:30%"></i><i style="--h:54%;--c:#fde68a" class="hot"></i><i style="--h:34%"></i><i style="--h:20%"></i><i style="--h:28%"></i><i style="--h:18%"></i><i style="--h:20%"></i><i style="--h:30%;--c:#fde68a" class="hot"></i><i style="--h:24%"></i><i style="--h:18%"></i><i style="--h:26%"></i>
+        </div>
+        <b>上下文向量：萧瑟 · 秋意 · 弥漫全城</b>
+      </div>
+    </div>
+    <div class="merge-note rv d5">看新增的亮格：<b>「弥漫·清冷」方向被点亮</b> —— 这根箭头就是「此刻该接什么词」的全部依据</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 千言万语，<b>最终压成一根 16 维的方向</b></footer>
+</section>
+
+<!-- 屏6 · STEP 5 打分 -->
+<section class="screen s-score">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>与词表打分</div>
+    <h2 class="rv d1">拿着方向，去词表里找合拍的箭头</h2>
+    <p class="scr-desc rv d2">上下文向量 × 词表每个词的输出向量 = 点积分数 —— 方向越合拍分越高（softmax 后）</p>
+    <div class="code-chip rv d2">霜：<b>清冷·秋意</b>方向全亮 —— 与上下文几乎同向</div>
+  </header>
+  <div class="stage">
+    <div class="score-list">
+      <div class="sc s1"><span>霜</span><span class="bar"><i style="--w:100%"></i></span><span class="pct">41%</span></div>
+      <div class="sc s2"><span>落叶</span><span class="bar"><i style="--w:54%"></i></span><span class="pct">22%</span></div>
+      <div class="sc s3"><span>细雨</span><span class="bar"><i style="--w:37%"></i></span><span class="pct">15%</span></div>
+      <div class="sc sx"><span>蚊香</span><span class="bar"><i style="--w:3%"></i></span><span class="pct">0.4%</span></div>
+      <div class="sc sx"><span>bug</span><span class="bar"><i style="--w:2%"></i></span><span class="pct">0.2%</span></div>
+    </div>
+    <div class="score-note rv d5">「霜」赢的原因看 STEP 1 的图：<b>它和「秋风」「满城」改造后的向量共享清冷·秋意格子</b><br>「蚊香」「bug」方向全错开 —— 点积接近零（12 期：这批分数还要 softmax 一下才采样）</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 选「霜」不是运气 —— <b>是几何上的必然</b></footer>
+</section>
+
+<!-- 屏7 · STEP 6 生成循环 -->
+<section class="screen s-loop">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 6</b>生成循环</div>
+    <h2 class="rv d1">把「霜」塞回句尾，再来一遍</h2>
+    <p class="scr-desc rv d2">写完一个词 → 塞回句尾 → 重新查表、注意力、打分 → 又一个词 —— 直到写完整句</p>
+    <div class="code-chip rv d2">每写一个词 = <b>完整跑一轮</b>「查表→注意力→合并→打分」</div>
+  </header>
+  <div class="stage">
+    <div class="loop-cols">
+      <div class="lcol">
+        <b>🔄 生成循环（伪代码）</b>
+        <pre>已写 = ["秋风", "卷起", "满城"]
+<b>while</b> 未写完:
+    v   = 查表(已写)          <em># 各领箭头</em>
+    v   = 注意力(v)           <em># 互相拉扯</em>
+    ctx = 合并(v)             <em># 压成一根</em>
+    p   = softmax(ctx·词表)   <em># 全词表打分</em>
+    已写.append(采样(p))</pre>
+      </div>
+      <div class="lcol">
+        <b>🖋️ 同一套循环写下一句</b>
+        <p style="font-size:11px; color:var(--dim); line-height:1.7">已写变成完整一句后继续滚 —— 第二句每一步也都是「向量 → 注意力 → 打分」，没有任何特殊步骤</p>
+        <pre>秋风卷起满城霜
++ 一夜 → 诗人 → 瘦几行
+（继续滚动…）</pre>
+      </div>
+    </div>
+    <div class="poem-box">
+      <div class="pline">秋风 卷起 满城<b>霜</b></div>
+      <div class="pnext">下一个词循环继续：一夜 · 诗人 · 瘦几行……</div>
+    </div>
+    <div class="loop-note rv d5">这就是 04 期「提示词交互」的底层：<b>界面上的流式输出，每蹦一个字，后台都完整跑了一轮向量与注意力</b></div>
+  </div>
+  <footer class="scr-foot rv d6">💡 一句诗 = <b>几十轮「向量 → 注意力 → 打分」的接力</b></footer>
+</section>
+
+<!-- 屏8 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">一句诗的向量流水账</h2>
+    <p class="scr-desc rv d2">维数刻度 → 查表领箭头 → 注意力拉扯 → 汇成方向 → 打分选词 → 循环</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>16 维刻度</span><i>→</i><span>查表领箭头</span><i>→</i><span>注意力拉扯</span><i>→</i><span>汇成方向</span><i>→</i><span>打分选「霜」</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">📏</div>
+        <div><b>维数=方向刻度</b><p>月与霜共享清冷格、烤串全错开 —— 4096 个旋钮的组合就是含义</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🧲</div>
+        <div><b>注意力=拉扯</b><p>「满城」在秋风语境里偏向萧瑟 —— 每个词都被邻居重新捏一遍</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">🖋️</div>
+        <div><b>写诗=循环选词</b><p>塞回句尾再来一遍 —— 每个字背后都是一整轮向量与注意力</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“诗不是凭空来的——<br>是向量一步步选出来的。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">LLM 模型算法原理 · 05 / 实例拆解篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else {
+    secs.forEach((s) => s.classList.add('active'));
+  }
+
+  dots.forEach((d, i) => d.addEventListener('click', () => {
+    secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+</script>
+</body>
+</html>

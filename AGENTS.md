@@ -71,8 +71,9 @@ Frontend (run from `frontend/`):
 - `docs/` holds a self-contained animated demo series with an index page
   (`index.html` links all of them): HERMES AGENT 对象拆解 ·01–18 (08 跨会话
   记忆篇 is 前瞻演绎/designed extrapolation), AI 运作原理拆解 ·01–15,
-  LLM 模型算法原理 ·01–04 (embedding/loss/position-encoding/residual
-  algorithm internals), AGENT 开发避坑指南 ·01–04 (developer-facing
+  LLM 模型算法原理 ·01–05 (embedding/loss/position-encoding/residual
+  algorithm internals + a worked vector-attention poem example), AGENT
+  开发避坑指南 ·01–04 (developer-facing
   pitfalls), and AGENT 实战工坊
   ·01–04 (knowledge-QA RAG build walkthrough + project-selection guide). The
   `docs/research/` subfolder holds protocol/spec research reports (not demos).
