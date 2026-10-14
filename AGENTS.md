@@ -74,8 +74,11 @@ Frontend (run from `frontend/`):
   LLM 模型算法原理 ·01–05 (embedding/loss/position-encoding/residual
   algorithm internals + a worked vector-attention poem example), AGENT
   开发避坑指南 ·01–04 (developer-facing
-  pitfalls), and AGENT 实战工坊
-  ·01–04 (knowledge-QA RAG build walkthrough + project-selection guide). The
+  pitfalls), AGENT 实战工坊
+  ·01–04 (knowledge-QA RAG build walkthrough + project-selection guide), and
+  AGENT 模式进阶 ·01–06 (pat- prefix: Plan-and-Execute, Reflection, CoALA
+  memory extraction/routing, sliding-window/summarization compression, MCP
+  Host/Client/Server + tools/list discovery, soft-vs-hard guardrails). The
   `docs/research/` subfolder holds protocol/spec research reports (not demos).
   None
   are part of the Vite app — each demo is a single

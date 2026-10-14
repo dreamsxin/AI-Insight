@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="AGENT 模式进阶 03 记忆提取与路由：CoALA 三色记忆分流、Extractor 提取管线与 function calling、置信度过滤与同 key 覆盖、三库介质、检索路由汇合注入 —— 逐屏动画演示">
+<title>三色文件夹 · 记忆提取与路由 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14;
+    --bg1: #0c1322;
+    --ink: #e8eefc;
+    --dim: #8b96ad;
+    --cyan: #22d3ee;
+    --sky: #38bdf8;
+    --purple: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #fb7185;
+    --card: rgba(255,255,255,.05);
+    --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+
+  .dots {
+    position: fixed; right: 9px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 11px; z-index: 60;
+  }
+  .dots button {
+    width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0;
+    background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s;
+  }
+  .dots button.on {
+    background: var(--cyan); transform: scale(1.4);
+    box-shadow: 0 0 10px rgba(34,211,238,.85);
+  }
+
+  .screen {
+    position: relative; z-index: 1;
+    height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always;
+    overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before {
+    content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%);
+  }
+  .s-hero  { --glow: rgba(34,211,238,.10); }
+  .s-sort { --glow: rgba(56,189,248,.10); }
+  .s-ext  { --glow: rgba(167,139,250,.11); }
+  .s-flt  { --glow: rgba(251,191,36,.10); }
+  .s-db   { --glow: rgba(52,211,153,.09); }
+  .s-route{ --glow: rgba(34,211,238,.11); }
+  .s-sum  { --glow: rgba(244,114,182,.08); }
+
+  .scr-head {
+    width: 100%; max-width: 640px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .step-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07);
+    padding: 4px 13px; border-radius: 999px;
+  }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code {
+    color: var(--cyan); font-size: .92em;
+    background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px;
+  }
+  .code-chip {
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap; scrollbar-width: none;
+  }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage {
+    position: relative; z-index: 1; flex: 1; min-height: 0;
+    width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 13px;
+  }
+  .scr-foot {
+    width: 100%; max-width: 640px; text-align: center;
+    font-size: 12px; line-height: 1.65; color: var(--dim);
+  }
+  .scr-foot b { color: #c3cde2; }
+
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; }
+  .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; }
+  .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; }
+  .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(16px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes glowSky { 0%,100% { box-shadow: 0 0 0 rgba(56,189,248,0) } 50% { box-shadow: 0 0 22px rgba(56,189,248,.3) } }
+  @keyframes glowAmber { 0%,100% { box-shadow: 0 0 0 rgba(251,191,36,0) } 50% { box-shadow: 0 0 22px rgba(251,191,36,.3) } }
+  @keyframes glowGreen { 0%,100% { box-shadow: 0 0 0 rgba(52,211,153,0) } 50% { box-shadow: 0 0 22px rgba(52,211,153,.3) } }
+  @keyframes glowPurple { 0%,100% { box-shadow: 0 0 0 rgba(167,139,250,0) } 50% { box-shadow: 0 0 22px rgba(167,139,250,.3) } }
+  @keyframes glowRed { 0%,100% { box-shadow: 0 0 0 rgba(251,113,133,0) } 50% { box-shadow: 0 0 20px rgba(251,113,133,.28) } }
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+  @keyframes pktGo { 0% { left: 4%; opacity: 0 } 15% { opacity: 1 } 85% { opacity: 1 } 100% { left: 90%; opacity: 0 } }
+
+  /* ============ 屏1 · 封面 ============ */
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker {
+    font-size: 10px; letter-spacing: .28em; color: var(--dim);
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 6px 16px; border-radius: 999px;
+  }
+  h1 { font-size: clamp(34px, 9vw, 54px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad {
+    background: linear-gradient(92deg, #38bdf8 10%, #a78bfa 50%, #34d399 92%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node {
+    font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line); white-space: nowrap;
+  }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i {
+    position: absolute; top: 50%; transform: translateY(-50%); left: 0;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--sky);
+    box-shadow: 0 0 8px var(--sky); opacity: 0;
+  }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint {
+    position: absolute; bottom: calc(16px + env(safe-area-inset-bottom));
+    left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em;
+  }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* ============ 屏2 · STEP 1 三句话分流 ============ */
+  .sort-list { display: flex; flex-direction: column; gap: 9px; width: 100%; max-width: 560px; }
+  .sort-row {
+    display: grid; grid-template-columns: 1fr 40px 120px; gap: 8px; align-items: center;
+    opacity: 0;
+  }
+  .bubble {
+    position: relative; font-size: 11.5px; line-height: 1.55; color: #dbe6f7;
+    background: rgba(255,255,255,.05); border: 1px solid var(--line);
+    border-radius: 4px 12px 12px 12px; padding: 9px 12px;
+  }
+  .bubble small { display: block; font-size: 9.5px; color: var(--dim); margin-top: 3px; }
+  .s-arrow { position: relative; height: 2px; background: var(--line); border-radius: 2px; }
+  .s-arrow i {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    width: 7px; height: 7px; border-radius: 50%; left: 0; opacity: 0;
+  }
+  .folder {
+    font-size: 11px; text-align: center; padding: 10px 8px; border-radius: 11px;
+    border: 1px solid; line-height: 1.4;
+  }
+  .folder b { display: block; font-size: 11.5px; }
+  .folder small { font-size: 9px; opacity: .75; }
+  .f-sem { color: #7dd3fc; border-color: rgba(56,189,248,.5); background: rgba(56,189,248,.08); }
+  .f-epi { color: #fde68a; border-color: rgba(251,191,36,.5); background: rgba(251,191,36,.08); }
+  .f-pro { color: #a7f3d0; border-color: rgba(52,211,153,.5); background: rgba(52,211,153,.08); }
+  .sort-row.r-sem .s-arrow i { background: var(--sky); box-shadow: 0 0 8px var(--sky); }
+  .sort-row.r-epi .s-arrow i { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .sort-row.r-pro .s-arrow i { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .s-sort.active .sort-row { animation: msgIn .5s ease both; }
+  .s-sort.active .sort-row:nth-child(1) { animation-delay: .4s; }
+  .s-sort.active .sort-row:nth-child(2) { animation-delay: 1.5s; }
+  .s-sort.active .sort-row:nth-child(3) { animation-delay: 2.6s; }
+  .s-sort.active .s-arrow i { animation: pktGo .9s ease-in-out both; }
+  .s-sort.active .sort-row:nth-child(1) .s-arrow i { animation-delay: .8s; }
+  .s-sort.active .sort-row:nth-child(2) .s-arrow i { animation-delay: 1.9s; }
+  .s-sort.active .sort-row:nth-child(3) .s-arrow i { animation-delay: 3s; }
+  .s-sort.active .sort-row:nth-child(1) .folder { animation: glowSky 2.2s ease-in-out 1.3s infinite; }
+  .s-sort.active .sort-row:nth-child(2) .folder { animation: glowAmber 2.2s ease-in-out 2.4s infinite; }
+  .s-sort.active .sort-row:nth-child(3) .folder { animation: glowGreen 2.2s ease-in-out 3.5s infinite; }
+  .sort-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7; opacity: 0; }
+  .sort-note code { color: #7dd3fc; background: rgba(56,189,248,.08); padding: 1px 5px; border-radius: 5px; }
+  .s-sort.active .sort-note { animation: rise .5s ease 4s both; }
+
+  /* ============ 屏3 · STEP 2 提取管线 ============ */
+  .ext-flow { display: flex; align-items: center; gap: 7px; width: 100%; max-width: 560px; justify-content: center; flex-wrap: wrap; }
+  .ef-node {
+    padding: 9px 12px; border-radius: 12px; text-align: center;
+    background: var(--card); border: 1px solid var(--line); opacity: 0;
+  }
+  .ef-node b { font-size: 11.5px; display: block; }
+  .ef-node small { display: block; font-size: 9px; color: var(--dim); margin-top: 2px; }
+  .ef-node.llm { border-color: rgba(167,139,250,.5); background: rgba(167,139,250,.08); }
+  .ef-node.llm b { color: #c4b5fd; }
+  .ef-arrow { color: var(--dim); font-size: 11px; opacity: 0; }
+  .s-ext.active .ef-node { animation: msgIn .5s ease both; }
+  .s-ext.active .ef-node:nth-child(1) { animation-delay: .4s; }
+  .s-ext.active .ef-node:nth-child(3) { animation-delay: 1s, 1.8s; animation-name: msgIn, glowPurple; animation-duration: .5s, 2.6s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
+  .s-ext.active .ef-node:nth-child(5) { animation-delay: 2.4s; }
+  .s-ext.active .ef-arrow { animation: rise .4s ease both; }
+  .s-ext.active .ef-arrow:nth-child(2) { animation-delay: .75s; }
+  .s-ext.active .ef-arrow:nth-child(4) { animation-delay: 2.15s; }
+  .json-card {
+    width: 100%; max-width: 560px; border-radius: 13px;
+    background: #0b1424; border: 1px solid rgba(167,139,250,.4);
+    padding: 11px 14px; opacity: 0; font-family: var(--mono);
+  }
+  .json-card .jc-head { font-size: 10px; color: var(--dim); letter-spacing: .12em; margin-bottom: 7px; font-family: -apple-system, sans-serif; }
+  .jl { font-size: 11.5px; line-height: 1.75; color: #c3cde2; opacity: 0; }
+  .jl .k { color: #c4b5fd; }
+  .jl .s { color: #a7f3d0; }
+  .jl .n { color: #fde68a; }
+  .s-ext.active .json-card { animation: msgIn .5s ease 2.4s both; }
+  .s-ext.active .jl { animation: msgIn .3s ease both; }
+  .s-ext.active .jl:nth-child(2) { animation-delay: 2.7s; }
+  .s-ext.active .jl:nth-child(3) { animation-delay: 2.9s; }
+  .s-ext.active .jl:nth-child(4) { animation-delay: 3.1s; }
+  .s-ext.active .jl:nth-child(5) { animation-delay: 3.3s; }
+  .s-ext.active .jl:nth-child(6) { animation-delay: 3.5s; }
+  .ext-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7; opacity: 0; }
+  .ext-note b { color: #c4b5fd; }
+  .ext-note code { color: #c4b5fd; background: rgba(167,139,250,.1); padding: 1px 5px; border-radius: 5px; }
+  .s-ext.active .ext-note { animation: rise .5s ease 3.9s both; }
+
+  /* ============ 屏4 · STEP 3 过滤与去重 ============ */
+  .conf-list { display: flex; flex-direction: column; gap: 7px; width: 100%; max-width: 560px; }
+  .conf {
+    display: grid; grid-template-columns: 155px 1fr 52px; gap: 10px; align-items: center;
+    padding: 8px 12px; border-radius: 11px;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 11px; color: #c3cde2; opacity: 0;
+  }
+  .conf .ck { font-family: var(--mono); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conf .cm { height: 8px; border-radius: 4px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .conf .cm i { display: block; height: 100%; border-radius: 4px; width: 0; }
+  .conf .cv { font-family: var(--mono); font-size: 10.5px; text-align: right; }
+  .conf.keep .cm i { background: linear-gradient(90deg, rgba(52,211,153,.85), #34d399); }
+  .conf.keep .cv { color: #a7f3d0; }
+  .conf.drop { border-color: rgba(251,113,133,.4); }
+  .conf.drop .cm i { background: linear-gradient(90deg, rgba(251,113,133,.8), #fb7185); }
+  .conf.drop .cv { color: #fda4af; }
+  .conf.drop .ck { color: #fda4af; }
+  .s-flt.active .conf { animation: msgIn .45s ease both; }
+  .s-flt.active .conf:nth-child(1) { animation-delay: .4s; }
+  .s-flt.active .conf:nth-child(2) { animation-delay: .75s; }
+  .s-flt.active .conf:nth-child(3) { animation-delay: 1.1s, 2.6s; animation-name: msgIn, glowRed; animation-duration: .45s, 2s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
+  .s-flt.active .conf .cm i { animation: barX .8s cubic-bezier(.22,1,.36,1) 1.4s forwards; }
+  @keyframes barX { from { width: 0; } to { width: var(--w, 70%); } }
+  .conf .stamp { display: none; }
+  .conf.drop .stamp {
+    display: inline; position: absolute;
+  }
+  .thresh-line {
+    width: 100%; max-width: 560px; display: flex; justify-content: space-between;
+    font-family: var(--mono); font-size: 10px; color: var(--dim); opacity: 0;
+  }
+  .thresh-line b { color: #fda4af; }
+  .s-flt.active .thresh-line { animation: rise .5s ease 1.8s both; }
+  .dedup {
+    width: 100%; max-width: 560px; border-radius: 12px; padding: 10px 13px; opacity: 0;
+    background: rgba(56,189,248,.06); border: 1px dashed rgba(56,189,248,.45);
+    font-size: 11px; color: #aab6cf; line-height: 1.7;
+  }
+  .dedup b { color: #7dd3fc; }
+  .dedup code { color: #7dd3fc; font-size: .92em; }
+  .dedup .old-one { color: var(--dim); text-decoration: line-through; }
+  .s-flt.active .dedup { animation: msgIn .5s ease 3.2s both; }
+
+  /* ============ 屏5 · STEP 4 三库介质 ============ */
+  .db-cols { display: flex; gap: 9px; width: 100%; max-width: 560px; }
+  .db-card {
+    flex: 1; border-radius: 13px; padding: 12px 11px; opacity: 0;
+    background: var(--card); border: 1px solid var(--line); text-align: center;
+  }
+  .db-card .ico { font-size: 26px; }
+  .db-card b { display: block; font-size: 11.5px; margin: 6px 0 2px; }
+  .db-card .en { font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: .08em; }
+  .db-card p { font-size: 10px; color: var(--dim); line-height: 1.6; margin-top: 7px; }
+  .db-card .med {
+    margin-top: 8px; font-family: var(--mono); font-size: 9px;
+    border-radius: 7px; padding: 4px 7px; display: inline-block;
+  }
+  .db-card.sem { border-color: rgba(56,189,248,.45); }
+  .db-card.sem b { color: #7dd3fc; }
+  .db-card.sem .med { color: #7dd3fc; background: rgba(56,189,248,.08); border: 1px solid rgba(56,189,248,.35); }
+  .db-card.epi { border-color: rgba(251,191,36,.45); }
+  .db-card.epi b { color: #fde68a; }
+  .db-card.epi .med { color: #fde68a; background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.35); }
+  .db-card.pro { border-color: rgba(52,211,153,.45); }
+  .db-card.pro b { color: #a7f3d0; }
+  .db-card.pro .med { color: #a7f3d0; background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.35); }
+  .s-db.active .db-card { animation: msgIn .55s ease both; }
+  .s-db.active .db-card:nth-child(1) { animation-delay: .4s, 2.2s; animation-name: msgIn, glowSky; animation-duration: .55s, 2.6s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
+  .s-db.active .db-card:nth-child(2) { animation-delay: 1s, 2.8s; animation-name: msgIn, glowAmber; animation-duration: .55s, 2.6s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
+  .s-db.active .db-card:nth-child(3) { animation-delay: 1.6s, 3.4s; animation-name: msgIn, glowGreen; animation-duration: .55s, 2.6s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
+  .db-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7; opacity: 0; }
+  .db-note b { color: #c3cde2; }
+  .s-db.active .db-note { animation: rise .5s ease 2.2s both; }
+
+  /* ============ 屏6 · STEP 5 检索路由 ============ */
+  .route-map {
+    width: 100%; max-width: 560px; border-radius: 14px;
+    background: var(--card); border: 1px solid var(--line);
+    padding: 13px 14px; opacity: 0;
+  }
+  .rm-q {
+    font-size: 11.5px; color: #dbe6f7; text-align: center;
+    background: rgba(34,211,238,.07); border: 1px solid rgba(34,211,238,.35);
+    border-radius: 10px; padding: 8px 12px;
+  }
+  .rm-q small { display: block; font-size: 9.5px; color: var(--dim); margin-top: 2px; }
+  .rm-router {
+    margin: 9px auto; width: fit-content;
+    font-family: var(--mono); font-size: 10.5px; color: #c4b5fd;
+    border: 1px solid rgba(167,139,250,.45); background: rgba(167,139,250,.08);
+    border-radius: 999px; padding: 5px 14px;
+  }
+  .rm-lanes { display: flex; flex-direction: column; gap: 6px; position: relative; }
+  .lane {
+    position: relative; display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center;
+    font-size: 10.5px;
+  }
+  .lane .lf { text-align: right; font-family: var(--mono); }
+  .lane .lt {
+    position: relative; height: 22px; border-radius: 7px;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    display: flex; align-items: center; padding: 0 9px; color: var(--dim); font-size: 9.5px;
+  }
+  .lane .lt i {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    width: 8px; height: 8px; border-radius: 50%; left: 4%; opacity: 0;
+  }
+  .lane.sem .lf { color: #7dd3fc; }
+  .lane.sem .lt { border-color: rgba(56,189,248,.35); }
+  .lane.sem .lt i { background: var(--sky); box-shadow: 0 0 8px var(--sky); }
+  .lane.epi .lf { color: #fde68a; }
+  .lane.epi .lt { border-color: rgba(251,191,36,.35); }
+  .lane.epi .lt i { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .lane.pro .lf { color: #a7f3d0; }
+  .lane.pro .lt { border-color: rgba(52,211,153,.35); }
+  .lane.pro .lt i { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .s-route.active .route-map { animation: msgIn .5s ease .4s both; }
+  .s-route.active .lane .lt i { animation: pktGo 1s ease-in-out both; }
+  .s-route.active .lane.sem .lt i { animation-delay: 1.6s; }
+  .s-route.active .lane.epi .lt i { animation-delay: 1.9s; }
+  .s-route.active .lane.pro .lt i { animation-delay: 2.2s; }
+  .rm-merge {
+    margin-top: 9px; text-align: center; font-size: 11px; color: #a7f3d0;
+    background: rgba(52,211,153,.07); border: 1px solid rgba(52,211,153,.4);
+    border-radius: 10px; padding: 8px 12px; opacity: 0;
+  }
+  .rm-merge code { color: #a7f3d0; }
+  .s-route.active .rm-merge { animation: msgIn .5s ease 2.9s both, glowGreen 2.4s ease-in-out 3.6s infinite; }
+  .route-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7; opacity: 0; }
+  .route-note b { color: #c3cde2; }
+  .s-route.active .route-note { animation: rise .5s ease 3.6s both; }
+
+  /* ============ 屏7 · 总结 ============ */
+  .sum-flow {
+    display: flex; gap: 4px; align-items: center; justify-content: center;
+    flex-wrap: wrap; font-size: 10px; color: var(--dim);
+  }
+  .sum-flow span {
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv {
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px 15px;
+  }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote {
+    font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center;
+    line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #38bdf8, #a78bfa 80%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .replay {
+    font-size: 12.5px; color: #06121c; background: var(--cyan);
+    border: none; padding: 10px 26px; border-radius: 999px;
+    font-weight: 700; cursor: pointer; letter-spacing: .06em;
+  }
+  .replay:active { transform: scale(.96); }
+  .series-badge {
+    position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px;
+    font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em;
+  }
+
+  /* ============ 兜底与无障碍 ============ */
+  @media (max-height: 560px) {
+    .screen { overflow-y: auto; justify-content: flex-start; }
+    .stage { flex: 0 0 auto; padding: 14px 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition: none !important; scroll-behavior: auto !important;
+    }
+    .rv, .hc-arrow i, .sort-row, .s-arrow i, .sort-note, .ef-node, .ef-arrow, .json-card, .jl, .ext-note,
+    .conf, .conf .cm i, .thresh-line, .dedup, .db-card, .db-note,
+    .route-map, .lane .lt i, .rm-merge, .route-note {
+      opacity: 1 !important; transform: none !important; filter: none !important;
+    }
+    .conf.keep .cm i { width: var(--w, 80%) !important; }
+    .conf.drop .cm i { width: var(--w, 40%) !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面" aria-label="封面"></button>
+  <button title="STEP 1 三句话分流" aria-label="三句话分流"></button>
+  <button title="STEP 2 提取管线" aria-label="提取管线"></button>
+  <button title="STEP 3 过滤与去重" aria-label="过滤与去重"></button>
+  <button title="STEP 4 三库介质" aria-label="三库介质"></button>
+  <button title="STEP 5 检索路由" aria-label="检索路由"></button>
+  <button title="总结" aria-label="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">AGENT 模式进阶 · 03 · 记忆系统</div>
+    <h1 class="rv d2">三色文件夹<br><span class="grad">记忆提取与路由</span></h1>
+    <p class="hero-sub rv d3">对话里的信息，先分类再入库，按问题再召回 · 逐屏动画演示</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">🏷️ 自动提取</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">🗂️ 三库分流</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">🎯 路由召回</span>
+    </div>
+    <p class="hero-quote rv d5">「不是什么都往一个抽屉里塞」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 三句话分流 -->
+<section class="screen s-sort">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>三句话，三个抽屉</div>
+    <h2 class="rv d1">先认识 CoALA 的三色记忆</h2>
+    <p class="scr-desc rv d2">ai-07 期讲过三类长期记忆 —— 同一段对话里，三句话的归宿完全不同</p>
+    <div class="code-chip rv d2">semantic 事实 · episodic 经历 · procedural 规矩</div>
+  </header>
+  <div class="stage">
+    <div class="sort-list">
+      <div class="sort-row r-sem">
+        <div class="bubble">💬「对了，我是杭州人」<small>一句稳定的事实</small></div>
+        <div class="s-arrow"><i></i></div>
+        <div class="folder f-sem"><b>📘 semantic</b><small>事实卡<br>城市=杭州</small></div>
+      </div>
+      <div class="sort-row r-epi">
+        <div class="bubble">💬「上次那个查询报了 429，重试才好」<small>一次具体的经历</small></div>
+        <div class="s-arrow"><i></i></div>
+        <div class="folder f-epi"><b>📒 episodic</b><small>时间线卡<br>事件+教训</small></div>
+      </div>
+      <div class="sort-row r-pro">
+        <div class="bubble">💬「以后给我推荐餐厅，先问我在哪个城市」<small>一条以后照做的规矩</small></div>
+        <div class="s-arrow"><i></i></div>
+        <div class="folder f-pro"><b>📗 procedural</b><small>规则卡<br>先问城市</small></div>
+      </div>
+    </div>
+    <div class="sort-note">分类不是写在规则里的硬编码 —— 实际系统靠 <b>LLM 提取器</b>边聊边判（下一屏）；hermes-08 期演的偏好沉淀，主要发生在 <code>semantic</code> 这一库</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 事实、经历、规矩<b>各有各的抽屉</b> —— 取得时候才取得准</footer>
+</section>
+
+<!-- 屏3 · STEP 2 提取管线 -->
+<section class="screen s-ext">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>提取器</div>
+    <h2 class="rv d1">让模型边聊边「做读书笔记」</h2>
+    <p class="scr-desc rv d2">Extractor 拿对话片段走一条专用提取 prompt，并用 <b>function calling</b> 强制吐出结构化 JSON —— 自由文本进，整齐记录出</p>
+    <div class="code-chip rv d2">messages → <b>extract_prompt + tools schema</b> → memory[]</div>
+  </header>
+  <div class="stage">
+    <div class="ext-flow">
+      <div class="ef-node"><b>💬 对话片段</b><small>本轮 user/assistant</small></div>
+      <div class="ef-arrow">→</div>
+      <div class="ef-node llm"><b>🧠 提取器</b><small>专用 prompt<br>function calling</small></div>
+      <div class="ef-arrow">→</div>
+      <div class="ef-node"><b>🗂️ 结构化记录</b><small>可入库 / 可丢弃</small></div>
+    </div>
+    <div class="json-card">
+      <div class="jc-head">FUNCTION CALL · save_memory</div>
+      <div class="jl">{</div>
+      <div class="jl">&nbsp;&nbsp;<span class="k">"type"</span>: <span class="s">"semantic"</span>,</div>
+      <div class="jl">&nbsp;&nbsp;<span class="k">"key"</span>: <span class="s">"user.city"</span>,</div>
+      <div class="jl">&nbsp;&nbsp;<span class="k">"value"</span>: <span class="s">"杭州"</span>,</div>
+      <div class="jl">&nbsp;&nbsp;<span class="k">"confidence"</span>: <span class="n">0.93</span></div>
+      <div class="jl">}</div>
+    </div>
+    <div class="ext-note">schema 里 <code>type</code> 限定三色枚举，模型只能四选一（含 <b>「无记忆价值」直接不调函数</b>）—— 寒暄、语气词在这一步就被丢掉，不入库</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 记忆不是顺手存的聊天记录 —— <b>是另一次模型调用提炼出的笔记</b></footer>
+</section>
+
+<!-- 屏4 · STEP 3 过滤与去重 -->
+<section class="screen s-flt">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>入库前两道闸</div>
+    <h2 class="rv d1">不够确定的不存，同一件事不堆</h2>
+    <p class="scr-desc rv d2">提取结果不是照单全收：<b>置信度低于阈值丢弃</b>；同一 key 的新值<b>覆盖</b>旧值，而不是并排堆三条</p>
+  </header>
+  <div class="stage">
+    <div class="conf-list">
+      <div class="conf keep"><span class="ck">user.city = 杭州</span><span class="cm"><i style="--w:93%"></i></span><span class="cv">0.93 ✓</span></div>
+      <div class="conf keep"><span class="ck">rule.ask_city_first = true</span><span class="cm"><i style="--w:86%"></i></span><span class="cv">0.86 ✓</span></div>
+      <div class="conf drop"><span class="ck">user.dish = 好像随便</span><span class="cm"><i style="--w:38%"></i></span><span class="cv">0.38 ✕</span></div>
+    </div>
+    <div class="thresh-line"><span>置信度</span><span><b>阈值 0.6 ↓ 丢弃</b>（模型自己都没把握，别让它污染记忆）</span></div>
+    <div class="dedup">
+      <b>同 key 去重 = 更新，不是追加</b><br>
+      第 2 轮：<code>user.city = 杭州</code>　→　第 9 轮：<code>user.city = 上海（已搬家）</code><br>
+      <span class="old-one">user.city = 杭州</span> ⟶ 覆盖为 <code>user.city = 上海</code>，旧值进历史版本可回溯，但召回只取最新一条
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 记忆库的敌人不是忘 —— <b>是低质量条目越攒越多，检索被噪音淹没</b></footer>
+</section>
+
+<!-- 屏5 · STEP 4 三库介质 -->
+<section class="screen s-db">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>三个抽屉，三种放法</div>
+    <h2 class="rv d1">记忆类型决定存哪、怎么查</h2>
+    <p class="scr-desc rv d2">三色不只是标签 —— <b>访问方式不同，落的存储也不同</b>（工程上可简可繁，这里是典型形态）</p>
+  </header>
+  <div class="stage">
+    <div class="db-cols">
+      <div class="db-card sem">
+        <div class="ico">📘</div>
+        <b>事实库</b>
+        <div class="en">SEMANTIC</div>
+        <p>用户画像、偏好、稳定事实；按语义相似度召回</p>
+        <span class="med">向量库 + KV 元数据</span>
+      </div>
+      <div class="db-card epi">
+        <div class="ico">📒</div>
+        <b>时间线库</b>
+        <div class="en">EPISODIC</div>
+        <p>「什么时候发生了什么」的事件与教训，按时间+主题取</p>
+        <span class="med">SQLite / 文档表</span>
+      </div>
+      <div class="db-card pro">
+        <div class="ico">📗</div>
+        <b>规则库</b>
+        <div class="en">PROCEDURAL</div>
+        <p>「以后该怎么做」的规矩，少量、高优先级、几乎条条命中</p>
+        <span class="med">规则配置 / prompt 片段</span>
+      </div>
+    </div>
+    <div class="db-note">📌 procedural 最特殊：它常不经过检索，而是<b>直接拼进系统提示词</b> —— 「先问城市」这类规矩值得每次都在场（ai-07 期：程序性记忆藏在提示词与代码里）</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 别用一把锤子钉三种钉子 —— <b>查法决定存法</b></footer>
+</section>
+
+<!-- 屏6 · STEP 5 检索路由 -->
+<section class="screen s-route">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>用时怎么取</div>
+    <h2 class="rv d1">一个问题，三路各取所需</h2>
+    <p class="scr-desc rv d2">新问题进来先过 <b>Memory Router</b> 判断它需要哪类记忆 —— 不是把三库全捞出来，而是分流去取、汇合注入</p>
+    <div class="code-chip rv d2">query → <b>router</b> → semantic ║ episodic ║ procedural → 合并注入</div>
+  </header>
+  <div class="stage">
+    <div class="route-map">
+      <div class="rm-q">🎤「周末想带爸妈吃顿清淡的，有推荐吗？」<small>新轮对话开始，组装上下文前</small></div>
+      <div class="rm-router">🧭 ROUTER：需要口味偏好 + 城市 + 上次教训 + 用餐规矩</div>
+      <div class="rm-lanes">
+        <div class="lane sem"><span class="lf">📘 semantic</span><span class="lt"><i></i>口味清淡 · 爸妈同行 · 城市=杭州</span></div>
+        <div class="lane epi"><span class="lf">📒 episodic</span><span class="lt"><i></i>上次某店排队 1 小时，老人体验差</span></div>
+        <div class="lane pro"><span class="lf">📗 procedural</span><span class="lt"><i></i>规矩：推荐餐厅先确认城市与人数</span></div>
+      </div>
+      <div class="rm-merge">📥 去重 + 按预算裁剪后，拼成 <code>&lt;relevant-memories&gt;</code> 块注入本轮上下文（预算裁剪见 hermes-13 期）</div>
+    </div>
+    <div class="route-note">写的时候三色分流，取的时候也<b>三路分流再汇合</b> —— 这就是「记忆路由」：取数版的 Plan-and-Execute，<b>先判断要什么，再动手找</b></div>
+  </div>
+  <footer class="scr-foot rv d6">💡 好记忆系统的关键不是存得多 —— <b>是该想起来的时候，恰好捞到那几条</b></footer>
+</section>
+
+<!-- 屏7 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">边聊边提炼，用时再路由</h2>
+    <p class="scr-desc rv d2">三色分流 → 结构化提取 → 过滤去重 → 分库存储 → 路由召回</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>💬 对话</span><i>→</i><span>🏷️ 提取器出 JSON</span><i>→</i><span>🚦 置信度/去重</span><i>→</i><span>🗂️ 三库</span><i>→</i><span>🧭 路由汇合注入</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">🗂️</div>
+        <div><b>三色是存取的共同语言</b><p>semantic 事实 / episodic 经历 / procedural 规矩：写入分流、介质不同、召回各走各路</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🏷️</div>
+        <div><b>提取是一次独立模型调用</b><p>专用 prompt + function calling 吐出结构化 JSON；低置信丢弃、同 key 覆盖，宁缺毋滥</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">🧭</div>
+        <div><b>路由器决定想得起什么</b><p>按问题类型分流三库再汇合注入 —— 记忆的价值在精准召回，不在库存大小</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“塞进去的是笔记，<br>想起来的才是记忆。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">AGENT 模式进阶 · 03 / 记忆提取与路由篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else {
+    secs.forEach((s) => s.classList.add('active'));
+  }
+
+  dots.forEach((d, i) => d.addEventListener('click', () => {
+    secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+</script>
+</body>
+</html>
