@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#070b14">
-<meta name="description" content="AGENT 模式进阶 05 MCP 三角与工具发现：Host/Client/Server 三角、initialize 能力协商、tools/list 动态上报与 JSON Schema 进 tools、tools/call 衔接主循环、多服务器热插拔与授权 —— 逐屏动画演示">
+<meta name="description" content="AGENT 模式进阶 05 MCP：Host/Client/Server 三角、initialize 握手飞球、tools/list 动态菜单、tools/call 接缝、多 Server 热插拔授权 —— 逐屏动画演示">
 <title>插上 USB · MCP 三角与工具发现 · 逐屏动画演示</title>
 <style>
   :root {
@@ -13,6 +13,7 @@
     --ink: #e8eefc;
     --dim: #8b96ad;
     --cyan: #22d3ee;
+    --sky: #38bdf8;
     --purple: #a78bfa;
     --green: #34d399;
     --amber: #fbbf24;
@@ -72,8 +73,8 @@
   .s-sum   { --glow: rgba(244,114,182,.08); }
 
   .scr-head {
-    width: 100%; max-width: 640px; text-align: center;
-    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    width: 100%; max-width: 600px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
   }
   .step-badge {
     display: inline-flex; align-items: center; gap: 8px;
@@ -83,28 +84,16 @@
   }
   .step-badge b { color: #fff; font-weight: 800; }
   h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
-  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
-  .scr-desc code {
-    color: var(--cyan); font-size: .92em;
-    background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px;
-  }
-  .code-chip {
-    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
-    background: rgba(255,255,255,.04); border: 1px solid var(--line);
-    border-radius: 8px; padding: 5px 11px; max-width: 100%;
-    overflow-x: auto; white-space: nowrap; scrollbar-width: none;
-  }
-  .code-chip::-webkit-scrollbar { display: none; }
-  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 13.5px); color: #aab6cf; line-height: 1.6; max-width: 520px; }
   .stage {
     position: relative; z-index: 1; flex: 1; min-height: 0;
-    width: 100%; max-width: 640px;
+    width: 100%; max-width: 600px;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 13px;
   }
   .scr-foot {
-    width: 100%; max-width: 640px; text-align: center;
-    font-size: 12px; line-height: 1.65; color: var(--dim);
+    width: 100%; max-width: 600px; text-align: center;
+    font-size: 12px; line-height: 1.6; color: var(--dim);
   }
   .scr-foot b { color: #c3cde2; }
 
@@ -125,11 +114,14 @@
   @keyframes glowGreen { 0%,100% { box-shadow: 0 0 0 rgba(52,211,153,0) } 50% { box-shadow: 0 0 22px rgba(52,211,153,.3) } }
   @keyframes glowCyan { 0%,100% { box-shadow: 0 0 0 rgba(34,211,238,0) } 50% { box-shadow: 0 0 22px rgba(34,211,238,.32) } }
   @keyframes glowAmber { 0%,100% { box-shadow: 0 0 0 rgba(251,191,36,0) } 50% { box-shadow: 0 0 20px rgba(251,191,36,.28) } }
+  @keyframes glowSky { 0%,100% { box-shadow: 0 0 0 rgba(56,189,248,0) } 50% { box-shadow: 0 0 22px rgba(56,189,248,.3) } }
   @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
   @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
   @keyframes pktDown { 0% { top: 0; opacity: 0 } 15% { opacity: 1 } 85% { opacity: 1 } 100% { top: calc(100% - 7px); opacity: 0 } }
+  @keyframes pktL { 0% { left: 6%; opacity: 0 } 15% { opacity: 1 } 85% { opacity: 1 } 100% { left: 88%; opacity: 0 } }
+  @keyframes pktR { 0% { left: 88%; opacity: 0 } 15% { opacity: 1 } 85% { opacity: 1 } 100% { left: 6%; opacity: 0 } }
 
-  /* ============ 屏1 · 封面 ============ */
+  /* ============ 封面 ============ */
   .s-hero { justify-content: center; text-align: center; }
   .hero-kicker {
     font-size: 10px; letter-spacing: .28em; color: var(--dim);
@@ -163,186 +155,206 @@
   .chev { display: inline-block; margin-left: 6px; }
   .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
 
-  /* ============ 屏2 · STEP 1 三角 ============ */
-  .tri-wrap { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 0; opacity: 0; }
+  /* ============ STEP 1 · 三角 ============ */
+  .tri { width: 100%; opacity: 0; }
   .host-box {
     border: 1.5px solid rgba(167,139,250,.55); border-radius: 15px;
     background: rgba(167,139,250,.06); padding: 11px 13px 13px;
   }
-  .host-box .hb-title {
-    font-size: 12px; color: #c4b5fd; letter-spacing: .1em; margin-bottom: 9px; text-align: center;
+  .hb-t { font-size: 12px; color: #c4b5fd; text-align: center; margin-bottom: 10px; }
+  .clients { display: flex; gap: 10px; }
+  .peer {
+    flex: 1; text-align: center; border-radius: 11px; padding: 9px 10px;
+    font-size: 11px; opacity: 0;
   }
-  .clients { display: flex; gap: 9px; justify-content: center; position: relative; }
-  .cli {
-    flex: 1; max-width: 190px; text-align: center; border-radius: 11px;
-    border: 1px solid rgba(34,211,238,.5); background: rgba(34,211,238,.07);
-    padding: 9px 10px; font-size: 11px; color: #a5e9f4;
-  }
-  .cli small { display: block; font-size: 9px; color: var(--dim); margin-top: 3px; }
-  .wires { display: flex; justify-content: center; gap: 9px; height: 18px; position: relative; }
-  .wire { position: relative; flex: 1; max-width: 190px; }
+  .peer small { display: block; font-size: 9px; color: var(--dim); margin-top: 3px; }
+  .cli { border: 1px solid rgba(34,211,238,.5); background: rgba(34,211,238,.07); color: #a5e9f4; }
+  .srv { border: 1px solid rgba(52,211,153,.5); background: rgba(52,211,153,.07); color: #a7f3d0; }
+  .wires { display: flex; height: 18px; }
+  .wire { position: relative; flex: 1; }
   .wire::before {
     content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px;
     transform: translateX(-50%); background: var(--line);
   }
   .wire i {
-    position: absolute; top: 0; width: 7px; height: 7px; left: calc(50% - 3.5px);
-    border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); opacity: 0;
+    position: absolute; top: 0; left: calc(50% - 3.5px);
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--cyan); box-shadow: 0 0 8px var(--cyan); opacity: 0;
   }
-  .servers { display: flex; gap: 9px; justify-content: center; }
-  .srv {
-    flex: 1; max-width: 190px; text-align: center; border-radius: 11px;
-    border: 1px solid rgba(52,211,153,.5); background: rgba(52,211,153,.07);
-    padding: 9px 10px; font-size: 11px; color: #a7f3d0;
+  .servers { display: flex; gap: 10px; }
+  .tri-note {
+    font-size: 10.5px; color: var(--dim); text-align: center; line-height: 1.65; opacity: 0;
+    border: 1px dashed var(--line); border-radius: 999px; padding: 6px 14px;
   }
-  .srv small { display: block; font-size: 9px; color: var(--dim); margin-top: 3px; }
-  .s-tri.active .tri-wrap { animation: msgIn .5s ease both; }
-  .s-tri.active .cli { animation: msgIn .45s ease both; }
-  .s-tri.active .cli:nth-child(1) { animation-delay: .8s; }
-  .s-tri.active .cli:nth-child(2) { animation-delay: 1.05s; }
-  .s-tri.active .srv { animation: msgIn .45s ease both; }
-  .s-tri.active .srv:nth-child(1) { animation-delay: 1.4s; }
-  .s-tri.active .srv:nth-child(2) { animation-delay: 1.65s; }
-  .s-tri.active .wire i { animation: pktDown 1.4s ease-in-out 2s infinite; }
-  .tri-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7; opacity: 0; }
-  .tri-note b { color: #c3cde2; }
-  .tri-note code { color: #c4b5fd; background: rgba(167,139,250,.1); padding: 1px 5px; border-radius: 5px; }
+  .tri-note b { color: #c4b5fd; }
+  .s-tri.active .tri { animation: msgIn .5s ease .4s both; }
+  .s-tri.active .cli { animation: msgIn .4s ease both; }
+  .s-tri.active .clients .cli:nth-child(1) { animation-delay: .8s; }
+  .s-tri.active .clients .cli:nth-child(2) { animation-delay: 1.05s; }
+  .s-tri.active .srv { animation: msgIn .4s ease both; }
+  .s-tri.active .servers .srv:nth-child(1) { animation-delay: 1.5s; }
+  .s-tri.active .servers .srv:nth-child(2) { animation-delay: 1.75s; }
+  .s-tri.active .wire i { animation: pktDown 1.4s ease-in-out 2.1s infinite; }
   .s-tri.active .tri-note { animation: rise .5s ease 2.6s both; }
 
-  /* ============ 屏3 · STEP 2 initialize ============ */
-  .hand-card {
-    width: 100%; max-width: 560px; border-radius: 13px;
-    background: #0b1424; border: 1px solid var(--line); padding: 11px 14px; opacity: 0;
+  /* ============ STEP 2 · 握手飞球 ============ */
+  .handshake { width: 100%; opacity: 0; }
+  .hs-pillars { display: flex; justify-content: space-between; }
+  .hs-p {
+    width: 120px; text-align: center; border-radius: 13px; padding: 11px 8px;
+    font-size: 11.5px; font-weight: 700;
   }
-  .hand-card .hc2-head { font-family: var(--mono); font-size: 10px; color: var(--dim); letter-spacing: .12em; margin-bottom: 8px; }
-  .hl {
-    font-family: var(--mono); font-size: 10.5px; line-height: 1.5; padding: 4px 8px;
-    border-radius: 7px; margin-bottom: 4px; opacity: 0; color: #c3cde2;
+  .hs-p small { display: block; font-size: 9px; font-weight: 400; color: var(--dim); margin-top: 3px; }
+  .hs-p.c { border: 1px solid rgba(34,211,238,.5); background: rgba(34,211,238,.07); color: #a5e9f4; }
+  .hs-p.s { border: 1px solid rgba(52,211,153,.5); background: rgba(52,211,153,.07); color: #a7f3d0; }
+  .hs-msgs { position: relative; height: 108px; margin: 2px 0; }
+  .hs-line { position: absolute; left: 60px; right: 60px; top: 0; bottom: 0; width: 2px; background: var(--line); }
+  .hs-line.l1 { left: 60px; right: auto; }
+  .hs-track { position: absolute; left: 0; right: 0; height: 30px; }
+  .hs-ball {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    font-size: 9.5px; font-family: var(--mono); white-space: nowrap;
+    border-radius: 999px; padding: 4px 11px; opacity: 0;
   }
-  .hl.req { background: rgba(34,211,238,.07); }
-  .hl.res { background: rgba(52,211,153,.07); }
-  .hl .dir { font-size: 9px; margin-right: 7px; }
-  .hl.req .dir { color: #7dd3fc; }
-  .hl.res .dir { color: #6ee7b7; }
-  .hl b { color: #c4b5fd; font-weight: 600; }
-  .s-hand.active .hand-card { animation: msgIn .5s ease .4s both; }
-  .s-hand.active .hl { animation: msgIn .35s ease both; }
-  .s-hand.active .hl:nth-child(2) { animation-delay: .8s; }
-  .s-hand.active .hl:nth-child(3) { animation-delay: 1.5s; }
-  .s-hand.active .hl:nth-child(4) { animation-delay: 2.2s; }
-  .s-hand.active .hl:nth-child(5) { animation-delay: 2.9s; }
-  .caps-row { display: flex; gap: 7px; width: 100%; max-width: 560px; flex-wrap: wrap; justify-content: center; }
-  .cap {
-    font-size: 10.5px; padding: 5px 11px; border-radius: 999px; opacity: 0;
+  .hs-ball.go { color: #a5e9f4; border: 1px solid rgba(34,211,238,.5); background: rgba(34,211,238,.08); }
+  .hs-ball.ba { color: #a7f3d0; border: 1px solid rgba(52,211,153,.5); background: rgba(52,211,153,.08); }
+  .hs-ball .num { font-weight: 800; margin-right: 5px; }
+  .hs-dot {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    width: 8px; height: 8px; border-radius: 50%; opacity: 0;
+  }
+  .hs-dot.go { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+  .hs-dot.ba { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .s-hand.active .handshake { animation: msgIn .5s ease .4s both; }
+  .s-hand.active .hs-p { animation: msgIn .4s ease both; }
+  .s-hand.active .hs-p:nth-child(1) { animation-delay: .6s; }
+  .s-hand.active .hs-p:nth-child(2) { animation-delay: .6s; }
+  .s-hand.active .hs-ball { animation: rise .3s ease both; }
+  .s-hand.active .track-1 .hs-ball { animation-delay: 1.2s; }
+  .s-hand.active .track-2 .hs-ball { animation-delay: 2.3s; }
+  .s-hand.active .track-3 .hs-ball { animation-delay: 3.4s; }
+  .s-hand.active .track-1 .hs-dot { animation: pktL 1s ease-in-out 1.2s infinite; }
+  .s-hand.active .track-2 .hs-dot { animation: pktR 1s ease-in-out 2.3s infinite; }
+  .s-hand.active .track-3 .hs-dot { animation: pktL 1s ease-in-out 3.4s infinite; }
+  .caps { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; opacity: 0; }
+  .caps i {
+    font-style: normal; font-size: 10.5px; padding: 5px 12px; border-radius: 999px;
     background: var(--card); border: 1px solid var(--line); color: #aab6cf;
   }
-  .cap b { color: #7dd3fc; font-family: var(--mono); }
-  .s-hand.active .cap { animation: msgIn .4s ease both; }
-  .s-hand.active .cap:nth-child(1) { animation-delay: 2.6s; }
-  .s-hand.active .cap:nth-child(2) { animation-delay: 2.85s; }
-  .s-hand.active .cap:nth-child(3) { animation-delay: 3.1s; }
-  .hand-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7; opacity: 0; }
-  .hand-note b { color: #c4b5fd; }
-  .s-hand.active .hand-note { animation: rise .5s ease 3.5s both; }
+  .caps i b { color: #6ee7b7; font-family: var(--mono); }
+  .caps-chip {
+    font-size: 10.5px; color: var(--dim); opacity: 0; text-align: center;
+    border: 1px dashed var(--line); border-radius: 999px; padding: 6px 14px;
+  }
+  .caps-chip b { color: #c4b5fd; }
+  .s-hand.active .caps { animation: rise .5s ease 4s both; }
+  .s-hand.active .caps-chip { animation: rise .5s ease 4.4s both; }
 
-  /* ============ 屏4 · STEP 3 tools/list ============ */
-  .list-flow { display: flex; align-items: stretch; gap: 9px; width: 100%; max-width: 560px; }
-  .lf-pane {
-    flex: 1; border-radius: 12px; padding: 10px 12px; opacity: 0;
+  /* ============ STEP 3 · tools/list ============ */
+  .list-panes { display: flex; gap: 10px; width: 100%; align-items: stretch; }
+  .pane {
+    flex: 1; border-radius: 13px; padding: 11px 12px; opacity: 0;
     background: var(--card); border: 1px solid var(--line);
   }
-  .lf-pane .pt { font-size: 10px; letter-spacing: .1em; color: var(--dim); margin-bottom: 8px; }
-  .tool-item {
+  .pane .pt { font-size: 10px; letter-spacing: .1em; color: var(--dim); margin-bottom: 9px; }
+  .ti {
     font-family: var(--mono); font-size: 10.5px; padding: 6px 9px; border-radius: 8px;
     background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
-    color: #c3cde2; margin-bottom: 5px; opacity: 0;
+    color: #c3cde2; margin-bottom: 6px; opacity: 0;
   }
-  .tool-item .ti-name { color: #6ee7b7; }
-  .tool-item .ti-d { font-family: -apple-system, sans-serif; font-size: 9.5px; color: var(--dim); margin-top: 2px; }
-  .s-list.active .lf-pane { animation: msgIn .5s ease both; }
-  .s-list.active .lf-pane.server { animation-delay: .4s; }
-  .s-list.active .lf-pane.llm { animation-delay: 2.8s; }
-  .s-list.active .tool-item { animation: msgIn .35s ease both; }
-  .s-list.active .lf-pane.server .tool-item:nth-child(2) { animation-delay: .8s; }
-  .s-list.active .lf-pane.server .tool-item:nth-child(3) { animation-delay: 1.05s; }
-  .s-list.active .lf-pane.server .tool-item:nth-child(4) { animation-delay: 1.3s; }
-  .s-list.active .lf-pane.server .tool-item:nth-child(5) { animation-delay: 1.55s, 2.1s; animation-name: msgIn, glowGreen; animation-duration: .35s, 2s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
-  .lf-mid {
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
-    font-family: var(--mono); font-size: 9.5px; color: #7dd3fc; opacity: 0; width: 86px; flex: none; text-align: center;
+  .ti .n { color: #6ee7b7; }
+  .ti .d { font-family: -apple-system, sans-serif; font-size: 9.5px; color: var(--dim); margin-top: 2px; }
+  .pane.server .ti:last-child .n { color: #fde68a; }
+  .pane.llm { border-color: rgba(167,139,250,.4); background: rgba(167,139,250,.05); }
+  .pane.llm .ti { border-color: rgba(167,139,250,.3); }
+  .pane.llm .ti .n { color: #c4b5fd; }
+  .pane-mid {
+    flex: none; width: 78px; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 4px; font-family: var(--mono); font-size: 9px;
+    color: #7dd3fc; text-align: center; opacity: 0; line-height: 1.5;
   }
-  .s-list.active .lf-mid { animation: rise .5s ease 2s both; }
-  .lf-pane.llm .tool-item { border-color: rgba(167,139,250,.35); background: rgba(167,139,250,.06); }
-  .lf-pane.llm .tool-item .ti-name { color: #c4b5fd; }
-  .s-list.active .lf-pane.llm .tool-item { animation-delay: 3.1s; }
-  .list-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7; opacity: 0; }
-  .list-note code { color: #6ee7b7; background: rgba(52,211,153,.08); padding: 1px 5px; border-radius: 5px; }
-  .s-list.active .list-note { animation: rise .5s ease 3.6s both; }
+  .s-list.active .pane.server { animation: msgIn .5s ease .4s both; }
+  .s-list.active .pane-mid { animation: rise .4s ease 2s both; }
+  .s-list.active .pane.llm { animation: msgIn .5s ease 2.7s both; }
+  .s-list.active .server .ti { animation: msgIn .3s ease both; }
+  .s-list.active .server .ti:nth-child(2) { animation-delay: .8s; }
+  .s-list.active .server .ti:nth-child(3) { animation-delay: 1.05s; }
+  .s-list.active .server .ti:nth-child(4) { animation-delay: 1.3s; }
+  .s-list.active .server .ti:nth-child(5) { animation-delay: 1.55s, glowGreen; animation-duration: .3s, 2s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
+  .s-list.active .llm .ti { animation-delay: 3s; animation: msgIn .3s ease 3s both; }
+  .list-chip {
+    font-size: 10.5px; color: var(--dim); opacity: 0; text-align: center;
+    border: 1px dashed var(--line); border-radius: 999px; padding: 6px 14px;
+  }
+  .list-chip b { color: #c3cde2; }
+  .s-list.active .list-chip { animation: rise .5s ease 3.5s both; }
 
-  /* ============ 屏5 · STEP 4 tools/call ============ */
-  .call-chain { display: flex; align-items: center; gap: 6px; width: 100%; max-width: 560px; justify-content: center; flex-wrap: wrap; }
-  .cc-node {
-    padding: 9px 11px; border-radius: 11px; text-align: center; opacity: 0;
+  /* ============ STEP 4 · tools/call ============ */
+  .call-chain { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: center; flex-wrap: wrap; }
+  .cc {
+    text-align: center; border-radius: 12px; padding: 10px 11px; opacity: 0;
     background: var(--card); border: 1px solid var(--line);
   }
-  .cc-node b { font-size: 11px; display: block; }
-  .cc-node small { display: block; font-size: 9px; color: var(--dim); margin-top: 2px; }
-  .cc-node.hot { border-color: rgba(251,191,36,.5); background: rgba(251,191,36,.07); }
-  .cc-node.hot b { color: #fde68a; }
-  .cc-arrow { color: var(--dim); font-size: 11px; opacity: 0; }
-  .s-call.active .cc-node { animation: msgIn .45s ease both; }
-  .s-call.active .cc-node:nth-child(1) { animation-delay: .4s; }
-  .s-call.active .cc-node:nth-child(3) { animation-delay: .9s, 2.8s; animation-name: msgIn, glowAmber; animation-duration: .45s, 2.2s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
-  .s-call.active .cc-node:nth-child(5) { animation-delay: 1.6s; }
-  .s-call.active .cc-node:nth-child(7) { animation-delay: 2.3s; }
-  .s-call.active .cc-arrow { animation: rise .35s ease both; }
-  .s-call.active .cc-arrow:nth-child(2) { animation-delay: .7s; }
-  .s-call.active .cc-arrow:nth-child(4) { animation-delay: 1.35s; }
-  .s-call.active .cc-arrow:nth-child(6) { animation-delay: 2.05s; }
-  .call-note {
-    width: 100%; max-width: 560px; font-size: 11px; color: var(--dim); line-height: 1.7;
-    text-align: center; opacity: 0;
+  .cc .ico { font-size: 17px; }
+  .cc b { display: block; font-size: 10.5px; margin-top: 3px; }
+  .cc small { display: block; font-size: 8.5px; color: var(--dim); margin-top: 2px; font-family: var(--mono); }
+  .cc.gate { border-color: rgba(251,191,36,.55); background: rgba(251,191,36,.07); }
+  .cc.gate b { color: #fde68a; }
+  .cc-arr { color: var(--dim); font-size: 11px; opacity: 0; }
+  .s-call.active .cc { animation: msgIn .4s ease both; }
+  .s-call.active .cc:nth-child(1) { animation-delay: .4s; }
+  .s-call.active .cc:nth-child(3) { animation-delay: 1s, 2.8s; animation-name: msgIn, glowAmber; animation-duration: .4s, 2.2s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
+  .s-call.active .cc:nth-child(5) { animation-delay: 1.7s; }
+  .s-call.active .cc:nth-child(7) { animation-delay: 2.4s; }
+  .s-call.active .cc-arr { animation: rise .3s ease both; }
+  .s-call.active .cc-arr:nth-child(2) { animation-delay: .75s; }
+  .s-call.active .cc-arr:nth-child(4) { animation-delay: 1.45s; }
+  .s-call.active .cc-arr:nth-child(6) { animation-delay: 2.15s; }
+  .loop-chip {
+    font-size: 10.5px; color: var(--dim); opacity: 0; text-align: center;
+    border: 1px dashed var(--line); border-radius: 12px; padding: 8px 14px; line-height: 1.7;
   }
-  .call-note code { color: #fde68a; background: rgba(251,191,36,.08); padding: 1px 5px; border-radius: 5px; }
-  .call-note b { color: #c3cde2; }
-  .s-call.active .call-note { animation: rise .5s ease 3s both; }
+  .loop-chip b { color: #c3cde2; }
+  .s-call.active .loop-chip { animation: rise .5s ease 3s both; }
 
-  /* ============ 屏6 · STEP 5 热插拔 ============ */
-  .plug-area { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 9px; }
-  .port-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  /* ============ STEP 5 · 热插拔 ============ */
+  .ports { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
   .port {
-    font-size: 10.5px; padding: 7px 12px; border-radius: 10px; opacity: 0;
+    font-size: 10.5px; padding: 7px 13px; border-radius: 10px; opacity: 0;
     border: 1px dashed rgba(125,211,252,.5); background: rgba(56,189,248,.06); color: #7dd3fc;
   }
   .port b { font-family: var(--mono); }
   .port.new { border-style: solid; border-color: rgba(52,211,153,.6); background: rgba(52,211,153,.08); color: #a7f3d0; }
-  .port.off { border-color: rgba(251,113,133,.45); background: rgba(251,113,133,.06); color: #fda4af; border-style: solid; }
-  .menu-card {
-    border-radius: 12px; padding: 10px 13px; opacity: 0;
+  .port.off { border-style: solid; border-color: rgba(251,113,133,.5); background: rgba(251,113,133,.06); color: #fda4af; }
+  .menu {
+    width: 100%; border-radius: 13px; padding: 11px 14px; opacity: 0;
     background: var(--card); border: 1px solid var(--line);
   }
-  .menu-card .mc-title { font-family: var(--mono); font-size: 10px; color: var(--dim); letter-spacing: .1em; margin-bottom: 7px; }
-  .menu-line { font-family: var(--mono); font-size: 10px; color: #c3cde2; line-height: 1.8; opacity: 0; }
-  .menu-line .ns { color: #7dd3fc; }
-  .menu-line.add { color: #a7f3d0; }
-  .menu-line.gone { color: #fda4af; text-decoration: line-through; }
+  .menu .mt { font-family: var(--mono); font-size: 10px; color: var(--dim); letter-spacing: .1em; margin-bottom: 7px; }
+  .ml { font-family: var(--mono); font-size: 10.5px; color: #c3cde2; line-height: 1.9; opacity: 0; }
+  .ml .ns { color: #7dd3fc; }
+  .ml.add { color: #a7f3d0; }
+  .ml.gone { color: #fda4af; text-decoration: line-through; }
+  .plug-chip {
+    font-size: 10.5px; color: var(--dim); opacity: 0; text-align: center; line-height: 1.7;
+    border: 1px dashed var(--line); border-radius: 999px; padding: 6px 14px;
+  }
+  .plug-chip b { color: #c3cde2; }
   .s-plug.active .port { animation: msgIn .4s ease both; }
   .s-plug.active .port:nth-child(1) { animation-delay: .4s; }
   .s-plug.active .port:nth-child(2) { animation-delay: .65s; }
-  .s-plug.active .port:nth-child(3) { animation-delay: .9s, 1.5s; animation-name: msgIn, glowCyan; animation-duration: .4s, 2s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
-  .s-plug.active .port.off { animation-delay: 2.6s; }
-  .s-plug.active .menu-card { animation: msgIn .5s ease 1.2s both; }
-  .s-plug.active .menu-line { animation: msgIn .3s ease both; }
-  .s-plug.active .menu-line:nth-child(2) { animation-delay: 1.5s; }
-  .s-plug.active .menu-line:nth-child(3) { animation-delay: 1.7s; }
-  .s-plug.active .menu-line:nth-child(4) { animation-delay: 1.9s; }
-  .s-plug.active .menu-line.add { animation-delay: 2.2s; }
-  .s-plug.active .menu-line.gone { animation-delay: 3s; }
-  .plug-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7; opacity: 0; }
-  .plug-note b { color: #c3cde2; }
-  .s-plug.active .plug-note { animation: rise .5s ease 3.4s both; }
+  .s-plug.active .port:nth-child(3) { animation-delay: .9s, glowCyan; animation-duration: .4s, 2s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
+  .s-plug.active .port.off { animation-delay: 2.5s; }
+  .s-plug.active .menu { animation: msgIn .5s ease 1.2s both; }
+  .s-plug.active .ml { animation: msgIn .3s ease both; }
+  .s-plug.active .ml:nth-child(2) { animation-delay: 1.5s; }
+  .s-plug.active .ml:nth-child(3) { animation-delay: 1.7s; }
+  .s-plug.active .ml:nth-child(4) { animation-delay: 1.9s; }
+  .s-plug.active .ml.add { animation-delay: 2.2s; }
+  .s-plug.active .ml.gone { animation-delay: 2.9s; }
+  .s-plug.active .plug-chip { animation: rise .5s ease 3.3s both; }
 
-  /* ============ 屏7 · 总结 ============ */
+  /* ============ 总结 ============ */
   .sum-flow {
     display: flex; gap: 4px; align-items: center; justify-content: center;
     flex-wrap: wrap; font-size: 10px; color: var(--dim);
@@ -352,15 +364,15 @@
     padding: 3px 8px; border-radius: 999px; white-space: nowrap;
   }
   .sum-flow i { color: var(--cyan); font-style: normal; }
-  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 540px; }
   .adv {
     display: flex; gap: 13px; align-items: flex-start;
     background: var(--card); border: 1px solid var(--line);
     border-radius: 14px; padding: 12px 15px;
   }
   .adv-ico { font-size: 22px; line-height: 1.2; }
-  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
-  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 2px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.6; }
   .sum-quote {
     font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center;
     line-height: 1.65; letter-spacing: .04em;
@@ -378,7 +390,6 @@
     font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em;
   }
 
-  /* ============ 兜底与无障碍 ============ */
   @media (max-height: 560px) {
     .screen { overflow-y: auto; justify-content: flex-start; }
     .stage { flex: 0 0 auto; padding: 14px 0; }
@@ -388,9 +399,8 @@
       animation-duration: .01ms !important; animation-iteration-count: 1 !important;
       transition: none !important; scroll-behavior: auto !important;
     }
-    .rv, .hc-arrow i, .tri-wrap, .cli, .srv, .wire i, .tri-note, .hand-card, .hl, .cap, .hand-note,
-    .lf-pane, .tool-item, .lf-mid, .list-note, .cc-node, .cc-arrow, .call-note,
-    .port, .menu-card, .menu-line, .plug-note {
+    .rv, .hc-arrow i, .tri, .peer, .wire i, .tri-note, .handshake, .hs-p, .hs-ball, .hs-dot, .caps, .caps-chip,
+    .pane, .pane-mid, .ti, .list-chip, .cc, .cc-arr, .loop-chip, .port, .menu, .ml, .plug-chip {
       opacity: 1 !important; transform: none !important; filter: none !important;
     }
   }
@@ -408,178 +418,186 @@
   <button title="总结" aria-label="总结"></button>
 </nav>
 
-<!-- 屏1 · 封面 -->
+<!-- 封面 -->
 <section class="screen s-hero active">
-  <div class="hero-inner">
-    <div class="hero-kicker rv d1">AGENT 模式进阶 · 05 · MCP 协议</div>
-    <h1 class="rv d2">插上 USB<br><span class="grad">MCP 三角与工具发现</span></h1>
-    <p class="hero-sub rv d3">工具不用写死 —— 连上服务器，菜单自己长出来 · 逐屏动画演示</p>
-    <div class="hero-chain rv d4">
-      <span class="hc-node">🤝 握手协商</span>
-      <span class="hc-arrow"><i></i></span>
-      <span class="hc-node">🧰 tools/list</span>
-      <span class="hc-arrow hc-arrow-2"><i></i></span>
-      <span class="hc-node">🔌 热插拔</span>
-    </div>
-    <p class="hero-quote rv d5">「MCP 是 AI 应用的 USB-C：一口对上，万物可用」</p>
+  <div class="hero-kicker rv d1">AGENT 模式进阶 · 05 · MCP 协议</div>
+  <h1 class="rv d2">插上 USB<br><span class="grad">MCP 三角与工具发现</span></h1>
+  <p class="hero-sub rv d3">工具不用写死 —— 连上服务器，菜单自己长出来</p>
+  <div class="hero-chain rv d4">
+    <span class="hc-node">🤝 握手协商</span>
+    <span class="hc-arrow"><i></i></span>
+    <span class="hc-node">🧰 tools/list</span>
+    <span class="hc-arrow hc-arrow-2"><i></i></span>
+    <span class="hc-node">🔌 热插拔</span>
   </div>
+  <p class="hero-quote rv d5">「MCP 是 AI 应用的 USB-C」</p>
   <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
 </section>
 
-<!-- 屏2 · STEP 1 三角 -->
+<!-- STEP 1 · 三角 -->
 <section class="screen s-tri">
   <header class="scr-head">
-    <div class="step-badge rv d1"><b>STEP 1</b>先认清三个角色</div>
-    <h2 class="rv d1">Host、Client、Server 不是一回事</h2>
-    <p class="scr-desc rv d2">03 期聚焦 instructions，主要画了 Client / Server 两面 —— 这一期把缺席的 <b>Host</b> 补全</p>
+    <div class="step-badge rv d1"><b>STEP 1</b>三个角色</div>
+    <h2 class="rv d1">Host、Client、Server</h2>
+    <p class="scr-desc rv d2">03 期只画了两面 —— 这一期把缺席的 Host 补全</p>
   </header>
   <div class="stage">
-    <div class="tri-wrap">
+    <div class="tri">
       <div class="host-box">
-        <div class="hb-title">🏠 HOST · Hermes 应用本身：管会话、UI、权限与用户信任</div>
+        <div class="hb-t">🏠 HOST · Hermes 应用本身</div>
         <div class="clients">
-          <div class="cli">🔌 CLIENT 1<small>协议连接器 · 1:1 持有一个连接</small></div>
-          <div class="cli">🔌 CLIENT 2<small>Host 想开几个就开几个</small></div>
+          <div class="peer cli">🔌 CLIENT 1<small>1:1 守一个连接</small></div>
+          <div class="peer cli">🔌 CLIENT 2<small>想开几个开几个</small></div>
         </div>
       </div>
-      <div class="wires"><span class="wire"><i></i></span><span class="wire"><i></i></span></div>
+      <div class="wires">
+        <div class="wire"><i></i></div>
+        <div class="wire"><i></i></div>
+      </div>
       <div class="servers">
-        <div class="srv">🗄️ SERVER A · CodeGraph<small>暴露工具 / 资源 / 提示模板</small></div>
-        <div class="srv">🗄️ SERVER B · 文件系统<small>各自独立进程，互不知道对方</small></div>
+        <div class="peer srv">🗄️ CodeGraph<small>工具 / 资源 / 模板</small></div>
+        <div class="peer srv">🗄️ 文件系统<small>互不知对方存在</small></div>
       </div>
     </div>
-    <div class="tri-note">关键：<b>Server 从不直接接触用户，也不直接和 LLM 说话</b> —— 它只认面前这一个 Client；而 <code>1 Host : N Client : N Server</code>，所有信任决策（要不要弹授权框）都攥在 Host 手里</div>
+    <div class="tri-note">Server <b>不接触用户，也不直接和 LLM 说话</b>；信任决策全在 Host</div>
   </div>
-  <footer class="scr-foot rv d6">💡 Client 是<b>插座里的那根针脚</b> —— 真正决定能不能通电的是 Host</footer>
+  <footer class="scr-foot rv d6">💡 Client 是针脚 —— <b>决定能不能通电的是 Host</b></footer>
 </section>
 
-<!-- 屏3 · STEP 2 initialize -->
+<!-- STEP 2 · 握手飞球 -->
 <section class="screen s-hand">
   <header class="scr-head">
-    <div class="step-badge rv d1"><b>STEP 2</b>插上之后先握手</div>
-    <h2 class="rv d1">initialize：先互报能力，再谈别的</h2>
-    <p class="scr-desc rv d2">连接建立后的第一句话固定是 <code>initialize</code> —— 双方交换「我会什么」，协议版本对不上就立刻散伙</p>
+    <div class="step-badge rv d1"><b>STEP 2</b>插上先握手</div>
+    <h2 class="rv d1">initialize：互报能力</h2>
+    <p class="scr-desc rv d2">连接后的第一句话固定不变，版本不符立刻散伙</p>
   </header>
   <div class="stage">
-    <div class="hand-card">
-      <div class="hc2-head">JSON-RPC · 握手时序</div>
-      <div class="hl req"><span class="dir">C → S</span>initialize：<b>protocolVersion</b> + 我支持 sampling / roots</div>
-      <div class="hl res"><span class="dir">S → C</span>响应：<b>capabilities</b>{ tools, resources, prompts } + instructions</div>
-      <div class="hl req"><span class="dir">C → S</span>notifications/initialized（握手完成）</div>
-      <div class="hl res"><span class="dir">之后</span>才允许发 tools/list、tools/call……</div>
+    <div class="handshake">
+      <div class="hs-pillars">
+        <div class="hs-p c">🔌 CLIENT<small>protocolVersion<br>+ 我会什么</small></div>
+        <div class="hs-p s">🗄️ SERVER<small>capabilities<br>+ instructions</small></div>
+      </div>
+      <div class="hs-msgs">
+        <div class="hs-track track-1" style="top:6px">
+          <span class="hs-dot go"></span>
+          <span class="hs-ball go"><span class="num">①</span>initialize 请求 →</span>
+        </div>
+        <div class="hs-track track-2" style="top:39px">
+          <span class="hs-dot ba"></span>
+          <span class="hs-ball ba" style="right:0"><span class="num">②</span>← 能力清单 + instructions</span>
+        </div>
+        <div class="hs-track track-3" style="top:72px">
+          <span class="hs-dot go"></span>
+          <span class="hs-ball go"><span class="num">③</span>initialized 确认 →</span>
+        </div>
+      </div>
     </div>
-    <div class="caps-row">
-      <span class="cap"><b>tools</b> 可调用函数</span>
-      <span class="cap"><b>resources</b> 可读数据</span>
-      <span class="cap"><b>prompts</b> 预设模板</span>
+    <div class="caps">
+      <i><b>tools</b> 可调用函数</i>
+      <i><b>resources</b> 可读数据</i>
+      <i><b>prompts</b> 预设模板</i>
     </div>
-    <div class="hand-note">响应里的 <b>instructions</b> 会被 Host 动态拼进 system prompt —— 这就是 03 期的 CodeGraph 自动引导，本屏不再展开</div>
+    <div class="caps-chip">instructions 动态拼进 system —— 即 <b>03 期 CodeGraph 自动引导</b></div>
   </div>
-  <footer class="scr-foot rv d6">💡 先亮底牌再做事 —— <b>能力协商决定了这场对话能谈什么</b></footer>
+  <footer class="scr-foot rv d6">💡 先亮底牌再做事 —— <b>③ 之后才准谈工具</b></footer>
 </section>
 
-<!-- 屏4 · STEP 3 tools/list -->
+<!-- STEP 3 · tools/list -->
 <section class="screen s-list">
   <header class="scr-head">
-    <div class="step-badge rv d1"><b>STEP 3</b>菜单是动态长出来的</div>
-    <h2 class="rv d1">tools/list：工具发现的关键时刻</h2>
-    <p class="scr-desc rv d2">握手后 Client 调 <code>tools/list</code>，Server 把工具清单连同 <b>JSON Schema</b> 一起上报 —— Host 转身把它拼进给 LLM 的 tools 数组</p>
+    <div class="step-badge rv d1"><b>STEP 3</b>菜单动态长出来</div>
+    <h2 class="rv d1">tools/list · 工具发现</h2>
+    <p class="scr-desc rv d2">Server 上报工具 + JSON Schema，Host 转身拼进给 LLM 的 tools 数组</p>
   </header>
   <div class="stage">
-    <div class="list-flow">
-      <div class="lf-pane server">
+    <div class="list-panes">
+      <div class="pane server">
         <div class="pt">🗄️ SERVER 上报</div>
-        <div class="tool-item"><span class="ti-name">codegraph_query</span><div class="ti-d">语义查代码 · { q, limit }</div></div>
-        <div class="tool-item"><span class="ti-name">codegraph_xref</span><div class="ti-d">查引用 · { symbol }</div></div>
-        <div class="tool-item"><span class="ti-name">codegraph_graph</span><div class="ti-d">调用关系图 · { depth }</div></div>
-        <div class="tool-item"><span class="ti-name">+ inputSchema</span><div class="ti-d">每件工具的参数说明书</div></div>
+        <div class="ti"><span class="n">codegraph_query</span><div class="d">语义查代码 · { q, limit }</div></div>
+        <div class="ti"><span class="n">codegraph_xref</span><div class="d">查引用 · { symbol }</div></div>
+        <div class="ti"><span class="n">codegraph_graph</span><div class="d">调用关系图 · { depth }</div></div>
+        <div class="ti"><span class="n">+ inputSchema</span><div class="d">每件工具的参数说明书</div></div>
       </div>
-      <div class="lf-mid">tools/list<br>↓<br>Host 登记<br>＋授权检查<br>↓<br>注入</div>
-      <div class="lf-pane llm">
-        <div class="pt">🧠 LLM 收到的 tools[]</div>
-        <div class="tool-item"><span class="ti-name">name + description</span><div class="ti-d">模型据此决定何时调用</div></div>
-        <div class="tool-item"><span class="ti-name">parameters: JSON Schema</span><div class="ti-d">模型据此生成合法参数</div></div>
+      <div class="pane-mid">tools/list<br>↓<br>Host 登记<br>＋授权<br>↓<br>注入</div>
+      <div class="pane llm">
+        <div class="pt">🧠 LLM 收到 tools[]</div>
+        <div class="ti"><span class="n">name + description</span><div class="d">决定何时调用</div></div>
+        <div class="ti"><span class="n">parameters</span><div class="d">JSON Schema，决定怎么填参</div></div>
       </div>
     </div>
-    <div class="list-note">这就是「动态发现」：<b>代码里一个工具名都不用写死</b> —— 换个 Server，菜单整张换掉；Schema 校验失败的处理见 hermes-12 期</div>
+    <div class="list-chip">代码里<b>一个工具名都不写死</b> —— 换 Server 即换菜单（schema 校验见 hermes-12）</div>
   </div>
-  <footer class="scr-foot rv d6">💡 LLM 不知道也不需要知道 MCP —— <b>它只看见一份说明书，说明书是运行时长出来的</b></footer>
+  <footer class="scr-foot rv d6">💡 LLM 只看见说明书 —— <b>说明书是运行时长出来的</b></footer>
 </section>
 
-<!-- 屏5 · STEP 4 tools/call -->
+<!-- STEP 4 · tools/call -->
 <section class="screen s-call">
   <header class="scr-head">
     <div class="step-badge rv d1"><b>STEP 4</b>点了菜，谁去后厨</div>
-    <h2 class="rv d1">tools/call：主循环与协议的接缝</h2>
-    <p class="scr-desc rv d2">LLM 决定调用某工具后，<code>tool_calls</code> 被 Host 拦截，由对应 Client 翻译成 <code>tools/call</code> 请求发给 Server</p>
+    <h2 class="rv d1">tools/call · 协议的接缝</h2>
+    <p class="scr-desc rv d2">Host 拦截 tool_calls，Client 翻译成 JSON-RPC 请求</p>
   </header>
   <div class="stage">
     <div class="call-chain">
-      <div class="cc-node"><b>🧠 LLM</b><small>tool_calls</small></div>
-      <div class="cc-arrow">→</div>
-      <div class="cc-node hot"><b>🏠 Host 拦截</b><small>权限闸 + 找 Client</small></div>
-      <div class="cc-arrow">→</div>
-      <div class="cc-node"><b>🔌 Client</b><small>tools/call<br>JSON-RPC</small></div>
-      <div class="cc-arrow">→</div>
-      <div class="cc-node"><b>🗄️ Server 执行</b><small>结果原路返回</small></div>
+      <div class="cc"><div class="ico">🧠</div><b>LLM</b><small>tool_calls</small></div>
+      <div class="cc-arr">→</div>
+      <div class="cc gate"><div class="ico">🏠</div><b>Host 拦截</b><small>权限闸 · 找 Client</small></div>
+      <div class="cc-arr">→</div>
+      <div class="cc"><div class="ico">🔌</div><b>Client</b><small>tools/call</small></div>
+      <div class="cc-arr">→</div>
+      <div class="cc"><div class="ico">🗄️</div><b>Server 执行</b><small>原路返回</small></div>
     </div>
-    <div class="call-note">
-      返回结果被包成 <code>role: "tool"</code> 消息回填 messages，下一轮交给 LLM 继续 —— 这后半段就是 hermes-04 的主循环，<b>MCP 只替换了「工具实际在哪执行」这一环</b><br>
-      工具报错、429 重试、熔断上报的完整戏码见 hermes-11 期
-    </div>
+    <div class="loop-chip">结果包成 <b>role: "tool"</b> 回填 → 下一轮继续（hermes-04 主循环）<br>报错 / 429 / 熔断的戏码见 <b>hermes-11</b></div>
   </div>
-  <footer class="scr-foot rv d6">💡 MCP 不重写 Agent —— <b>它只是把「调工具」这条边标准化了</b></footer>
+  <footer class="scr-foot rv d6">💡 MCP 不重写 Agent —— <b>只把「调工具」这条边标准化</b></footer>
 </section>
 
-<!-- 屏6 · STEP 5 热插拔 -->
+<!-- STEP 5 · 热插拔 -->
 <section class="screen s-plug">
   <header class="scr-head">
     <div class="step-badge rv d1"><b>STEP 5</b>运行时插上与拔掉</div>
-    <h2 class="rv d1">多 Server：菜单随插随长，断线随摘</h2>
-    <p class="scr-desc rv d2">一个 Host 同时挂多个 Server 是常态 —— 新接入就再走一遍握手 + tools/list；断线则摘除对应工具，<b>应用代码零改动</b></p>
+    <h2 class="rv d1">菜单随插随长，断线随摘</h2>
+    <p class="scr-desc rv d2">多 Server 是常态 —— 应用代码零改动</p>
   </header>
   <div class="stage">
-    <div class="plug-area">
-      <div class="port-row">
-        <span class="port">🗄️ <b>codegraph</b> 已连接</span>
-        <span class="port">📁 <b>filesystem</b> 已连接</span>
-        <span class="port new">🆕 <b>browser</b> 插入中…</span>
-        <span class="port off">📁 filesystem 断开</span>
-      </div>
-      <div class="menu-card">
-        <div class="mc-title">HOST · 工具登记表（动态）</div>
-        <div class="menu-line"><span class="ns">codegraph/</span>query · xref · graph</div>
-        <div class="menu-line"><span class="ns">fs/</span>read_file · write_file</div>
-        <div class="menu-line add"><span class="ns">browser/</span>navigate · click · snapshot ← 新登记</div>
-        <div class="menu-line gone"><span class="ns">fs/</span>read_file · write_file ← 断线摘除</div>
-      </div>
+    <div class="ports">
+      <span class="port">🗄️ <b>codegraph</b> 已连接</span>
+      <span class="port">📁 <b>filesystem</b> 已连接</span>
+      <span class="port new">🆕 <b>browser</b> 插入中…</span>
+      <span class="port off">📁 filesystem 断开</span>
     </div>
-    <div class="plug-note">命名空间 <b>server/tool</b> 防重名；更关键的是授权在 Host 一侧：<b>新 Server 首次被调用前要过权限闸</b>（只读放行 / 写入确认，hermes-09 期）—— 插上 U 盘不等于它能格式化你的硬盘</div>
+    <div class="menu">
+      <div class="mt">HOST · 工具登记表（动态）</div>
+      <div class="ml"><span class="ns">codegraph/</span>query · xref · graph</div>
+      <div class="ml"><span class="ns">fs/</span>read_file · write_file</div>
+      <div class="ml add"><span class="ns">browser/</span>navigate · click · snapshot ← 新登记</div>
+      <div class="ml gone"><span class="ns">fs/</span>read_file · write_file ← 断线摘除</div>
+    </div>
+    <div class="plug-chip">命名空间 <b>server/tool</b> 防重名 · 新 Server 首次调用前<b>过权限闸</b>（hermes-09）</div>
   </div>
-  <footer class="scr-foot rv d6">💡 热插拔的底气来自协议 —— <b>能力运行时协商，信任始终在 Host</b></footer>
+  <footer class="scr-foot rv d6">💡 插上 U 盘 ≠ 它能格式化你的硬盘 —— <b>协议标准化，信任没外包</b></footer>
 </section>
 
-<!-- 屏7 · 总结 -->
+<!-- 总结 -->
 <section class="screen s-sum">
   <header class="scr-head">
     <div class="step-badge rv d1"><b>RECAP</b>全景</div>
     <h2 class="rv d1">连上一台服务器，长出一份菜单</h2>
-    <p class="scr-desc rv d2">三角分工 → initialize 协商 → tools/list 发现 → tools/call 执行 → 热插拔管理</p>
   </header>
   <div class="stage">
     <div class="sum-flow rv d2"><span>🏠 Host</span><i>→</i><span>🔌 Client×N</span><i>→</i><span>🤝 initialize</span><i>→</i><span>🧰 tools/list</span><i>→</i><span>⚡ tools/call</span><i>→</i><span>🔌 随插随摘</span></div>
     <div class="adv-grid">
       <div class="adv rv d3">
         <div class="adv-ico">🔺</div>
-        <div><b>三角各司其职</b><p>Host 管会话与信任、Client 1:1 守连接、Server 只供能力 —— Server 永远碰不到用户和 LLM</p></div>
+        <div><b>三角各司其职</b><p>Host 管会话与信任、Client 1:1 守连接、Server 只供能力</p></div>
       </div>
       <div class="adv rv d4">
         <div class="adv-ico">🧰</div>
-        <div><b>发现是运行时动作</b><p>initialize 协商能力，tools/list 带回 Schema 拼进 tools 数组；应用零硬编码，换 Server 即换菜单</p></div>
+        <div><b>发现是运行时动作</b><p>initialize 协商能力，tools/list 带回 Schema，零硬编码</p></div>
       </div>
       <div class="adv rv d5">
         <div class="adv-ico">🔌</div>
-        <div><b>热插拔 + Host 授权</b><p>接入长菜单、断线摘菜单、命名空间防冲突；首次调用过权限闸，协议标准了，信任没外包</p></div>
+        <div><b>热插拔 + Host 授权</b><p>接入长菜单、断线摘菜单，首次调用过权限闸</p></div>
       </div>
     </div>
     <blockquote class="sum-quote rv d6">“能力运行时协商，<br>信任始终在 Host。”</blockquote>

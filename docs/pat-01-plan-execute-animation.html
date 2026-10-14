@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#070b14">
-<meta name="description" content="AGENT 模式进阶 01 Plan-and-Execute：走一步看一步的 ReAct 困境、规划器一次出全图、执行器领单逐步做、现实撞墙回流重规划、两种工作流对比 —— 逐屏动画演示">
+<meta name="description" content="AGENT 模式进阶 01 Plan-and-Execute：ReAct 绕路、规划器路线图、执行看板、撞墙重规划、两种工作流对比 —— 逐屏动画演示">
 <title>先谋后动 · Plan-and-Execute · 逐屏动画演示</title>
 <style>
   :root {
@@ -38,7 +38,6 @@
   }
   code { font-family: var(--mono); }
 
-  /* ===== 右侧进度圆点 ===== */
   .dots {
     position: fixed; right: 9px; top: 50%; transform: translateY(-50%);
     display: flex; flex-direction: column; gap: 11px; z-index: 60;
@@ -52,7 +51,6 @@
     box-shadow: 0 0 10px rgba(34,211,238,.85);
   }
 
-  /* ===== 整屏骨架 ===== */
   .screen {
     position: relative; z-index: 1;
     height: 100vh; height: 100svh;
@@ -75,7 +73,7 @@
 
   .scr-head {
     width: 100%; max-width: 640px; text-align: center;
-    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
   }
   .step-badge {
     display: inline-flex; align-items: center; gap: 8px;
@@ -85,33 +83,19 @@
   }
   .step-badge b { color: #fff; font-weight: 800; }
   h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
-  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
-  .scr-desc code {
-    color: var(--cyan); font-size: .92em;
-    background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px;
-  }
-  .code-chip {
-    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
-    background: rgba(255,255,255,.04); border: 1px solid var(--line);
-    border-radius: 8px; padding: 5px 11px; max-width: 100%;
-    overflow-x: auto; white-space: nowrap;
-    scrollbar-width: none;
-  }
-  .code-chip::-webkit-scrollbar { display: none; }
-  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 13.5px); color: #aab6cf; line-height: 1.6; max-width: 520px; }
   .stage {
     position: relative; z-index: 1; flex: 1; min-height: 0;
-    width: 100%; max-width: 640px;
+    width: 100%; max-width: 600px;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 13px;
+    gap: 14px;
   }
   .scr-foot {
-    width: 100%; max-width: 640px; text-align: center;
-    font-size: 12px; line-height: 1.65; color: var(--dim);
+    width: 100%; max-width: 600px; text-align: center;
+    font-size: 12px; line-height: 1.6; color: var(--dim);
   }
   .scr-foot b { color: #c3cde2; }
 
-  /* ===== 通用入场动画 ===== */
   .rv { opacity: 0; transform: translateY(14px); }
   .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
   .screen.active .d1 { animation-delay: .1s; }
@@ -129,10 +113,11 @@
   @keyframes glowGood { 0%,100% { box-shadow: 0 0 0 rgba(52,211,153,0) } 50% { box-shadow: 0 0 22px rgba(52,211,153,.3) } }
   @keyframes glowCyan { 0%,100% { box-shadow: 0 0 0 rgba(34,211,238,0) } 50% { box-shadow: 0 0 22px rgba(34,211,238,.32) } }
   @keyframes glowWarn { 0%,100% { box-shadow: 0 0 0 rgba(251,191,36,0) } 50% { box-shadow: 0 0 20px rgba(251,191,36,.28) } }
+  @keyframes glowRed { 0%,100% { box-shadow: 0 0 0 rgba(251,113,133,0) } 50% { box-shadow: 0 0 20px rgba(251,113,133,.3) } }
   @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
   @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
 
-  /* ============ 屏1 · 封面 ============ */
+  /* ============ 封面 ============ */
   .s-hero { justify-content: center; text-align: center; }
   .hero-kicker {
     font-size: 10px; letter-spacing: .28em; color: var(--dim);
@@ -166,209 +151,215 @@
   .chev { display: inline-block; margin-left: 6px; }
   .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
 
-  /* ============ 屏2 · STEP 1 走一步看一步 ============ */
-  .trail {
-    width: 100%; max-width: 560px;
+  /* ============ STEP 1 · 绕路地图 ============ */
+  .map-card {
+    width: 100%; border-radius: 16px; padding: 16px 14px 13px; opacity: 0;
     background: var(--card); border: 1px solid var(--line);
-    border-radius: 14px; padding: 13px 15px; opacity: 0;
   }
-  .trail-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .trail-row + .trail-row { margin-top: 9px; }
-  .tnode {
-    font-size: 11px; padding: 6px 10px; border-radius: 9px; white-space: nowrap;
-    background: rgba(34,211,238,.08); border: 1px solid rgba(34,211,238,.35); color: #a5e9f4;
+  .map-title { font-size: 10px; letter-spacing: .18em; color: var(--dim); text-align: center; margin-bottom: 14px; }
+  .at-track { display: flex; flex-direction: column; gap: 0; }
+  .at-row { display: flex; align-items: center; gap: 10px; }
+  .at-try {
+    flex: 1; display: flex; align-items: center; gap: 9px;
+    border-radius: 12px; padding: 9px 12px; font-size: 12px;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
   }
-  .tnode.think { background: rgba(167,139,250,.09); border-color: rgba(167,139,250,.4); color: #c4b5fd; }
-  .tnode.dead { background: rgba(251,113,133,.08); border-color: rgba(251,113,133,.4); color: #ffb9c4; text-decoration: line-through; }
-  .tnode.good { background: rgba(52,211,153,.08); border-color: rgba(52,211,153,.4); color: #a7f3d0; }
-  .tarrow { color: var(--dim); font-size: 11px; }
-  .s-react.active .trail { animation: msgIn .5s ease both; }
-  .s-react.active .tnode { animation: msgIn .4s ease both; }
-  .s-react.active .trail-row:nth-child(1) .tnode:nth-child(1) { animation-delay: .5s; }
-  .s-react.active .trail-row:nth-child(1) .tnode:nth-child(3) { animation-delay: .85s; }
-  .s-react.active .trail-row:nth-child(1) .tnode:nth-child(5) { animation-delay: 1.2s; }
-  .s-react.active .trail-row:nth-child(3) .tnode:nth-child(1) { animation-delay: 1.7s; }
-  .s-react.active .trail-row:nth-child(3) .tnode:nth-child(3) { animation-delay: 2.05s; }
-  .s-react.active .trail-row:nth-child(3) .tnode:nth-child(5) { animation-delay: 2.4s; }
-  .s-react.active .trail-row:nth-child(5) .tnode:nth-child(1) { animation-delay: 2.9s; }
-  .s-react.active .trail-row:nth-child(5) .tnode:nth-child(3) { animation-delay: 3.25s; }
-  .s-react.active .tarrow { animation: rise .3s ease both; }
-  .s-react.active .trail-row:nth-child(1) .tarrow { animation-delay: .7s; }
-  .s-react.active .trail-row:nth-child(3) .tarrow { animation-delay: 1.9s; }
-  .s-react.active .trail-row:nth-child(5) .tarrow { animation-delay: 3.1s; }
-  .detour-tag {
-    align-self: flex-start; font-size: 10px; color: #fda4af;
-    background: rgba(251,113,133,.07); border: 1px dashed rgba(251,113,133,.4);
-    border-radius: 8px; padding: 5px 9px; opacity: 0;
+  .at-try .ico { font-size: 16px; }
+  .at-try .t-main { color: #dbe6f7; }
+  .at-try .t-sub { font-size: 9.5px; color: var(--dim); margin-left: auto; font-family: var(--mono); white-space: nowrap; }
+  .at-try.bad { border-color: rgba(251,113,133,.4); background: rgba(251,113,133,.06); }
+  .at-try.bad .t-sub { color: #fda4af; }
+  .at-try.good { border-color: rgba(52,211,153,.5); background: rgba(52,211,153,.07); }
+  .at-try.good .t-sub { color: #6ee7b7; }
+  .uturn {
+    align-self: flex-start; margin: 2px 0 2px 30px;
+    display: flex; align-items: center; gap: 7px;
+    font-size: 10px; color: #fda4af; font-family: var(--mono);
   }
-  .s-react.active .detour-tag { animation: msgIn .4s ease 1.45s both; }
-  .token-meter {
-    width: 100%; max-width: 560px; opacity: 0;
-    font-family: var(--mono); font-size: 10.5px; color: #9fb3d1;
+  .uturn::before {
+    content: ""; width: 46px; height: 13px; display: inline-block;
+    border-left: 2px solid rgba(251,113,133,.55);
+    border-bottom: 2px solid rgba(251,113,133,.55);
+    border-radius: 0 0 0 10px;
   }
-  .token-meter .tm-label { display: flex; justify-content: space-between; margin-bottom: 5px; }
-  .token-meter .tm-label b { color: #fda4af; font-weight: 600; }
-  .tm-track { height: 9px; border-radius: 5px; background: rgba(255,255,255,.06); overflow: hidden; }
-  .tm-fill {
-    display: block; height: 100%; width: 0; border-radius: 5px;
-    background: linear-gradient(90deg, rgba(52,211,153,.7), rgba(251,191,36,.8), rgba(251,113,133,.85));
+  .meter {
+    width: 100%; margin-top: 13px; font-family: var(--mono); font-size: 10px; color: #9fb3d1; opacity: 0;
   }
-  .s-react.active .tm-fill { animation: tmFill 3.6s ease forwards; }
-  @keyframes tmFill { 0% { width: 6%; } 30% { width: 34%; } 62% { width: 63%; } 100% { width: 92%; } }
-  .s-react.active .token-meter { animation: rise .5s ease .4s both; }
+  .meter .m-label { display: flex; justify-content: space-between; margin-bottom: 5px; }
+  .meter .m-label b { color: #fda4af; font-weight: 600; }
+  .m-track { height: 9px; border-radius: 5px; background: rgba(255,255,255,.06); overflow: hidden; }
+  .m-fill { display: block; height: 100%; width: 0; border-radius: 5px;
+    background: linear-gradient(90deg, rgba(52,211,153,.7), rgba(251,191,36,.8), rgba(251,113,133,.85)); }
+  .s-react.active .map-card { animation: msgIn .5s ease .4s both; }
+  .s-react.active .at-try { animation: msgIn .45s ease both; }
+  .s-react.active .at-row:nth-child(1) .at-try { animation-delay: .8s; }
+  .s-react.active .at-row:nth-child(3) .at-try { animation-delay: 1.9s; }
+  .s-react.active .at-row:nth-child(5) .at-try { animation-delay: 3s, glowGood; animation-duration: .45s, 2.2s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
+  .s-react.active .uturn { animation: msgIn .4s ease both; }
+  .s-react.active .at-row:nth-child(2) .uturn { animation-delay: 1.45s; }
+  .s-react.active .at-row:nth-child(4) .uturn { animation-delay: 2.55s; }
+  .s-react.active .meter { animation: rise .5s ease 3.6s both; }
+  .s-react.active .m-fill { animation: mFill 2.4s ease .8s forwards; }
+  @keyframes mFill { 0% { width: 10%; } 35% { width: 42%; } 70% { width: 68%; } 100% { width: 92%; } }
 
-  /* ============ 屏3 · STEP 2 规划器一次出全图 ============ */
-  .plan-flow { display: flex; align-items: center; gap: 9px; width: 100%; max-width: 560px; justify-content: center; flex-wrap: wrap; }
-  .pf-node {
-    padding: 10px 14px; border-radius: 12px; text-align: center;
-    background: var(--card); border: 1px solid var(--line); opacity: 0;
+  /* ============ STEP 2 · 路线图 ============ */
+  .plan-row { display: flex; align-items: center; gap: 10px; width: 100%; justify-content: center; }
+  .p-node {
+    text-align: center; border-radius: 13px; padding: 10px 13px; opacity: 0;
+    background: var(--card); border: 1px solid var(--line);
   }
-  .pf-node b { font-size: 12.5px; display: block; }
-  .pf-node small { display: block; font-size: 9.5px; color: var(--dim); margin-top: 3px; }
-  .pf-node.llm { border-color: rgba(167,139,250,.5); background: rgba(167,139,250,.08); }
-  .pf-node.llm b { color: #c4b5fd; }
-  .pf-arrow { color: var(--dim); font-size: 12px; opacity: 0; position: relative; }
-  .s-plan.active .pf-node { animation: msgIn .5s ease both; }
-  .s-plan.active .pf-node:nth-child(1) { animation-delay: .4s; }
-  .s-plan.active .pf-node:nth-child(3) { animation-delay: 1s, 1.8s; animation-name: msgIn, glowCyan; animation-duration: .5s, 2.6s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
-  .s-plan.active .pf-arrow { animation: rise .4s ease both; }
-  .s-plan.active .pf-arrow:nth-child(2) { animation-delay: .75s; }
-  .s-plan.active .pf-arrow:nth-child(4) { animation-delay: 1.45s; }
-  .plan-card {
-    width: 100%; max-width: 560px; border-radius: 13px;
-    background: #0b1424; border: 1px solid rgba(167,139,250,.4);
-    padding: 11px 14px; opacity: 0;
+  .p-node .ico { font-size: 19px; }
+  .p-node b { display: block; font-size: 11px; margin-top: 3px; }
+  .p-node.brain { border-color: rgba(167,139,250,.55); background: rgba(167,139,250,.08); }
+  .p-node.brain b { color: #c4b5fd; }
+  .p-arrow { color: var(--dim); font-size: 13px; opacity: 0; position: relative; }
+  .roadmap {
+    width: 100%; border-radius: 14px; padding: 12px 16px 10px 22px; opacity: 0;
+    background: var(--card); border: 1px solid rgba(167,139,250,.4);
+    position: relative;
   }
-  .plan-card .pc-head {
-    font-family: var(--mono); font-size: 10px; color: var(--dim);
-    letter-spacing: .12em; margin-bottom: 8px;
+  .roadmap::before {
+    content: ""; position: absolute; left: 31px; top: 24px; bottom: 16px; width: 2px;
+    background: linear-gradient(180deg, rgba(167,139,250,.7), rgba(167,139,250,.15));
   }
-  .plan-card .pc-line {
-    font-family: var(--mono); font-size: 11.5px; color: #c3cde2;
-    padding: 4px 0; border-bottom: 1px dashed rgba(255,255,255,.06);
-    opacity: 0; display: flex; gap: 9px;
+  .rm-step { position: relative; display: flex; align-items: center; gap: 11px; padding: 5px 0; opacity: 0; }
+  .rm-pin {
+    position: relative; z-index: 1; flex: none; width: 20px; height: 20px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 9.5px; font-weight: 800; color: #1b1040;
+    background: #a78bfa; box-shadow: 0 0 10px rgba(167,139,250,.55); margin-left: -33px;
   }
-  .plan-card .pc-line:last-child { border-bottom: none; }
-  .plan-card .pc-line .pn { color: #c4b5fd; font-weight: 700; flex: none; }
-  .s-plan.active .plan-card { animation: msgIn .5s ease 1.5s both; }
-  .s-plan.active .pc-line { animation: msgIn .35s ease both; }
-  .s-plan.active .pc-line:nth-child(2) { animation-delay: 1.85s; }
-  .s-plan.active .pc-line:nth-child(3) { animation-delay: 2.1s; }
-  .s-plan.active .pc-line:nth-child(4) { animation-delay: 2.35s; }
-  .s-plan.active .pc-line:nth-child(5) { animation-delay: 2.6s; }
-  .s-plan.active .pc-line:nth-child(6) { animation-delay: 2.85s; }
-  .plan-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7; opacity: 0; }
-  .plan-note code { color: #c4b5fd; background: rgba(167,139,250,.1); padding: 1px 5px; border-radius: 5px; }
-  .s-plan.active .plan-note { animation: rise .5s ease 3.2s both; }
+  .rm-step span { font-size: 12px; color: #d9d2ff; }
+  .plan-chips { display: flex; gap: 8px; opacity: 0; }
+  .plan-chips i {
+    font-style: normal; font-size: 10.5px; padding: 5px 11px; border-radius: 999px;
+    background: rgba(167,139,250,.07); border: 1px solid rgba(167,139,250,.35); color: #c4b5fd;
+  }
+  .s-plan.active .p-node { animation: msgIn .5s ease both; }
+  .s-plan.active .p-node:nth-child(1) { animation-delay: .4s; }
+  .s-plan.active .p-node:nth-child(3) { animation-delay: 1s, 1.8s; animation-name: msgIn, glowCyan; animation-duration: .5s, 2.6s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
+  .s-plan.active .p-node:nth-child(5) { animation-delay: 1.7s; }
+  .s-plan.active .p-arrow { animation: rise .4s ease both; }
+  .s-plan.active .p-arrow:nth-child(2) { animation-delay: .75s; }
+  .s-plan.active .p-arrow:nth-child(4) { animation-delay: 1.45s; }
+  .s-plan.active .roadmap { animation: msgIn .5s ease 1.7s both; }
+  .s-plan.active .rm-step { animation: msgIn .35s ease both; }
+  .s-plan.active .rm-step:nth-child(1) { animation-delay: 2s; }
+  .s-plan.active .rm-step:nth-child(2) { animation-delay: 2.22s; }
+  .s-plan.active .rm-step:nth-child(3) { animation-delay: 2.44s; }
+  .s-plan.active .rm-step:nth-child(4) { animation-delay: 2.66s; }
+  .s-plan.active .rm-step:nth-child(5) { animation-delay: 2.88s; }
+  .s-plan.active .plan-chips { animation: rise .5s ease 3.2s both; }
 
-  /* ============ 屏4 · STEP 3 执行器领单 ============ */
-  .todo { display: flex; flex-direction: column; gap: 7px; width: 100%; max-width: 560px; }
-  .todo-row {
+  /* ============ STEP 3 · 执行看板 ============ */
+  .board { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+  .tk-row {
     display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: center;
-    padding: 9px 13px; border-radius: 11px;
-    background: var(--card); border: 1px solid var(--line);
-    font-size: 12px; color: var(--dim); opacity: 0;
+    padding: 10px 14px; border-radius: 12px; opacity: 0;
+    background: var(--card); border: 1px solid var(--line); font-size: 12px; color: var(--dim);
   }
-  .todo-row .st {
-    width: 17px; height: 17px; border-radius: 50%; display: grid; place-items: center;
-    border: 1.5px solid rgba(255,255,255,.25); font-size: 9px; color: transparent;
+  .tk-row .dot {
+    width: 18px; height: 18px; border-radius: 50%; border: 1.6px solid rgba(255,255,255,.25);
+    display: grid; place-items: center; font-size: 9px; color: transparent;
   }
-  .todo-row.done { color: #c3cde2; border-color: rgba(52,211,153,.3); }
-  .todo-row.done .st { border-color: rgba(52,211,153,.6); background: rgba(52,211,153,.15); color: #6ee7b7; }
-  .todo-row.doing { border-color: rgba(34,211,238,.55); color: #d9f7fc; }
-  .todo-row.doing .st { border-color: rgba(34,211,238,.7); border-top-color: transparent; animation: spin 1s linear infinite; }
-  .todo-row .mini {
-    display: none; font-family: var(--mono); font-size: 9.5px; color: #7dd3fc;
-    gap: 4px; align-items: center;
-  }
-  .todo-row.doing .mini { display: inline-flex; }
+  .tk-row.done { color: #c3cde2; border-color: rgba(52,211,153,.3); }
+  .tk-row.done .dot { border-color: rgba(52,211,153,.6); background: rgba(52,211,153,.15); color: #6ee7b7; }
+  .tk-row.run { color: #d9f7fc; border-color: rgba(34,211,238,.55); }
+  .tk-row.run .dot { border-color: rgba(34,211,238,.7); border-top-color: transparent; animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .todo-row .tag { font-family: var(--mono); font-size: 9.5px; color: var(--dim); }
-  .s-exec.active .todo-row { animation: msgIn .4s ease both; }
-  .s-exec.active .todo-row:nth-child(1) { animation-delay: .4s; }
-  .s-exec.active .todo-row:nth-child(2) { animation-delay: .7s; }
-  .s-exec.active .todo-row:nth-child(3) { animation-delay: 1s; }
-  .s-exec.active .todo-row:nth-child(4) { animation-delay: 1.3s, 2.4s; animation-name: msgIn, glowCyan; animation-duration: .4s, 2.2s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
-  .s-exec.active .todo-row:nth-child(5) { animation-delay: 1.6s; }
-  .s-exec.active .todo-row:nth-child(-n+3) .st { animation: none; }
-  .exec-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7; opacity: 0; }
-  .exec-note code { color: var(--cyan); background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px; }
-  .s-exec.active .exec-note { animation: rise .5s ease 2.9s both; }
-
-  /* ============ 屏5 · STEP 4 撞墙回流重规划 ============ */
-  .replan-wrap { display: flex; flex-direction: column; gap: 9px; width: 100%; max-width: 560px; }
-  .rp-panes { display: flex; gap: 9px; }
-  .rp-pane {
-    flex: 1; border-radius: 12px; padding: 10px 12px;
-    background: var(--card); border: 1px solid var(--line); opacity: 0;
+  .tk-row .mini { display: none; gap: 4px; font-family: var(--mono); font-size: 10px; color: #7dd3fc; align-items: center; }
+  .tk-row.run .mini { display: inline-flex; }
+  .tk-row .st { font-family: var(--mono); font-size: 9px; letter-spacing: .08em; }
+  .board-cap {
+    display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; opacity: 0;
   }
-  .rp-pane .rp-title { font-size: 10.5px; letter-spacing: .1em; color: var(--dim); margin-bottom: 7px; }
-  .rp-pane .rp-item {
+  .board-cap i {
+    font-style: normal; font-size: 10.5px; color: var(--dim);
+    border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px;
+  }
+  .board-cap b { color: #7dd3fc; font-weight: 600; }
+  .s-exec.active .tk-row { animation: msgIn .4s ease both; }
+  .s-exec.active .tk-row:nth-child(1) { animation-delay: .4s; }
+  .s-exec.active .tk-row:nth-child(2) { animation-delay: .7s; }
+  .s-exec.active .tk-row:nth-child(3) { animation-delay: 1s; }
+  .s-exec.active .tk-row:nth-child(4) { animation-delay: 1.3s, 2.4s; animation-name: msgIn, glowCyan; animation-duration: .4s, 2.2s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
+  .s-exec.active .tk-row:nth-child(5) { animation-delay: 1.6s; }
+  .s-exec.active .board-cap { animation: rise .5s ease 2.8s both; }
+
+  /* ============ STEP 4 · 重规划 ============ */
+  .rp-wrap { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+  .rp-panes { display: flex; gap: 10px; }
+  .rp-pane { flex: 1; border-radius: 13px; padding: 11px 12px; opacity: 0; background: var(--card); border: 1px solid var(--line); }
+  .rp-t { font-size: 10px; letter-spacing: .12em; color: var(--dim); margin-bottom: 8px; text-align: center; }
+  .rp-item {
     font-family: var(--mono); font-size: 10.5px; color: #c3cde2;
-    padding: 4px 7px; border-radius: 7px; margin-bottom: 4px;
-    background: rgba(255,255,255,.04);
+    padding: 5px 8px; border-radius: 7px; margin-bottom: 5px; background: rgba(255,255,255,.04);
+    opacity: 0;
   }
-  .rp-pane.old .rp-item.killed { color: #fda4af; text-decoration: line-through; background: rgba(251,113,133,.07); }
-  .rp-pane.new .rp-item.added { color: #a7f3d0; background: rgba(52,211,153,.08); }
-  .rp-pane.new .rp-item.moved { color: #fde68a; background: rgba(251,191,36,.07); }
+  .rp-pane.old { border-color: rgba(251,113,133,.35); }
+  .rp-pane.old .rp-t { color: #fda4af; }
+  .rp-pane.new { border-color: rgba(52,211,153,.4); }
+  .rp-pane.new .rp-t { color: #a7f3d0; }
+  .rp-item.kill { color: #fda4af; text-decoration: line-through; background: rgba(251,113,133,.07); }
+  .rp-item.add { color: #a7f3d0; background: rgba(52,211,153,.08); }
+  .rp-item.move { color: #fde68a; background: rgba(251,191,36,.07); }
   .rp-alarm {
-    font-size: 11px; line-height: 1.6; color: #fde68a; text-align: center;
-    background: rgba(251,191,36,.07); border: 1px dashed rgba(251,191,36,.45);
-    border-radius: 10px; padding: 8px 12px; opacity: 0;
+    align-self: center; display: flex; align-items: center; gap: 8px;
+    font-size: 11px; color: #fde68a; border-radius: 999px; padding: 7px 15px; opacity: 0;
+    background: rgba(251,191,36,.08); border: 1px dashed rgba(251,191,36,.5);
   }
-  .rp-alarm code { color: #fde68a; }
-  .rp-back {
-    text-align: center; font-family: var(--mono); font-size: 10.5px; color: var(--amber);
-    letter-spacing: .12em; opacity: 0;
-  }
-  .s-replan.active .rp-pane:nth-child(1) { animation: msgIn .5s ease .4s both; }
-  .s-replan.active .rp-alarm { animation: msgIn .5s ease 1.4s, 2.2s; animation-name: msgIn, glowWarn; animation-duration: .5s, 2.4s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
-  .s-replan.active .rp-back { animation: rise .5s ease 2.5s both; }
-  .s-replan.active .rp-pane:nth-child(2) { animation: msgIn .55s ease 2.9s both; }
-  .s-replan.active .old .killed { animation: msgIn .3s ease 1s both; }
-  .s-replan.active .new .added { animation: msgIn .35s ease both; }
-  .s-replan.active .new .rp-item:nth-child(2) { animation-delay: 3.3s; }
-  .s-replan.active .new .rp-item:nth-child(3) { animation-delay: 3.55s; }
-  .s-replan.active .new .rp-item:nth-child(4) { animation-delay: 3.8s; }
-  .s-replan.active .new .rp-item:nth-child(5) { animation-delay: 4.05s; }
+  .rp-alarm code { font-family: var(--mono); color: #fde68a; font-size: 10px; }
+  .rp-back { text-align: center; font-family: var(--mono); font-size: 11px; color: var(--amber); letter-spacing: .14em; opacity: 0; }
+  .s-replan.active .rp-pane.old { animation: msgIn .5s ease .4s both; }
+  .s-replan.active .rp-pane.new { animation: msgIn .55s ease 2.7s both; }
+  .s-replan.active .old .rp-item { animation: msgIn .3s ease both; }
+  .s-replan.active .old .rp-item:nth-child(2) { animation-delay: .6s; }
+  .s-replan.active .old .rp-item:nth-child(3) { animation-delay: .85s; }
+  .s-replan.active .old .rp-item:nth-child(4) { animation-delay: 1.1s; }
+  .s-replan.active .old .rp-item:nth-child(5) { animation-delay: 1.35s; }
+  .s-replan.active .old .rp-item:nth-child(6) { animation-delay: 1.6s; }
+  .s-replan.active .rp-alarm { animation: msgIn .5s ease 1.9s, glowWarn; animation-duration: .5s, 2.2s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
+  .s-replan.active .rp-back { animation: rise .5s ease 2.4s both; }
+  .s-replan.active .new .rp-item { animation: msgIn .35s ease both; }
+  .s-replan.active .new .rp-item:nth-child(2) { animation-delay: 2.95s; }
+  .s-replan.active .new .rp-item:nth-child(3) { animation-delay: 3.15s; }
+  .s-replan.active .new .rp-item:nth-child(4) { animation-delay: 3.35s; }
+  .s-replan.active .new .rp-item:nth-child(5) { animation-delay: 3.55s; }
+  .s-replan.active .new .rp-item:nth-child(6) { animation-delay: 3.75s; }
 
-  /* ============ 屏6 · STEP 5 两种工作流对比 ============ */
-  .cmp {
-    width: 100%; max-width: 560px;
-    border-radius: 14px; overflow: hidden;
-    background: var(--card); border: 1px solid var(--line); opacity: 0;
+  /* ============ STEP 5 · 对比 ============ */
+  .vs {
+    width: 100%; border-radius: 15px; overflow: hidden; opacity: 0;
+    background: var(--card); border: 1px solid var(--line);
   }
-  .cmp-row { display: grid; grid-template-columns: 86px 1fr 1fr; }
-  .cmp-row + .cmp-row { border-top: 1px solid rgba(255,255,255,.07); }
-  .cmp-row > div { padding: 9px 11px; font-size: 10.5px; line-height: 1.5; }
-  .cmp-row .rh {
-    color: var(--dim); font-size: 10px; letter-spacing: .08em;
-    display: flex; align-items: center;
-  }
-  .cmp-head > div { padding: 9px 11px; font-size: 11.5px; font-weight: 700; text-align: center; }
-  .cmp-head .h-a { color: #fda4af; background: rgba(251,113,133,.07); }
-  .cmp-head .h-b { color: #a7f3d0; background: rgba(52,211,153,.07); }
-  .cmp-head .h0 { color: var(--dim); font-size: 9.5px; font-weight: 400; }
-  .cmp-row .ca { color: #c3cde2; border-right: 1px solid rgba(255,255,255,.05); }
-  .cmp-row .cb { color: #c3cde2; }
-  .bar { height: 7px; border-radius: 4px; background: rgba(255,255,255,.07); margin-top: 5px; overflow: hidden; }
-  .bar i { display: block; height: 100%; width: 0; border-radius: 4px; }
-  .bar.red i { background: linear-gradient(90deg, rgba(251,113,133,.85), #fb7185); }
-  .bar.grn i { background: linear-gradient(90deg, rgba(52,211,153,.85), #34d399); }
-  .s-cmp.active .cmp { animation: msgIn .5s ease .4s both; }
-  .s-cmp.active .cmp-row, .s-cmp.active .cmp-head { animation: rise .4s ease both; }
-  .s-cmp.active .cmp-head { animation-delay: .5s; }
-  .s-cmp.active .cmp-row:nth-child(2) { animation-delay: .8s; }
-  .s-cmp.active .cmp-row:nth-child(3) { animation-delay: 1.05s; }
-  .s-cmp.active .cmp-row:nth-child(4) { animation-delay: 1.3s; }
-  .s-cmp.active .cmp-row:nth-child(5) { animation-delay: 1.55s; }
+  .vs-row { display: grid; grid-template-columns: 78px 1fr 1fr; }
+  .vs-row + .vs-row { border-top: 1px solid rgba(255,255,255,.07); }
+  .vs-row > div { padding: 11px 12px; font-size: 11px; line-height: 1.45; }
+  .vs-row .k { color: var(--dim); font-size: 10px; display: flex; align-items: center; }
+  .vs-head > div { padding: 10px 12px; font-size: 12px; font-weight: 700; text-align: center; }
+  .vs-head .ha { color: #fda4af; background: rgba(251,113,133,.07); }
+  .vs-head .hb { color: #a7f3d0; background: rgba(52,211,153,.07); }
+  .vs-head .k { font-weight: 400; font-size: 9px; }
+  .bar { height: 7px; border-radius: 4px; background: rgba(255,255,255,.07); margin-top: 6px; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 4px; width: 0; }
+  .bar.r i { background: linear-gradient(90deg, rgba(251,113,133,.85), #fb7185); }
+  .bar.g i { background: linear-gradient(90deg, rgba(52,211,153,.85), #34d399); }
+  .s-cmp.active .vs { animation: msgIn .5s ease .4s both; }
+  .s-cmp.active .vs-row { animation: rise .4s ease both; }
+  .s-cmp.active .vs-head { animation-delay: .5s; }
+  .s-cmp.active .vs-row:nth-child(2) { animation-delay: .75s; }
+  .s-cmp.active .vs-row:nth-child(3) { animation-delay: 1s; }
+  .s-cmp.active .vs-row:nth-child(4) { animation-delay: 1.25s; }
+  .s-cmp.active .vs-row:nth-child(5) { animation-delay: 1.5s; }
   .s-cmp.active .bar i { animation: barX .7s cubic-bezier(.22,1,.36,1) 1.7s forwards; }
-  .cmp-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7; opacity: 0; }
-  .cmp-note b { color: #c3cde2; }
-  .s-cmp.active .cmp-note { animation: rise .5s ease 2.5s both; }
   @keyframes barX { from { width: 0; } to { width: var(--w, 60%); } }
+  .vs-chip {
+    font-size: 10.5px; color: var(--dim); opacity: 0; text-align: center;
+    border: 1px dashed var(--line); border-radius: 999px; padding: 6px 14px;
+  }
+  .vs-chip b { color: #c3cde2; }
+  .s-cmp.active .vs-chip { animation: rise .5s ease 2.3s both; }
 
-  /* ============ 屏7 · 总结 ============ */
+  /* ============ 总结 ============ */
   .sum-flow {
     display: flex; gap: 4px; align-items: center; justify-content: center;
     flex-wrap: wrap; font-size: 10px; color: var(--dim);
@@ -378,15 +369,15 @@
     padding: 3px 8px; border-radius: 999px; white-space: nowrap;
   }
   .sum-flow i { color: var(--cyan); font-style: normal; }
-  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 540px; }
   .adv {
     display: flex; gap: 13px; align-items: flex-start;
     background: var(--card); border: 1px solid var(--line);
     border-radius: 14px; padding: 12px 15px;
   }
   .adv-ico { font-size: 22px; line-height: 1.2; }
-  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
-  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 2px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.6; }
   .sum-quote {
     font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center;
     line-height: 1.65; letter-spacing: .04em;
@@ -404,7 +395,6 @@
     font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em;
   }
 
-  /* ============ 兜底与无障碍 ============ */
   @media (max-height: 560px) {
     .screen { overflow-y: auto; justify-content: flex-start; }
     .stage { flex: 0 0 auto; padding: 14px 0; }
@@ -414,14 +404,13 @@
       animation-duration: .01ms !important; animation-iteration-count: 1 !important;
       transition: none !important; scroll-behavior: auto !important;
     }
-    .rv, .hc-arrow i, .trail, .trail .tnode, .trail .tarrow, .detour-tag, .token-meter, .tm-fill,
-    .pf-node, .pf-arrow, .plan-card, .plan-card .pc-line, .plan-note,
-    .todo-row, .exec-note, .rp-pane, .rp-alarm, .rp-back, .rp-pane .rp-item,
-    .cmp, .cmp-row, .cmp-head, .bar i, .cmp-note {
+    .rv, .hc-arrow i, .map-card, .at-try, .uturn, .meter, .m-fill,
+    .p-node, .p-arrow, .roadmap, .rm-step, .plan-chips,
+    .tk-row, .board-cap, .rp-pane, .rp-item, .rp-alarm, .rp-back,
+    .vs, .vs-row, .vs-head, .bar i, .vs-chip {
       opacity: 1 !important; transform: none !important; filter: none !important;
-      width: auto !important;
     }
-    .tm-fill { width: 92% !important; }
+    .m-fill { width: 92% !important; }
     .bar i { width: var(--w, 60%) !important; }
   }
 </style>
@@ -431,224 +420,202 @@
 <nav class="dots" id="dots" aria-label="屏幕导航">
   <button class="on" title="封面" aria-label="封面"></button>
   <button title="STEP 1 走一步看一步" aria-label="走一步看一步"></button>
-  <button title="STEP 2 规划器一次出全图" aria-label="规划器出全图"></button>
+  <button title="STEP 2 规划器出图" aria-label="规划器出图"></button>
   <button title="STEP 3 执行器领单" aria-label="执行器领单"></button>
   <button title="STEP 4 撞墙重规划" aria-label="撞墙重规划"></button>
   <button title="STEP 5 两种模式对比" aria-label="两种模式对比"></button>
   <button title="总结" aria-label="总结"></button>
 </nav>
 
-<!-- 屏1 · 封面 -->
+<!-- 封面 -->
 <section class="screen s-hero active">
-  <div class="hero-inner">
-    <div class="hero-kicker rv d1">AGENT 模式进阶 · 01 · 工作流模式</div>
-    <h1 class="rv d2">先谋后动<br><span class="grad">Plan-and-Execute</span></h1>
-    <p class="hero-sub rv d3">长任务不靠走一步看一步 · 逐屏动画演示</p>
-    <div class="hero-chain rv d4">
-      <span class="hc-node">🗺️ 一次规划</span>
-      <span class="hc-arrow"><i></i></span>
-      <span class="hc-node">⚙️ 逐步执行</span>
-      <span class="hc-arrow hc-arrow-2"><i></i></span>
-      <span class="hc-node">🔁 撞墙重规划</span>
-    </div>
-    <p class="hero-quote rv d5">「先看全地图的人，少走冤枉路」</p>
+  <div class="hero-kicker rv d1">AGENT 模式进阶 · 01 · 工作流模式</div>
+  <h1 class="rv d2">先谋后动<br><span class="grad">Plan-and-Execute</span></h1>
+  <p class="hero-sub rv d3">长任务，不靠走一步看一步</p>
+  <div class="hero-chain rv d4">
+    <span class="hc-node">🗺️ 一次规划</span>
+    <span class="hc-arrow"><i></i></span>
+    <span class="hc-node">⚙️ 逐步执行</span>
+    <span class="hc-arrow hc-arrow-2"><i></i></span>
+    <span class="hc-node">🔁 撞墙重规划</span>
   </div>
+  <p class="hero-quote rv d5">「先看全地图的人，少走冤枉路」</p>
   <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
 </section>
 
-<!-- 屏2 · STEP 1 走一步看一步 -->
+<!-- STEP 1 · 绕路地图 -->
 <section class="screen s-react">
   <header class="scr-head">
     <div class="step-badge rv d1"><b>STEP 1</b>走一步，看一步</div>
-    <h2 class="rv d1">ReAct 很聪明，但也很费脚力</h2>
-    <p class="scr-desc rv d2">AI 05 期的 Agent 主循环：想一步 → 调一个工具 → 看一眼结果再想。短任务干脆利落，<b>任务一长就开始绕路</b></p>
-    <div class="code-chip rv d2">while 没完成：<b>思考 → 工具 → 观察</b>（hermes-04 期）</div>
+    <h2 class="rv d1">ReAct 很聪明，也很费脚力</h2>
+    <p class="scr-desc rv d2">没有全局图，每步都在临时决策 —— 长任务上，绕路是常态</p>
   </header>
   <div class="stage">
-    <div class="trail">
-      <div class="trail-row">
-        <span class="tnode think">💭 该先查什么？</span>
-        <span class="tarrow">→</span>
-        <span class="tnode">🔧 搜 A 接口</span>
-        <span class="tarrow">→</span>
-        <span class="tnode dead">✕ 字段对不上</span>
+    <div class="map-card">
+      <div class="map-title">🎯 目标：做一份竞品周报</div>
+      <div class="at-track">
+        <div class="at-row"><div class="at-try bad"><span class="ico">🔧</span><span class="t-main">搜 A 接口</span><span class="t-sub">✕ 字段对不上</span></div></div>
+        <div class="at-row"><div class="uturn">带着全部上下文折回</div></div>
+        <div class="at-row"><div class="at-try bad"><span class="ico">🔧</span><span class="t-main">试 B 文档</span><span class="t-sub">✕ 版本过期</span></div></div>
+        <div class="at-row"><div class="uturn">上下文又重发一遍</div></div>
+        <div class="at-row"><div class="at-try good"><span class="ico">🔧</span><span class="t-main">查 C 仓库</span><span class="t-sub">✓ 终于对上</span></div></div>
       </div>
-      <div class="trail-row">
-        <span class="detour-tag">↩ 绕路：这一轮的全部上下文下轮还得带着</span>
+      <div class="meter">
+        <div class="m-label"><span>上下文 token · 每轮全量重发</span><b>92%</b></div>
+        <div class="m-track"><i class="m-fill"></i></div>
       </div>
-      <div class="trail-row">
-        <span class="tnode think">💭 换个来源？</span>
-        <span class="tarrow">→</span>
-        <span class="tnode">🔧 试 B 文档</span>
-        <span class="tarrow">→</span>
-        <span class="tnode dead">✕ 版本过期</span>
-      </div>
-      <div class="trail-row">
-        <span class="detour-tag">↩ 又绕：没有全局图，每步都在临时决策</span>
-      </div>
-      <div class="trail-row">
-        <span class="tnode think">💭 再想想…</span>
-        <span class="tarrow">→</span>
-        <span class="tnode">🔧 查 C 仓库</span>
-        <span class="tarrow">→</span>
-        <span class="tnode good">✓ 终于对上</span>
-      </div>
-    </div>
-    <div class="token-meter">
-      <div class="tm-label"><span>上下文 token（每轮全量重发）</span><b>92% · 账单滚雪球</b></div>
-      <div class="tm-track"><i class="tm-fill"></i></div>
     </div>
   </div>
-  <footer class="scr-foot rv d6">💡 步数越多，<b>每一步都越贵</b> —— 长任务需要有人先看地图</footer>
+  <footer class="scr-foot rv d6">💡 步数越多，<b>每一步都越贵</b></footer>
 </section>
 
-<!-- 屏3 · STEP 2 规划器一次出全图 -->
+<!-- STEP 2 · 规划器路线图 -->
 <section class="screen s-plan">
   <header class="scr-head">
     <div class="step-badge rv d1"><b>STEP 2</b>规划器</div>
-    <h2 class="rv d1">一次调用，画出完整步骤图</h2>
-    <p class="scr-desc rv d2">Plan-and-Execute 先让一个 <b>Planner（规划器）</b>模型通读目标，产出有序步骤清单 —— 这一步<b>只动嘴，不碰工具</b></p>
-    <div class="code-chip rv d2">goal → <b>planner()</b> → [step 1 … step N]，tools = []</div>
+    <h2 class="rv d1">一次调用，画出完整路线图</h2>
+    <p class="scr-desc rv d2">Planner 通读目标，产出有序步骤 —— 这一步只动嘴，不碰工具</p>
   </header>
   <div class="stage">
-    <div class="plan-flow">
-      <div class="pf-node"><b>🎯 用户目标</b><small>「把这份报告<br>做成竞品周报」</small></div>
-      <div class="pf-arrow">→</div>
-      <div class="pf-node llm"><b>🧠 Planner</b><small>一次模型调用<br>不给任何工具</small></div>
-      <div class="pf-arrow">→</div>
-      <div class="pf-node"><b>🗺️ 计划清单</b><small>有序 · 可核对</small></div>
+    <div class="plan-row">
+      <div class="p-node"><div class="ico">🎯</div><b>用户目标</b></div>
+      <div class="p-arrow">→</div>
+      <div class="p-node brain"><div class="ico">🧠</div><b>Planner</b></div>
+      <div class="p-arrow">→</div>
+      <div class="p-node"><div class="ico">🗺️</div><b>步骤清单</b></div>
     </div>
-    <div class="plan-card">
-      <div class="pc-head">PLAN · 5 STEPS</div>
-      <div class="pc-line"><span class="pn">1</span><span>提取报告中的关键数据与结论</span></div>
-      <div class="pc-line"><span class="pn">2</span><span>检索三家竞品本周的公开动态</span></div>
-      <div class="pc-line"><span class="pn">3</span><span>逐项对比，标出差异点</span></div>
-      <div class="pc-line"><span class="pn">4</span><span>按周报模板组织成稿</span></div>
-      <div class="pc-line"><span class="pn">5</span><span>自查数字与引用，交稿</span></div>
+    <div class="roadmap">
+      <div class="rm-step"><span class="rm-pin">1</span><span>提取报告关键数据</span></div>
+      <div class="rm-step"><span class="rm-pin">2</span><span>检索三家竞品本周动态</span></div>
+      <div class="rm-step"><span class="rm-pin">3</span><span>逐项对比，标差异点</span></div>
+      <div class="rm-step"><span class="rm-pin">4</span><span>按模板组织成稿</span></div>
+      <div class="rm-step"><span class="rm-pin">5</span><span>自查数字与引用，交稿</span></div>
     </div>
-    <div class="plan-note">规划时模型<b>站在全局视角</b>权衡依赖与顺序；计划还能先给人过目 —— <code>方向不对，在这一步就拦住</code></div>
+    <div class="plan-chips">
+      <i>🚫 不碰工具</i>
+      <i>👀 方向不对，这一步就拦住</i>
+    </div>
   </div>
-  <footer class="scr-foot rv d6">💡 规划只花一次钱 —— <b>一张清单换后面所有步骤不迷路</b></footer>
+  <footer class="scr-foot rv d6">💡 规划只花一次钱 —— <b>一张图换掉后面所有绕路</b></footer>
 </section>
 
-<!-- 屏4 · STEP 3 执行器领单 -->
+<!-- STEP 3 · 执行看板 -->
 <section class="screen s-exec">
   <header class="scr-head">
     <div class="step-badge rv d1"><b>STEP 3</b>执行器</div>
     <h2 class="rv d1">领一条，做完一条</h2>
-    <p class="scr-desc rv d2">Executor 不重新思考人生，只领当前这一步 —— <b>每一步内部仍然是熟悉的工具调用循环</b></p>
-    <div class="code-chip rv d2">for step in plan：<b>executor(step) → 观察结果</b></div>
+    <p class="scr-desc rv d2">Executor 不重新思考人生，只做当前这一步</p>
   </header>
   <div class="stage">
-    <div class="todo">
-      <div class="todo-row done"><span class="st">✓</span><span>提取报告关键数据</span><span class="tag">DONE</span></div>
-      <div class="todo-row done"><span class="st">✓</span><span>检索竞品 A / B 本周动态</span><span class="tag">DONE</span></div>
-      <div class="todo-row done"><span class="st">✓</span><span>补齐竞品 C（官网无更新，查公告）</span><span class="tag">DONE</span></div>
-      <div class="todo-row doing"><span class="st"></span><span>逐项对比，标差异点<span class="mini">　💭 → 🔧 → 👀</span></span><span class="tag">RUNNING</span></div>
-      <div class="todo-row"><span class="st"></span><span>套模板成稿并自查</span><span class="tag">TODO</span></div>
+    <div class="board">
+      <div class="tk-row done"><span class="dot">✓</span><span>提取报告关键数据</span><span class="st" style="color:#6ee7b7">DONE</span></div>
+      <div class="tk-row done"><span class="dot">✓</span><span>检索竞品 A / B 动态</span><span class="st" style="color:#6ee7b7">DONE</span></div>
+      <div class="tk-row done"><span class="dot">✓</span><span>补齐竞品 C（改查公告）</span><span class="st" style="color:#6ee7b7">DONE</span></div>
+      <div class="tk-row run"><span class="dot"></span><span>逐项对比，标差异<span class="mini">　💭 → 🔧 → 👀</span></span><span class="st" style="color:#7dd3fc">RUNNING</span></div>
+      <div class="tk-row"><span class="dot"></span><span>套模板成稿并自查</span><span class="st">TODO</span></div>
     </div>
-    <div class="exec-note">单行任务内部：<code>想 → 调工具 → 看结果</code> 该循环还循环（就是 04 期那套）；<b>但每次只带这一步需要的上下文</b>，干净、便宜、好重试 —— 第 3 步失败只重跑第 3 步，不必从头再来</div>
+    <div class="board-cap">
+      <i>单行内部 = <b>想→调→看</b> 主循环（hermes-04）</i>
+      <i>第 3 步失败 → <b>只重跑第 3 步</b></i>
+    </div>
   </div>
-  <footer class="scr-foot rv d6">💡 主循环没有消失 —— <b>它从「包打全程」降级成「打工一步」</b></footer>
+  <footer class="scr-foot rv d6">💡 主循环没有消失 —— <b>从「包打全程」降级成「打工一步」</b></footer>
 </section>
 
-<!-- 屏5 · STEP 4 撞墙回流 -->
+<!-- STEP 4 · 撞墙重规划 -->
 <section class="screen s-replan">
   <header class="scr-head">
     <div class="step-badge rv d1"><b>STEP 4</b>计划赶不上变化</div>
-    <h2 class="rv d1">撞墙了，带着真相回去重规划</h2>
-    <p class="scr-desc rv d2">执行中发现现实和计划假设不符 —— <b>硬走是错的，回流才是正解</b>：把观察喂回 Planner，修订后续步骤</p>
-    <div class="code-chip rv d2">if 现实 ≠ 计划假设：<b>replan(观察结果)</b></div>
+    <h2 class="rv d1">撞墙了，带真相回去改图</h2>
+    <p class="scr-desc rv d2">现实和假设不符时，硬走是错的，回流才是正解</p>
   </header>
   <div class="stage">
-    <div class="replan-wrap">
+    <div class="rp-wrap">
       <div class="rp-panes">
         <div class="rp-pane old">
-          <div class="rp-title">📋 原计划</div>
+          <div class="rp-t">📋 原计划</div>
           <div class="rp-item">1 · 提取数据</div>
           <div class="rp-item">2 · 检索三家动态</div>
-          <div class="rp-item killed">3 · 官网取竞品 C 报价</div>
-          <div class="rp-item killed">4 · 同口径对比报价</div>
-          <div class="rp-item killed">5 · 成稿</div>
+          <div class="rp-item kill">3 · 官网取竞品 C 报价</div>
+          <div class="rp-item kill">4 · 同口径对比</div>
+          <div class="rp-item kill">5 · 成稿</div>
         </div>
         <div class="rp-pane new">
-          <div class="rp-title">🗺️ 修订计划</div>
+          <div class="rp-t">🗺️ 修订计划</div>
           <div class="rp-item">1 · 提取数据 ✓</div>
-          <div class="rp-item added">3′ · 改查招股书报价</div>
-          <div class="rp-item added">+ · 补汇率换算口径</div>
-          <div class="rp-item moved">4 · 再做同口径对比</div>
-          <div class="rp-item moved">5 · 成稿</div>
+          <div class="rp-item add">3′ · 改查招股书报价</div>
+          <div class="rp-item add">+ · 补汇率换算口径</div>
+          <div class="rp-item move">4 · 再做同口径对比</div>
+          <div class="rp-item move">5 · 成稿</div>
         </div>
       </div>
-      <div class="rp-alarm">执行第 3 步的观察回传：<code>竞品 C 官网改版，报价页 404</code> —— 此路不通</div>
-      <div class="rp-back">↑ 观察回流 PLANNER · 只重排未完成的步骤，已完成不返工 ↑</div>
+      <div class="rp-alarm">⚠️ 执行回传：<code>报价页 404</code></div>
+      <div class="rp-back">↑ 观察回流 PLANNER · 已完成的步骤不返工 ↑</div>
     </div>
   </div>
-  <footer class="scr-foot rv d6">💡 好计划不是一次定终身 —— <b>是允许带着新证据修订自己</b></footer>
+  <footer class="scr-foot rv d6">💡 计划是地图，<b>不是铁轨</b></footer>
 </section>
 
-<!-- 屏6 · STEP 5 对比 -->
+<!-- STEP 5 · 对比 -->
 <section class="screen s-cmp">
   <header class="scr-head">
     <div class="step-badge rv d1"><b>STEP 5</b>怎么选</div>
     <h2 class="rv d1">两种模式，各有各的地盘</h2>
-    <p class="scr-desc rv d2">没有谁更高级 —— <b>任务越长、步骤越可预判，规划越值</b>；任务越短、越依赖临场试探，ReAct 越香</p>
-    <div class="code-chip rv d2">也可以杂交：<b>大框架先规划，单步内部 ReAct</b></div>
+    <p class="scr-desc rv d2">任务越长、步骤越可预判，规划越值</p>
   </header>
   <div class="stage">
-    <div class="cmp">
-      <div class="cmp-row cmp-head">
-        <div class="h0">维度</div>
-        <div class="h-a">ReAct 走一步看一步</div>
-        <div class="h-b">Plan-Execute 先谋后动</div>
+    <div class="vs">
+      <div class="vs-row vs-head">
+        <div class="k">维度</div>
+        <div class="ha">ReAct 走一步看一步</div>
+        <div class="hb">先谋后动</div>
       </div>
-      <div class="cmp-row">
-        <div class="rh">总 token</div>
-        <div class="ca">长任务里滚雪球<div class="bar red"><i style="--w:88%"></i></div></div>
-        <div class="cb">规划一次 + 各步小上下文<div class="bar grn"><i style="--w:52%"></i></div></div>
+      <div class="vs-row">
+        <div class="k">总 token</div>
+        <div>长任务滚雪球<div class="bar r"><i style="--w:88%"></i></div></div>
+        <div>规划一次＋小上下文<div class="bar g"><i style="--w:52%"></i></div></div>
       </div>
-      <div class="cmp-row">
-        <div class="rh">开工速度</div>
-        <div class="ca">想一下立刻动手<div class="bar grn"><i style="--w:30%"></i></div></div>
-        <div class="cb">先等整张计划出来<div class="bar red"><i style="--w:62%"></i></div></div>
+      <div class="vs-row">
+        <div class="k">开工速度</div>
+        <div>想一下就动手<div class="bar g"><i style="--w:30%"></i></div></div>
+        <div>先等整张图<div class="bar r"><i style="--w:62%"></i></div></div>
       </div>
-      <div class="cmp-row">
-        <div class="rh">抗跑偏</div>
-        <div class="ca">依赖每步自己拉回来<div class="bar red"><i style="--w:45%"></i></div></div>
-        <div class="cb">清单对标，偏了就回流<div class="bar grn"><i style="--w:85%"></i></div></div>
+      <div class="vs-row">
+        <div class="k">抗跑偏</div>
+        <div>靠每步自己拉回<div class="bar r"><i style="--w:45%"></i></div></div>
+        <div>对清单，偏了就回流<div class="bar g"><i style="--w:85%"></i></div></div>
       </div>
-      <div class="cmp-row">
-        <div class="rh">适合</div>
-        <div class="ca">查个天气、改个 bug、一两轮的小事</div>
-        <div class="cb">调研报告、多源搬运、十步以上长任务</div>
+      <div class="vs-row">
+        <div class="k">适合</div>
+        <div>查天气、改 bug</div>
+        <div>调研、多源搬运长任务</div>
       </div>
     </div>
-    <div class="cmp-note">📌 计划还能<b>先给人确认再执行</b> —— 方向错了在最便宜的时候纠正（人工审批见 hermes-09 期）</div>
+    <div class="vs-chip">🧬 也可以杂交：<b>大框架先规划，单步内部 ReAct</b></div>
   </div>
-  <footer class="scr-foot rv d6">💡 选型口诀：<b>短任务拼反应，长任务拼地图</b></footer>
+  <footer class="scr-foot rv d6">💡 <b>短任务拼反应，长任务拼地图</b></footer>
 </section>
 
-<!-- 屏7 · 总结 -->
+<!-- 总结 -->
 <section class="screen s-sum">
   <header class="scr-head">
     <div class="step-badge rv d1"><b>RECAP</b>全景</div>
     <h2 class="rv d1">先谋后动，谋定而行</h2>
-    <p class="scr-desc rv d2">规划出图 → 逐步执行 → 撞墙回流 → 收敛交稿</p>
   </header>
   <div class="stage">
-    <div class="sum-flow rv d2"><span>🎯 目标</span><i>→</i><span>🧠 Planner 出清单</span><i>→</i><span>⚙️ Executor 逐步做</span><i>→</i><span>🔁 撞墙重规划</span><i>→</i><span>📦 交稿</span></div>
+    <div class="sum-flow rv d2"><span>🎯 目标</span><i>→</i><span>🧠 出清单</span><i>→</i><span>⚙️ 逐步做</span><i>→</i><span>🔁 撞墙改图</span><i>→</i><span>📦 交稿</span></div>
     <div class="adv-grid">
       <div class="adv rv d3">
         <div class="adv-ico">🗺️</div>
-        <div><b>规划只花一次钱</b><p>一次不拿工具的模型调用换全局步骤图，长任务的绕路和 token 雪球都被提前熨平</p></div>
+        <div><b>规划只花一次钱</b><p>一张步骤图熨平长任务的绕路和 token 雪球</p></div>
       </div>
       <div class="adv rv d4">
         <div class="adv-ico">⚙️</div>
-        <div><b>执行器是熟悉的主循环</b><p>hermes-04 那套想→调→看降级到单步内部，上下文小、失败只重跑一步</p></div>
+        <div><b>执行器是熟悉的主循环</b><p>想→调→看降级到单步内部，失败只重跑一步</p></div>
       </div>
       <div class="adv rv d5">
         <div class="adv-ico">🔁</div>
-        <div><b>重规划是安全阀</b><p>现实与假设不符就带观察回流，只重排未完成步骤 —— 计划是地图，不是铁轨</p></div>
+        <div><b>重规划是安全阀</b><p>带观察回流，只重排未完成的步骤</p></div>
       </div>
     </div>
     <blockquote class="sum-quote rv d6">“短任务拼反应，<br>长任务拼地图。”</blockquote>
