@@ -510,7 +510,7 @@
         <p>全部专家都要常驻显存；token 要跨卡「找专家」，all-to-all 通信成为新瓶颈；路由还可能扎堆</p>
       </div>
     </div>
-    <div class="cost-note rv d5">为治「所有 token 都挤同一个专家」，V3 用 <code>动态 bias 调节</code>代替辅助损失做负载均衡 —— 不再为均衡牺牲模型质量（aux-loss-free）</div>
+    <div class="cost-note rv d5">为治「所有 token 都挤同一个专家」，旧做法是在训练里加一道「<b>均衡罚分</b>」硬把流量摊平（会轻微拖累模型）；V3 改用 <code>动态 bias 调节</code>——给专家门口的打分加一个可微调的偏向，把流量自然引向空闲专家，<b>不再为均衡牺牲质量</b></div>
   </div>
   <footer class="scr-foot rv d6">💡 选型直觉：<b>追求并发与性价比看 MoE，追求部署简单看稠密</b> —— 2025 年后的旗舰几乎都选了 MoE</footer>
 </section>
@@ -535,7 +535,7 @@
       </div>
       <div class="adv rv d5">
         <div class="adv-ico">🛰️</div>
-        <div><b>便宜推理，昂贵部署</b><p>专家常驻显存、跨卡通信与负载均衡是 MoE 的真实门票，aux-loss-free 是新解法</p></div>
+        <div><b>便宜推理，昂贵部署</b><p>专家常驻显存、跨卡通信与负载均衡是 MoE 的真实门票；动态 bias 替代均衡罚分，是 V3 的新解法</p></div>
       </div>
     </div>
     <blockquote class="sum-quote rv d6">“稠密模型是全科门诊，<br>MoE 是按需出诊的专家团队。”</blockquote>

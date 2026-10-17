@@ -426,7 +426,7 @@
         <div class="smp bad rv d4">尝试 5 · ✗ 0</div>
         <div class="smp good rv d4">尝试 6 · ✓ +1</div>
       </div>
-      <div class="grpo-merge rv d5">比组内平均好的尝试 → <b>提高这类思路的概率</b>；比平均差的 → 压低　·　无需 critic 网络，组就是参照物</div>
+      <div class="grpo-merge rv d5">比组内平均好的尝试 → <b>提高这类思路的概率</b>；比平均差的 → 压低　·　无需再单独训练一个「裁判模型」，这一组答案自己就是参照物</div>
     </div>
     <div class="grpo-note rv d6">为了偶尔做对，模型会自发尝试更长的推导 —— 多步思考链，就是在这种奖励压力下被<b style="color:#c3cde2">奖励出来</b>的</div>
   </div>
@@ -499,7 +499,7 @@
       </div>
       <div class="adv rv d4">
         <div class="adv-ico">🔁</div>
-        <div><b>GRPO：跟其他自己比</b><p>一题采样一组，按组内相对好坏更新，无需奖励模型/critic；反思与回退在奖励压力下自发涌现（R1-Zero）</p></div>
+        <div><b>GRPO：跟其他自己比</b><p>一题采样一组，按组内相对好坏更新，无需再训练专门的奖励/裁判模型；反思与回退在奖励压力下自发涌现（R1-Zero）</p></div>
       </div>
       <div class="adv rv d5">
         <div class="adv-ico">🧑‍🎓</div>

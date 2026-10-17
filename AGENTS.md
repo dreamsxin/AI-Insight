@@ -77,8 +77,10 @@ Frontend (run from `frontend/`):
   (13–20 cover Transformer anatomy, MoE, KV Cache/inference acceleration,
   reasoning models & thinking chains, RLVR/GRPO & distillation, LoRA
   finetuning, embeddings/reranking, and multimodality),
-  AGENT 开发避坑指南 ·01–04 (developer-facing pitfalls), and AGENT 实战工坊
-  ·01–03 (knowledge-QA RAG build walkthrough). None
+  AGENT 开发避坑指南 ·01–05 (developer-facing pitfalls: tools, loop
+  cost, context engineering, evals, and prompt-injection attack surfaces),
+  and AGENT 实战工坊 ·01–05 (knowledge-QA RAG: ingest, dialogue, ship,
+  agentic retrieval, GraphRAG). None
   are part of the Vite app — each demo is a single
   file (no build step, no external deps) using full-screen CSS scroll-snap
   sections where one animation segment plays per screen. Keep new demos in this

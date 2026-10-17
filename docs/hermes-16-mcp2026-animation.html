@@ -253,18 +253,18 @@
   <header class="scr-head">
     <div class="step-badge rv d1"><b>STEP 3</b>授权：令牌要能被管住</div>
     <h2 class="rv d1">远程工具，先解决「你是谁」</h2>
-    <p class="scr-desc rv d2">MCP 授权基于 <code>OAuth 2.1 + PKCE</code>：桌面/CLI 也能安全完成登录，且令牌与目标服务绑定</p>
+    <p class="scr-desc rv d2">MCP 授权基于 <code>OAuth 2.1</code>（我们熟悉的「用账号登录并同意授权」那套流程）：CLI 也能用浏览器安全登录，且令牌只能用于指定的服务</p>
   </header>
   <div class="stage">
     <div class="oauth-flow rv d2">
       <span class="of">Client 发现授权端点</span><i>→</i>
-      <span class="of hot">PKCE 免密跳转</span><i>→</i>
+      <span class="of hot">浏览器跳转登录</span><i>→</i>
       <span class="of hot">用户同意 scope</span><i>→</i>
       <span class="of">拿到 access token</span><i>→</i>
       <span class="of hot">audience 绑定</span>
     </div>
     <div class="task-note rv d3">
-      <div class="tn"><b>🎯 audience / 资源指示</b>令牌只能用于声明的 Server，防止「拿着 A 的令牌去调 B」—— 令牌挪用（confused deputy）被从协议层堵住</div>
+      <div class="tn"><b>🎯 令牌限定用途（audience）</b>登录拿到的令牌写明「只准访问这个服务」，防止「拿着 A 网站的令牌去调 B 网站」—— 令牌被挪用的漏洞从协议层堵住</div>
       <div class="tn"><b>🔄 增量授权</b>需要新权限时再弹一次同意；支持设备流与令牌刷新，CLI 不必让用户手抄密钥</div>
     </div>
     <div class="oauth-note rv d4">与 15 期的凭证代理呼应：<b style="color:#c3cde2">授权标准化之后，「哪个工具能动哪份数据」才可以审计</b></div>
@@ -308,7 +308,7 @@
         <span class="rm">− POST initialize（建会话、协商能力）</span><br>
         <span class="rm">− 服务端保存 session 状态</span><br>
         <span class="add">+ 每请求 _meta：protocolVersion / capabilities</span><br>
-        <span class="add">+ MRTR：服务端用 input_required 反向要补充</span>
+        <span class="add">+ 信息不够时，服务端可正式返回 input_required 反向要补充</span>
       </div>
     </div>
     <div class="cache-note">
@@ -335,7 +335,7 @@
       </div>
       <div class="adv rv d4">
         <div class="adv-ico">🪪</div>
-        <div><b>授权与长任务标准化</b><p>OAuth 2.1+PKCE+audience 管住令牌；Tasks 把 working/input_required/completed 状态机变成协议一等公民</p></div>
+        <div><b>授权与长任务标准化</b><p>OAuth 登录授权 + 令牌限定用途，CLI 不必让用户抄密钥；Tasks 把 working/input_required/completed 状态机变成协议一等公民</p></div>
       </div>
       <div class="adv rv d5">
         <div class="adv-ico">📇</div>

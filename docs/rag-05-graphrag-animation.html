@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="GraphRAG 把碎片连成地图：向量检索答不了全局问题、实体关系抽取成图、社区发现与分层摘要、local/global 搜索、DRIFT 混合检索与成本选型，逐屏动画演示">
+<title>GraphRAG 把碎片连成地图 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14; --bg1: #0c1322; --ink: #e8eefc; --dim: #8b96ad;
+    --cyan: #22d3ee; --purple: #a78bfa; --green: #34d399;
+    --amber: #fbbf24; --red: #fb7185; --pink: #f472b6;
+    --card: rgba(255,255,255,.05); --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+  .dots { position: fixed; right: 9px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 11px; z-index: 60; }
+  .dots button { width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0; background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s; }
+  .dots button.on { background: var(--green); transform: scale(1.4); box-shadow: 0 0 10px rgba(52,211,153,.85); }
+  .screen {
+    position: relative; z-index: 1; height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before { content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(52,211,153,.10)), transparent 70%); }
+  .s-hero { --glow: rgba(52,211,153,.10); } .s-ceiling { --glow: rgba(251,113,133,.09); }
+  .s-graph { --glow: rgba(34,211,238,.11); } .s-comm { --glow: rgba(167,139,250,.12); }
+  .s-search { --glow: rgba(52,211,153,.10); } .s-pick { --glow: rgba(251,191,36,.09); }
+  .s-sum { --glow: rgba(244,114,182,.08); }
+  .scr-head { width: 100%; max-width: 640px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .step-badge { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .14em; color: var(--green);
+    border: 1px solid rgba(52,211,153,.35); background: rgba(52,211,153,.07); padding: 4px 13px; border-radius: 999px; }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code { color: var(--green); font-size: .92em; background: rgba(52,211,153,.08); padding: 1px 5px; border-radius: 5px; }
+  .code-chip { font-family: var(--mono); font-size: 11px; color: #9fb3d1; background: rgba(255,255,255,.04);
+    border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--green); font-weight: 600; }
+  .stage { position: relative; z-index: 1; flex: 1; min-height: 0; width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13px; }
+  .scr-foot { width: 100%; max-width: 640px; text-align: center; font-size: 12px; line-height: 1.65; color: var(--dim); }
+  .scr-foot b { color: #c3cde2; }
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; } .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; } .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; } .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker { font-size: 10px; letter-spacing: .28em; color: var(--dim); border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 6px 16px; border-radius: 999px; }
+  h1 { font-size: clamp(34px, 9vw, 52px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad { background: linear-gradient(92deg, #34d399 10%, #22d3ee 55%, #f472b6 95%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node { font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); white-space: nowrap; }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i { position: absolute; top: 50%; transform: translateY(-50%); left: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint { position: absolute; bottom: calc(16px + env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em; }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* 天花板 */
+  .qa-row { display: flex; gap: 9px; width: 100%; max-width: 560px; }
+  .qa { flex: 1; border-radius: 13px; padding: 12px; background: var(--card); border: 1px solid var(--line); }
+  .qa.local { border-color: rgba(52,211,153,.5); } .qa.global { border-color: rgba(251,113,133,.45); }
+  .qa h4 { font-size: 11.5px; margin-bottom: 6px; }
+  .qa.local h4 { color: #6ee7b7; } .qa.global h4 { color: #ffb9c4; }
+  .qa .q { font-size: 10.3px; color: #c3cde2; line-height: 1.6; }
+  .qa .a { margin-top: 7px; font-size: 9.8px; color: var(--dim); line-height: 1.55; border-top: 1px dashed var(--line); padding-top: 6px; }
+  .qa.global .a { color: #ffb9c4; }
+
+  /* 图谱 */
+  .build-flow { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 9px; }
+  .bf { display: grid; grid-template-columns: 118px 1fr; gap: 12px; align-items: center;
+    border-radius: 12px; padding: 10px 14px; background: var(--card); border: 1px solid var(--line); }
+  .bf .l { font-size: 11.5px; color: #67e8f9; font-weight: 700; }
+  .bf .r { font-family: var(--mono); font-size: 9.8px; color: #9fb3d1; line-height: 1.7; }
+  .bf .r b { color: #c3cde2; font-weight: 400; }
+  .graph-mini { width: 100%; max-width: 560px; border-radius: 12px; padding: 12px; background: rgba(0,0,0,.28);
+    border: 1px solid var(--line); position: relative; height: 96px; }
+  .gnode { position: absolute; border-radius: 10px; padding: 5px 9px; font-size: 10px; font-weight: 700;
+    background: rgba(34,211,238,.1); border: 1px solid rgba(34,211,238,.5); color: #67e8f9; transform: translate(-50%,-50%); }
+  .gnode.p { background: rgba(167,139,250,.12); border-color: rgba(167,139,250,.5); color: #c4b5fd; }
+  .gedge { position: absolute; height: 2px; background: rgba(148,163,184,.35); transform-origin: left center; }
+  .gedge em { position: absolute; top: -15px; left: 50%; transform: translateX(-50%); font-style: normal;
+    font-family: var(--mono); font-size: 8.5px; color: var(--dim); white-space: nowrap; }
+
+  /* 社区 */
+  .comm-viz { width: 100%; max-width: 560px; display: flex; align-items: stretch; gap: 12px; }
+  .cluster-box { flex: 1.1; border-radius: 12px; padding: 11px; background: rgba(0,0,0,.25); border: 1px solid var(--line); position: relative; min-height: 188px; }
+  .cluster { position: absolute; border: 1.5px dashed; border-radius: 50%; }
+  .cluster.c1 { width: 108px; height: 108px; left: 10px; top: 14px; border-color: rgba(34,211,238,.5); }
+  .cluster.c2 { width: 92px; height: 92px; right: 8px; bottom: 10px; border-color: rgba(167,139,250,.55); }
+  .dot { position: absolute; width: 9px; height: 9px; border-radius: 50%; }
+  .dot.c { background: #22d3ee; } .dot.p { background: #a78bfa; }
+  .pyramid { flex: 1; display: flex; flex-direction: column; gap: 6px; justify-content: center; }
+  .pyr { border-radius: 9px; padding: 8px 10px; text-align: center; background: var(--card); border: 1px solid var(--line); }
+  .pyr b { display: block; font-size: 10.5px; color: #c4b5fd; }
+  .pyr span { font-size: 9px; color: var(--dim); }
+  .pyr.l3 { width: 58%; margin: 0 auto; } .pyr.l2 { width: 78%; margin: 0 auto; } .pyr.l1 { width: 100%; }
+
+  /* local/global */
+  .search-card { width: 100%; max-width: 560px; border-radius: 13px; padding: 13px 15px; background: var(--card); border: 1px solid var(--line); }
+  .search-card h4 { font-size: 12px; margin-bottom: 7px; display: flex; align-items: center; gap: 7px; }
+  .search-card.local h4 { color: #6ee7b7; } .search-card.global h4 { color: #f9a8d4; }
+  .search-card p { font-size: 10.5px; color: var(--dim); line-height: 1.65; }
+  .search-card .flow { font-family: var(--mono); font-size: 9.5px; color: #9fb3d1; margin-top: 7px; line-height: 1.7; }
+  .search-card.local .flow b { color: #6ee7b7; font-weight: 400; } .search-card.global .flow b { color: #f9a8d4; font-weight: 400; }
+
+  /* 选型 */
+  .pick-row { display: flex; gap: 9px; width: 100%; max-width: 560px; }
+  .pick { flex: 1; border-radius: 12px; padding: 11px; background: var(--card); border: 1px solid var(--line); text-align: center; }
+  .pick .ic { font-size: 18px; }
+  .pick b { display: block; font-size: 11px; color: #c3cde2; margin: 4px 0 3px; }
+  .pick span { font-size: 9.4px; color: var(--dim); line-height: 1.5; display: block; }
+  .pick.bad { border-color: rgba(251,113,133,.4); } .pick.bad b { color: #ffb9c4; }
+  .cost-note { width: 100%; max-width: 560px; border-radius: 11px; padding: 10px 14px; text-align: center;
+    font-size: 10.8px; color: var(--dim); line-height: 1.7; background: rgba(251,191,36,.06); border: 1px solid rgba(251,191,36,.35); }
+  .cost-note b { color: #fde68a; }
+  .cost-note code { color: #67e8f9; font-size: .95em; }
+
+  /* 总结 */
+  .sum-flow { display: flex; gap: 4px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 10px; color: var(--dim); }
+  .sum-flow span { border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+  .sum-flow i { color: var(--green); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv { display: flex; gap: 13px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 15px; }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote { font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center; line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #34d399, #22d3ee 85%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .replay { font-size: 12.5px; color: #06121c; background: var(--green); border: none; padding: 10px 26px; border-radius: 999px; font-weight: 700; cursor: pointer; letter-spacing: .06em; }
+  .replay:active { transform: scale(.96); }
+  .series-badge { position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px; font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em; }
+
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+  @media (max-height: 560px) { .screen { overflow-y: auto; justify-content: flex-start; } .stage { flex: 0 0 auto; padding: 14px 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; scroll-behavior: auto !important; }
+    .rv { opacity: 1 !important; transform: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面"></button>
+  <button title="STEP 1 答不了的问题"></button>
+  <button title="STEP 2 抽取成图"></button>
+  <button title="STEP 3 社区摘要"></button>
+  <button title="STEP 4 两种搜索"></button>
+  <button title="STEP 5 选型与成本"></button>
+  <button title="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">AGENT 实战工坊 · 知识问答 RAG 05</div>
+    <h1 class="rv d2">GraphRAG<br><span class="grad">把碎片连成地图</span></h1>
+    <p class="hero-sub rv d3">实体关系图 · 社区摘要 · global/local 搜索 · DRIFT</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">📄 语料碎片</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">🕸 知识图谱</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">🗺️ 主题地图</span>
+    </div>
+    <p class="hero-quote rv d5">「向量检索擅长找句子，GraphRAG 擅长看懂整片森林」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 答不了的问题 -->
+<section class="screen s-ceiling">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>向量 RAG 答不了的问题</div>
+    <h2 class="rv d1">能查一句话，答不了「整体」</h2>
+    <p class="scr-desc rv d2">向量检索（AI 19 期 / 工坊 02）每次只捞最相似的几个片段 —— 它擅长具体事实，却看不见碎片之间的<b>连线与全貌</b></p>
+  </header>
+  <div class="stage">
+    <div class="qa-row">
+      <div class="qa local rv d3">
+        <h4>✓ 局部问题（擅长）</h4>
+        <p class="q">「退款流程的第三步是什么？」<br>「X 公司的 CEO 是谁？」</p>
+        <p class="a">答案集中在一两个 chunk，top-k 一捞就中</p>
+      </div>
+      <div class="qa global rv d4">
+        <h4>✗ 全局问题（抓瞎）</h4>
+        <p class="q">「这批材料总体在讲哪几件事？」<br>「各方势力之间是什么关系？」</p>
+        <p class="a">答案散在几十上百份文档里，没有任何一个 chunk 直接写着</p>
+      </div>
+    </div>
+    <div class="code-chip rv d5">朴素 RAG：问题 → 相似片段 → 答案　✗ 没有「把片段连起来」的一步</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 这正是 AI 19 期「单向量天花板」的升级版：<b>不仅一词多义会丢，跨文档的关系也会丢</b></footer>
+</section>
+
+<!-- 屏3 · STEP 2 抽取成图 -->
+<section class="screen s-graph">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>先让 LLM 读出「谁和谁怎样」</div>
+    <h2 class="rv d1">把文档抽成实体与关系</h2>
+    <p class="scr-desc rv d2">GraphRAG 在建库时多做一道重活：让 LLM 通读每个片段，抽出<b>实体（节点）</b>、<b>关系（边）</b>和关键说法，织成一张知识图谱</p>
+  </header>
+  <div class="stage">
+    <div class="graph-mini rv d3">
+      <div class="gedge" style="left:26%;top:34%;width:46%;transform:rotate(-12deg)"><em>收购</em></div>
+      <div class="gedge" style="left:30%;top:68%;width:30%;transform:rotate(-42deg)"><em>任职</em></div>
+      <div class="gedge" style="left:56%;top:58%;width:22%;transform:rotate(20deg)"><em>投资</em></div>
+      <div class="gnode" style="left:22%;top:32%">A 公司</div>
+      <div class="gnode p" style="left:72%;top:24%">B 公司</div>
+      <div class="gnode" style="left:28%;top:72%">张三</div>
+      <div class="gnode p" style="left:76%;top:70%">C 基金</div>
+    </div>
+    <div class="build-flow rv d4">
+      <div class="bf"><span class="l">① 切文本块</span><span class="r">TextUnits：文档先切块（工坊 01 的老工序）</span></div>
+      <div class="bf"><span class="l">② LLM 抽取</span><span class="r"><b>实体</b>（人/组织/地点）· <b>关系</b>（收购/任职/投资）· <b>主张</b>（谁说了什么）</span></div>
+      <div class="bf"><span class="l">③ 合并入库</span><span class="r">同一实体跨文档出现 → <b>合并成同一个节点</b>，边越连越多</span></div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 向量库存的是「<b>文字碎片</b>」，图谱库存的是「<b>谁、和谁、什么关系</b>」—— 问题可以沿着边走</footer>
+</section>
+
+<!-- 屏4 · STEP 3 社区摘要 -->
+<section class="screen s-comm">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>社区发现与分层摘要</div>
+    <h2 class="rv d1">给纠缠的节点，分圈子、写总结</h2>
+    <p class="scr-desc rv d2">用聚类算法（如 Leiden，作用就是<b>自动把连线密集的节点圈成一个个「社区」</b>）分好圈子，再让 LLM <b>自底向上逐层写摘要</b>，形成一座主题金字塔</p>
+  </header>
+  <div class="stage">
+    <div class="comm-viz rv d3">
+      <div class="cluster-box">
+        <div class="cluster c1"></div>
+        <div class="cluster c2"></div>
+        <div class="dot c" style="left:22%;top:22%"></div><div class="dot c" style="left:42%;top:36%"></div>
+        <div class="dot c" style="left:30%;top:52%"></div>
+        <div class="dot p" style="right:20%;top:56%"></div><div class="dot p" style="right:34%;top:72%"></div>
+        <div class="dot p" style="right:14%;top:78%"></div>
+      </div>
+      <div class="pyramid">
+        <div class="pyr l3"><b>全局摘要</b><span>整库在讲什么</span></div>
+        <div class="pyr l2"><b>社区摘要</b><span>每个圈子的主题</span></div>
+        <div class="pyr l1"><b>实体/关系明细</b><span>节点与边</span></div>
+      </div>
+    </div>
+    <div class="search-card rv d4" style="border-color:rgba(167,139,250,.4)">
+      <h4 style="color:#c4b5fd">🗂️ 类比：给一屋子聊天记录写会议纪要</h4>
+      <p>先分清谁和谁在聊同一话题（社区），每个话题写一段小结（社区摘要），最后把小结汇成总纲 —— 回答「整体如何」时，读摘要金字塔，而不是翻全部原文</p>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 这一步是 GraphRAG 的灵魂：<b>答案不再从碎片里现拼，而是提前分层归纳好</b></footer>
+</section>
+
+<!-- 屏5 · STEP 4 两种搜索 -->
+<section class="screen s-search">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>local 与 global：问法决定走法</div>
+    <h2 class="rv d1">查邻居，还是读地图</h2>
+    <p class="scr-desc rv d2">建好的图谱支持两种提问方式：具体问题沿实体关系走，全局问题让所有社区摘要<b>并行作答再汇总</b></p>
+  </header>
+  <div class="stage">
+    <div class="search-card local rv d3">
+      <h4>🔎 Local Search（局部）</h4>
+      <p>先定位问题里的实体，再取它<b>相邻的节点、关系与原文片段</b>，交给模型组织答案</p>
+      <div class="flow">问题 → 命中实体 → <b>沿图扩展邻域</b> → 连同原文证据回答<br>适合：具体的人/事/物之间的关系</div>
+    </div>
+    <div class="search-card global rv d4">
+      <h4>🌐 Global Search（全局）</h4>
+      <p>把问题同时发给<b>每个社区摘要</b>（map：各答各的），再把所有回答 reduce 成一份总答案</p>
+      <div class="flow">问题 → <b>map：各社区并行回答</b> → reduce：排序、去重、综合<br>适合：「整体趋势/主题/分歧是什么」</div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 这正是 Hermes 09 期「主官+斥候」在知识库上的重演：<b>local 查一个点，global 汇总一群斥候的报告</b></footer>
+</section>
+
+<!-- 屏6 · STEP 5 DRIFT 与选型 -->
+<section class="screen s-pick">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>DRIFT 混合检索与成本账</div>
+    <h2 class="rv d1">先用地图定方向，再回细节取证</h2>
+  </header>
+  <div class="stage">
+    <div class="pick-row rv d2">
+      <div class="pick"><div class="ic">🌐</div><b>global 定方向</b><span>先从社区摘要找到「答案大概在哪个圈子」</span></div>
+      <div class="pick"><div class="ic">🔎</div><b>local 取细节</b><span>再进对应社区沿图取证，补充具体出处</span></div>
+      <div class="pick"><div class="ic">🔀</div><b>DRIFT</b><span>两者合一：宏观不丢、细节有据，可多轮追问</span></div>
+    </div>
+    <div class="cost-note rv d3">
+      <b>什么时候别上 GraphRAG？</b>　建库时每个 chunk 都要调一次 LLM 做抽取与摘要，<b>索引又贵又慢、还要领域适配</b><br>
+      资料 <code>约 20 万 token 以内</code>：直接长上下文塞进模型最划算；只问具体事实：向量 RAG + rerank（AI 19）足够。<b>跨文档的全局主题问题，才是它的主场</b>
+    </div>
+    <div class="pick-row rv d4">
+      <div class="pick bad"><b>✕ 朴素向量 RAG</b><span>局部事实强，跨文档主题弱</span></div>
+      <div class="pick"><b>≈ Text-to-SQL</b><span>结构化数据（数字/表格）交给数据库更准</span></div>
+      <div class="pick"><b>✓ GraphRAG</b><span>实体关系密集、需要主题归纳时启用</span></div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 和工坊 04 的结论一致：<b>先证明简单方案不够，再为复杂性买单</b></footer>
+</section>
+
+<!-- 屏7 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">给知识库画一张关系地图</h2>
+    <p class="scr-desc rv d2">实体关系抽取 → 社区聚类 → 分层摘要 → local/global/DRIFT 检索</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>切块</span><i>→</i><span>实体/关系</span><i>→</i><span>社区摘要</span><i>→</i><span>local/global</span><i>→</i><span>有据回答</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">🕸️</div>
+        <div><b>从碎片到关系</b><p>LLM 把文档抽成实体、关系、主张，同一实体跨文档合并；问题可以沿图的边走，补上向量检索看不见的关联</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🗺️</div>
+        <div><b>社区摘要回答全局</b><p>Leiden 聚类把图分成社区，自底向上写分层摘要；local 查邻域、global 让社区并行作答再 reduce，DRIFT 先定方向再取证</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">💰</div>
+        <div><b>贵在建图，按需启用</b><p>每块语料都要 LLM 抽取与摘要，索引成本高；小库直接长上下文、事实问答用向量 RAG，跨文档主题归纳才值得上图谱</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“向量检索回答「这段话像什么」，<br>图谱回答「这些事之间怎么回事」。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">AGENT 实战工坊 · 05 / GraphRAG 篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else { secs.forEach((s) => s.classList.add('active')); }
+  dots.forEach((d, i) => d.addEventListener('click', () => secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' })));
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+</script>
+</body>
+</html>

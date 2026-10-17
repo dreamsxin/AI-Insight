@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="Agentic RAG 会自我纠错的检索：直线 RAG 的翻车点、查询路由分诊、CRAG 置信度红绿灯、Self-RAG 反思标签、并行工具调用，何时才需要升级，逐屏动画演示">
+<title>Agentic RAG 会自我纠错的检索 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14; --bg1: #0c1322; --ink: #e8eefc; --dim: #8b96ad;
+    --cyan: #22d3ee; --purple: #a78bfa; --green: #34d399;
+    --amber: #fbbf24; --red: #fb7185; --pink: #f472b6;
+    --card: rgba(255,255,255,.05); --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+  .dots { position: fixed; right: 9px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 11px; z-index: 60; }
+  .dots button { width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0; background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s; }
+  .dots button.on { background: var(--green); transform: scale(1.4); box-shadow: 0 0 10px rgba(52,211,153,.85); }
+  .screen {
+    position: relative; z-index: 1; height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before { content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(52,211,153,.10)), transparent 70%); }
+  .s-hero { --glow: rgba(52,211,153,.10); } .s-flat { --glow: rgba(251,113,133,.09); }
+  .s-route { --glow: rgba(34,211,238,.11); } .s-crag { --glow: rgba(251,191,36,.10); }
+  .s-self { --glow: rgba(167,139,250,.11); } .s-need { --glow: rgba(52,211,153,.10); }
+  .s-sum { --glow: rgba(244,114,182,.08); }
+  .scr-head { width: 100%; max-width: 640px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .step-badge { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .14em; color: var(--green);
+    border: 1px solid rgba(52,211,153,.35); background: rgba(52,211,153,.07); padding: 4px 13px; border-radius: 999px; }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code { color: var(--green); font-size: .92em; background: rgba(52,211,153,.08); padding: 1px 5px; border-radius: 5px; }
+  .code-chip { font-family: var(--mono); font-size: 11px; color: #9fb3d1; background: rgba(255,255,255,.04);
+    border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--green); font-weight: 600; }
+  .stage { position: relative; z-index: 1; flex: 1; min-height: 0; width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13px; }
+  .scr-foot { width: 100%; max-width: 640px; text-align: center; font-size: 12px; line-height: 1.65; color: var(--dim); }
+  .scr-foot b { color: #c3cde2; }
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; } .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; } .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; } .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker { font-size: 10px; letter-spacing: .28em; color: var(--dim); border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 6px 16px; border-radius: 999px; }
+  h1 { font-size: clamp(34px, 9vw, 52px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad { background: linear-gradient(92deg, #34d399 10%, #22d3ee 55%, #f472b6 95%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node { font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); white-space: nowrap; }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i { position: absolute; top: 50%; transform: translateY(-50%); left: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint { position: absolute; bottom: calc(16px + env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em; }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* 直线 RAG */
+  .flat-pipe { display: flex; align-items: center; gap: 6px; width: 100%; max-width: 560px; justify-content: center; flex-wrap: wrap; }
+  .fp { font-size: 10.5px; padding: 8px 12px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); color: #c3cde2; white-space: nowrap; }
+  .fp.q { border-color: rgba(34,211,238,.45); color: #67e8f9; }
+  .flat-pipe i { color: var(--dim); font-style: normal; }
+  .fail-card { width: 100%; max-width: 560px; border-radius: 13px; padding: 12px 15px;
+    background: rgba(251,113,133,.05); border: 1px solid rgba(251,113,133,.38); }
+  .fail-card h4 { font-size: 12px; color: #ffb9c4; margin-bottom: 6px; }
+  .fail-card p { font-size: 10.8px; color: var(--dim); line-height: 1.7; }
+  .fail-card .cases { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .fail-card .cases span { font-size: 9.5px; font-family: var(--mono); padding: 3px 9px; border-radius: 999px;
+    border: 1px solid rgba(251,113,133,.35); background: rgba(251,113,133,.07); color: #ffb9c4; }
+
+  /* 路由 */
+  .router-box { width: 100%; max-width: 560px; }
+  .rq { border-radius: 12px; padding: 10px 15px; background: var(--card); border: 1px solid rgba(34,211,238,.45);
+    text-align: center; font-size: 12px; color: #67e8f9; }
+  .rq code { color: #a5f3fc; }
+  .branches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 11px; }
+  .br { border-radius: 11px; padding: 10px 6px; text-align: center; background: var(--card); border: 1px solid var(--line); }
+  .br .ic { font-size: 17px; }
+  .br b { display: block; font-size: 10.8px; color: #c3cde2; margin: 4px 0 2px; }
+  .br span { font-size: 9px; color: var(--dim); line-height: 1.45; display: block; }
+  .route-note { width: 100%; max-width: 560px; text-align: center; font-size: 11px; color: var(--dim); line-height: 1.7; }
+  .route-note b { color: #c3cde2; }
+
+  /* CRAG */
+  .crag-row { display: flex; gap: 9px; width: 100%; max-width: 560px; }
+  .light { flex: 1; border-radius: 13px; padding: 12px 11px; background: var(--card); border: 1px solid var(--line); }
+  .light.g { border-color: rgba(52,211,153,.55); } .light.a { border-color: rgba(251,191,36,.55); } .light.r { border-color: rgba(251,113,133,.5); }
+  .light .sig { font-family: var(--mono); font-size: 15px; font-weight: 800; }
+  .light.g .sig { color: #6ee7b7; } .light.a .sig { color: #fde68a; } .light.r .sig { color: #ffb9c4; }
+  .light h4 { font-size: 11.5px; margin: 5px 0; }
+  .light.g h4 { color: #6ee7b7; } .light.a h4 { color: #fde68a; } .light.r h4 { color: #ffb9c4; }
+  .light p { font-size: 9.8px; color: var(--dim); line-height: 1.6; }
+  .conf-note { width: 100%; max-width: 560px; border-radius: 11px; padding: 9px 14px; text-align: center;
+    font-size: 10.8px; color: var(--dim); line-height: 1.65; background: var(--card); border: 1px solid var(--line); }
+  .conf-note b { color: #fde68a; }
+  .conf-note code { color: #67e8f9; font-size: .95em; }
+
+  /* Self-RAG */
+  .tags-flow { display: flex; gap: 8px; width: 100%; max-width: 560px; align-items: stretch; }
+  .tagcol { flex: 1; border-radius: 12px; padding: 11px; background: var(--card); border: 1px solid rgba(167,139,250,.4); }
+  .tagcol h4 { font-family: var(--mono); font-size: 11px; color: #c4b5fd; margin-bottom: 7px; }
+  .tagcol .t { border-radius: 8px; padding: 6px 9px; margin-bottom: 6px; background: rgba(167,139,250,.08);
+    font-family: var(--mono); font-size: 9.5px; color: #c4b5fd; line-height: 1.5; }
+  .tagcol .t:last-child { margin-bottom: 0; }
+  .self-note { width: 100%; max-width: 560px; text-align: center; font-size: 11px; color: var(--dim); line-height: 1.7; }
+  .self-note b { color: #c3cde2; }
+
+  /* 何时升级 */
+  .ptc-row { display: flex; gap: 9px; width: 100%; max-width: 560px; }
+  .ptc { flex: 1; border-radius: 12px; padding: 11px; background: var(--card); border: 1px solid var(--line); }
+  .ptc b { display: block; font-size: 11.5px; color: #c3cde2; margin-bottom: 4px; }
+  .ptc p { font-size: 9.8px; color: var(--dim); line-height: 1.6; }
+  .ptc code { color: #67e8f9; font-size: .92em; }
+  .threshold { width: 100%; max-width: 560px; border-radius: 999px; padding: 9px 16px; text-align: center;
+    font-size: 11px; color: var(--dim); line-height: 1.6; border: 1px dashed rgba(52,211,153,.5); background: rgba(52,211,153,.05); }
+  .threshold b { color: #6ee7b7; }
+  .threshold code { color: #fde68a; font-size: .95em; }
+
+  /* 总结 */
+  .sum-flow { display: flex; gap: 4px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 10px; color: var(--dim); }
+  .sum-flow span { border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+  .sum-flow i { color: var(--green); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv { display: flex; gap: 13px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 15px; }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote { font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center; line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #34d399, #22d3ee 85%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .replay { font-size: 12.5px; color: #06121c; background: var(--green); border: none; padding: 10px 26px; border-radius: 999px; font-weight: 700; cursor: pointer; letter-spacing: .06em; }
+  .replay:active { transform: scale(.96); }
+  .series-badge { position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px; font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em; }
+
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+  @media (max-height: 560px) { .screen { overflow-y: auto; justify-content: flex-start; } .stage { flex: 0 0 auto; padding: 14px 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; scroll-behavior: auto !important; }
+    .rv { opacity: 1 !important; transform: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面"></button>
+  <button title="STEP 1 直线 RAG"></button>
+  <button title="STEP 2 查询路由"></button>
+  <button title="STEP 3 CRAG"></button>
+  <button title="STEP 4 Self-RAG"></button>
+  <button title="STEP 5 何时升级"></button>
+  <button title="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">AGENT 实战工坊 · 知识问答 RAG 04</div>
+    <h1 class="rv d2">Agentic RAG<br><span class="grad">会自我纠错的检索</span></h1>
+    <p class="hero-sub rv d3">查询路由 · CRAG 红绿灯 · Self-RAG 反思 · 并行调用</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">🔍 先分诊</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">🚦 评估结果</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">🔁 查错就换路</span>
+    </div>
+    <p class="hero-quote rv d5">「工坊 01–03 搭好的直线流水线，这一集让它学会拐弯」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 直线 RAG -->
+<section class="screen s-flat">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>先看直线 RAG 的假设</div>
+    <h2 class="rv d1">一次检索，定生死</h2>
+    <p class="scr-desc rv d2">工坊 01–03 的经典链路：问题只检索<b>一次</b>，命中就答、没命中也硬答 —— 它假设「top-4 里一定有答案」</p>
+    <div class="code-chip rv d2">问题 → 向量库 top-k → 塞进 prompt → 回答（没有回头路）</div>
+  </header>
+  <div class="stage">
+    <div class="flat-pipe rv d3">
+      <span class="fp q">用户问题</span><i>→</i>
+      <span class="fp">检索一次</span><i>→</i>
+      <span class="fp">照单生成</span>
+    </div>
+    <div class="fail-card rv d4">
+      <h4>✕ 三种翻车现场（工坊 03 已埋过伏笔）</h4>
+      <p>问题问的是<b style="color:#ffb9c4">最新消息</b>，知识库里没有；型号写成 SX-200，向量库飘走；问题其实要查数据库/算数，却被当成文档问答 —— 检索没中，生成照样编</p>
+      <div class="cases">
+        <span>库外/时效问题</span><span>问法漂移</span><span>需要精确计算</span><span>多跳推理</span>
+      </div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 经典 RAG 是<b>开卷考试但不许翻第二次书</b> —— Agentic RAG 让模型能判断「这页没用，换一本查」</footer>
+</section>
+
+<!-- 屏3 · STEP 2 查询路由 -->
+<section class="screen s-route">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>查询路由：先分诊再检索</div>
+    <h2 class="rv d1">不是每个问题，都该查向量库</h2>
+    <p class="scr-desc rv d2">Agentic RAG 的第一步是加一个<b>分诊台</b>（可用小模型或规则）：先判断问题类型，派发给最合适的数据源</p>
+    <div class="code-chip rv d2">router(问题) → 向量库 / BM25 / Web / SQL / 直接回答</div>
+  </header>
+  <div class="stage">
+    <div class="router-box rv d3">
+      <div class="rq">「A 套餐退款政策和上周销售额分别是多少？」</div>
+      <div class="branches">
+        <div class="br"><div class="ic">📚</div><b>向量库</b><span>退款政策等语义问题</span></div>
+        <div class="br"><div class="ic">🌐</div><b>Web 搜索</b><span>时效、库外信息</span></div>
+        <div class="br"><div class="ic">🗄️</div><b>SQL/表格</b><span>「销售额」要算</span></div>
+        <div class="br"><div class="ic">💬</div><b>直接回答</b><span>寒暄无需检索</span></div>
+      </div>
+    </div>
+    <div class="route-note rv d4">
+      一次问题可以<b>同时派给多条管道</b>（并行），再由主循环汇总 —— 这正是 Hermes 17 期说的：<b>按任务性质选工具，而不是万物皆向量</b>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 路由让 RAG 从「一个检索器」变成「一个会选数据源的 Agent」—— 分诊错了，后面全错</footer>
+</section>
+
+<!-- 屏4 · STEP 3 CRAG -->
+<section class="screen s-crag">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>CRAG：检索结果先体检</div>
+    <h2 class="rv d1">查回来的资料，敢不敢用？</h2>
+    <p class="scr-desc rv d2">CRAG（Corrective RAG，纠错式检索）给检索结果打一个<b>置信度分</b>，像红绿灯一样决定下一步：用、换路、还是两手准备</p>
+  </header>
+  <div class="stage">
+    <div class="crag-row rv d3">
+      <div class="light g">
+        <div class="sig">● 高置信</div>
+        <h4>绿灯：精炼后用</h4>
+        <p>资料确实相关 → 去掉噪声、提炼要点，再交给生成</p>
+      </div>
+      <div class="light r">
+        <div class="sig">● 低置信</div>
+        <h4>红灯：弃用，上网</h4>
+        <p>库里没查到靠谱的 → 整批丢弃，改走 Web 搜索兜底</p>
+      </div>
+      <div class="light a">
+        <div class="sig">● 模棱两可</div>
+        <h4>黄灯：两条都走</h4>
+        <p>拿不准 → 内部资料与网页结果都保留，生成时交叉对照</p>
+      </div>
+    </div>
+    <div class="conf-note rv d4">
+      判分可以很简单：<b>检索分数 + 与问题的重合度</b>；低于阈值就触发兜底。<code>检索 → 评估 → 再决策</code>，本质就是 Agent 主循环在检索环节的一次应用
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 经典 RAG 默认「捞上来的都是好货」；CRAG 先验货再下锅 —— <b>承认检索会失败，是纠错的前提</b></footer>
+</section>
+
+<!-- 屏5 · STEP 4 Self-RAG -->
+<section class="screen s-self">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>Self-RAG：边写边给自己贴标签</div>
+    <h2 class="rv d1">回答的每一句，都要有出处撑腰</h2>
+    <p class="scr-desc rv d2">Self-RAG 让模型在生成过程中插入<b>反思标记</b>，像审稿人一样自问自答：要不要查、这段相关吗、有证据支持吗</p>
+  </header>
+  <div class="stage">
+    <div class="tags-flow rv d3">
+      <div class="tagcol">
+        <h4>三个自问</h4>
+        <div class="t">Retrieve？<br>这句需要查资料吗</div>
+        <div class="t">IsRel？<br>捞回的段落与问题相关吗</div>
+        <div class="t">IsSup？<br>我的回答被证据支持吗</div>
+      </div>
+      <div class="tagcol">
+        <h4>对应动作</h4>
+        <div class="t">需要 → 先检索再写<br>不需要 → 凭常识直接答</div>
+        <div class="t">不相关 → 丢掉重查</div>
+        <div class="t">不支持 → 换说法或补检索，<br>拒绝无据硬编</div>
+      </div>
+    </div>
+    <div class="self-note rv d4">
+      它把「<b>检索→生成</b>」的单行道变成多轮小循环：写一句、核一次、不够再查 —— 与推理模型的<b style="color:#c4b5fd">思考链</b>（AI 16 期）是同一种自我检查精神，只不过检查对象是证据
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 CRAG 在<b>检索后</b>把关，Self-RAG 在<b>生成中</b>把关 —— 一个查货，一个验菜，可以叠加使用</footer>
+</section>
+
+<!-- 屏6 · STEP 5 何时升级 -->
+<section class="screen s-need">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>并行调用与成本账</div>
+    <h2 class="rv d1">Agentic 很好，但不是免费午餐</h2>
+    <p class="scr-desc rv d2">每多一轮检索/评估都是额外的模型调用与延迟 —— 工程上用<b>并行</b>省墙钟，用<b>阈值</b>控次数</p>
+  </header>
+  <div class="stage">
+    <div class="ptc-row rv d2">
+      <div class="ptc"><b>⚡ 并行取数</b><p>多个数据源/搜索词用 <code>asyncio.gather</code> 同时跑，再汇总；墙钟时间取决于最慢的一路</p></div>
+      <div class="ptc"><b>🧮 代码当工具</b><p>算数、排序、结构化提取直接交给代码沙箱执行，不让 LLM「估」一个数</p></div>
+      <div class="ptc"><b>🛑 重试上限</b><p>检索-纠错最多 N 轮，超过就转人工/如实说不知道，避免空转烧钱</p></div>
+    </div>
+    <div class="threshold rv d3">
+      <b>什么时候根本不用上 Agentic？</b><br>
+      知识库很小、问答直接：<code>约 20 万 token 以内</code>的资料直接塞进提示词 + 缓存最便宜；FAQ 式问答，经典 RAG + rerank（AI 19 期）就够。<b>多跳、时效、需要交叉验证时，Agentic 才值回票价</b>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 和 Hermes 17 期同一条账：<b>复杂度要花得值</b> —— 先证明直线方案不够，再给流水线装方向盘</footer>
+</section>
+
+<!-- 屏7 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">从一次检索，到检索的 Agent 循环</h2>
+    <p class="scr-desc rv d2">路由分诊 → 置信度体检 → 反思标签 → 并行取数 → 阈值收敛</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>分诊路由</span><i>→</i><span>多路检索</span><i>→</i><span>CRAG 体检</span><i>→</i><span>Self-RAG 核证</span><i>→</i><span>有据回答</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">🚦</div>
+        <div><b>先分诊，再验货</b><p>查询路由按问题类型选数据源（向量/Web/SQL/直答）；CRAG 用置信度三档决定精炼、上网兜底或双路并存</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🔍</div>
+        <div><b>生成中持续核证</b><p>Self-RAG 的 Retrieve/IsRel/IsSup 标签让模型边写边查、无据不答；它是主循环在检索场景的特化，不是新模型</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">⚖️</div>
+        <div><b>复杂度按量付费</b><p>并行调用省墙钟、代码工具做计算、重试设上限；小库直接塞 prompt，只有多跳/时效/交叉验证才值得升级到 Agentic</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“最好的检索不是一次命中，<br>是查错了知道回头。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">AGENT 实战工坊 · 04 / Agentic RAG 篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else { secs.forEach((s) => s.classList.add('active')); }
+  dots.forEach((d, i) => d.addEventListener('click', () => secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' })));
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+</script>
+</body>
+</html>
