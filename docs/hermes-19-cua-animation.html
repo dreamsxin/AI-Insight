@@ -41,7 +41,8 @@
   .screen::before { content: ""; position: absolute; inset: -20%; pointer-events: none;
     background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%); }
   .s-hero { --glow: rgba(34,211,238,.10); } .s-two { --glow: rgba(34,211,238,.11); }
-  .s-loop { --glow: rgba(52,211,153,.10); } .s-a11y { --glow: rgba(167,139,250,.11); }
+  .s-loop { --glow: rgba(52,211,153,.10); } .s-tree { --glow: rgba(34,211,238,.11); }
+  .s-a11y { --glow: rgba(167,139,250,.11); }
   .s-real { --glow: rgba(251,191,36,.09); } .s-risk { --glow: rgba(251,113,133,.09); }
   .s-sum { --glow: rgba(244,114,182,.08); }
   .scr-head { width: 100%; max-width: 640px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
@@ -118,6 +119,30 @@
   .mix-note { width: 100%; max-width: 560px; text-align: center; font-size: 11px; color: var(--dim); line-height: 1.7; }
   .mix-note b { color: #c3cde2; }
 
+  /* 语义树来源 */
+  .src-row { display: flex; gap: 9px; width: 100%; max-width: 560px; }
+  .src { flex: 1; border-radius: 13px; padding: 11px 12px; background: var(--card); border: 1px solid var(--line); }
+  .src.platform { border-color: rgba(167,139,250,.5); } .src.vision { border-color: rgba(52,211,153,.5); }
+  .src h4 { font-size: 11.5px; margin-bottom: 6px; }
+  .src.platform h4 { color: #c4b5fd; } .src.vision h4 { color: #6ee7b7; }
+  .src .pipe { font-family: var(--mono); font-size: 9.2px; color: #9fb3d1; line-height: 1.7; }
+  .src .pipe b { color: #c3cde2; font-weight: 400; }
+  .axmini { margin-top: 7px; border-radius: 8px; padding: 7px 9px; background: rgba(0,0,0,.3);
+    font-family: var(--mono); font-size: 8.8px; color: #9fb3d1; line-height: 1.6; white-space: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .axmini::-webkit-scrollbar { display: none; }
+  .axmini .r { color: #c4b5fd; }
+  .som { margin-top: 7px; border-radius: 8px; padding: 8px; background: rgba(0,0,0,.3);
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+  .som i { position: relative; aspect-ratio: 1; border-radius: 4px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1); font-style: normal; }
+  .som i.hit { border-color: rgba(52,211,153,.6); background: rgba(52,211,153,.12); }
+  .som i::after { content: attr(data-n); position: absolute; top: -5px; left: -5px; min-width: 13px; height: 13px; padding: 0 3px;
+    border-radius: 50%; background: #34d399; color: #06121c; font-family: var(--mono); font-size: 8px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center; }
+  .src-foot { width: 100%; max-width: 560px; border-radius: 999px; padding: 8px 14px; text-align: center;
+    font-size: 10.8px; color: var(--dim); line-height: 1.6; border: 1px dashed rgba(34,211,238,.4); background: rgba(34,211,238,.05); }
+  .src-foot b { color: #67e8f9; }
+  .src-foot code { color: #c4b5fd; background: rgba(167,139,250,.1); padding: 1px 5px; border-radius: 5px; font-size: .92em; }
+
   /* 真实成功率 */
   .num-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
   .num { flex: 1; border-radius: 13px; padding: 13px 10px; text-align: center; background: var(--card); border: 1px solid var(--line); }
@@ -166,9 +191,10 @@
   <button class="on" title="封面"></button>
   <button title="STEP 1 两条通道"></button>
   <button title="STEP 2 感知动作闭环"></button>
-  <button title="STEP 3 混合定位"></button>
-  <button title="STEP 4 真实水平"></button>
-  <button title="STEP 5 风险与边界"></button>
+  <button title="STEP 3 语义树从哪来"></button>
+  <button title="STEP 4 混合定位"></button>
+  <button title="STEP 5 真实水平"></button>
+  <button title="STEP 6 风险与边界"></button>
   <button title="总结"></button>
 </nav>
 
@@ -240,35 +266,79 @@
   <footer class="scr-foot rv d6">💡 与普通工具调用的区别：<b>观察不是结构化 JSON，而是一整屏像素</b> —— 每步都要重新「看」</footer>
 </section>
 
-<!-- 屏4 · STEP 3 混合定位 -->
+<!-- 屏4 · STEP 3 语义树从哪来 -->
+<section class="screen s-tree">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>语义树从哪来</div>
+    <h2 class="rv d2">先有一张「可点元素清单」</h2>
+    <p class="scr-desc rv d2">坐标点击的前提，是知道屏幕上<b style="color:#c3cde2">每个元素是什么、在哪、能不能点</b>。这棵语义树有两个来源：平台白送的，与 CUA 自己用截图建的</p>
+  </header>
+  <div class="stage">
+    <div class="src-row">
+      <div class="src platform rv d3">
+        <h4>① 平台给的无障碍树</h4>
+        <div class="pipe">
+          <b>浏览器</b>：DOM → AX 树<br>
+          （CDP: Accessibility.getFullAXTree）<br>
+          <b>桌面</b>：UI Automation / AT-SPI / AX API<br>
+          → role · name · ref · bounds
+        </div>
+        <div class="axmini">
+          <span class="r">dialog</span>「登录」<br>
+          &nbsp;&nbsp;├ <span class="r">textbox</span>「账号」 ref=s1e2<br>
+          &nbsp;&nbsp;└ <span class="r">button</span>「提交」 ref=s1e5
+        </div>
+      </div>
+      <div class="src vision rv d4">
+        <h4>② 视觉自建：Set-of-Mark</h4>
+        <div class="pipe">
+          截图 → 视觉模型检测可交互元素<br>
+          → OCR/图标/布局识别语义<br>
+          → <b>逐个画锚点编号，建元素表</b>
+        </div>
+        <div class="som">
+          <i></i><i class="hit" data-n="1"></i><i></i><i class="hit" data-n="2"></i><i></i><i></i>
+          <i class="hit" data-n="3"></i><i></i><i></i><i class="hit" data-n="4"></i><i></i><i></i>
+        </div>
+      </div>
+    </div>
+    <div class="src-foot rv d5">
+      原生控件齐全 → 直接读平台树（精确、免费）；<b>canvas / 自绘 UI / 远程桌面 / 老软件没有树</b> → 用 <code>SoM</code> 从像素现造一棵<br>
+      两种来源都产出同一种东西：<b>带语义与坐标的元素清单</b>，下一步再融合
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 06 期那张 1.2k token 的 a11y 树是「白送」的特例；大多数 GUI 没有说明书，CUA 得学会自己给像素<b>贴标签</b></footer>
+</section>
+
+<!-- 屏5 · STEP 4 混合定位 -->
 <section class="screen s-a11y">
   <header class="scr-head">
-    <div class="step-badge rv d1"><b>STEP 3</b>纯坐标不够，混合定位登场</div>
+    <div class="step-badge rv d1"><b>STEP 4</b>纯坐标不够，两棵树融合</div>
     <h2 class="rv d1">给像素配上界面的语义地图</h2>
-    <p class="scr-desc rv d2">纯截图点击又慢又容易偏：现代 CUA 同时读取系统的<b style="color:#c3cde2">无障碍树（accessibility tree）</b>——界面元素自带的结构化标签</p>
+    <p class="scr-desc rv d2">两份元素清单按<b style="color:#c3cde2">坐标对齐</b>合并：平台树有 ref 就用 ref，缺树的区域用 SoM 编号兜底，模型看到的是一张「带编号的截图 + 元素表」</p>
   </header>
   <div class="stage">
     <div class="mix-row">
       <div class="mix eye rv d2">
-        <h4>📸 截图（视觉）</h4>
-        <p>理解布局、图片、颜色、弹窗；处理没有标签的自绘界面</p>
-        <div class="ex">canvas 游戏、图表<br>自定义下拉、验证码式干扰</div>
+        <h4>📸 SoM 视觉树</h4>
+        <p>截图上叠加锚点编号，模型说「点 #3」；覆盖无 a11y 的自绘界面</p>
+        <div class="ex">canvas 游戏、图表<br>远程桌面、老软件</div>
       </div>
       <div class="mix tree rv d3">
-        <h4>🌳 a11y 树（语义）</h4>
-        <p>每个可交互元素有名字、角色、引用（ref）：模型说「点 ref=s1e5」而非猜坐标</p>
+        <h4>🌳 a11y 平台树</h4>
+        <p>有名字、角色、引用（ref）时优先用：模型说「点 ref=s1e5」而非猜像素</p>
         <div class="ex">button「提交」 ref=s1e5<br>textbox「搜索」 ref=s1e2</div>
       </div>
     </div>
-    <div class="mix-note rv d4">06 期讲过 CDP 把 8.2MB 的 DOM 快照精炼成 <b>1.2k token 的 a11y 树</b> —— CUA 借用同一招：<b style="color:#c3cde2">截图给「画面感」，a11y 给「精准坐标」</b>，两者混合显著降低误点</div>
+    <div class="mix-note rv d4">06 期讲过 CDP 把 8.2MB 的 DOM 快照精炼成 <b>1.2k token 的 a11y 树</b> —— 有树时它是最快的语义来源；没树时 SoM 视觉树补位：<b style="color:#c3cde2">同一个编号体系，两种建立方式</b></div>
   </div>
   <footer class="scr-foot rv d6">💡 这正是 AI 19 期「粗筛 + 精读」分工的界面版：<b>视觉理解语义，结构保证精确</b></footer>
 </section>
 
-<!-- 屏5 · STEP 4 真实水平 -->
+<!-- 屏6 · STEP 5 真实水平 -->
 <section class="screen s-real">
   <header class="scr-head">
-    <div class="step-badge rv d1"><b>STEP 4</b>它到底有多能干</div>
+    <div class="step-badge rv d1"><b>STEP 5</b>它到底有多能干</div>
     <h2 class="rv d1">定速巡航，不是自动驾驶</h2>
     <p class="scr-desc rv d2">用跨操作系统真实任务基准 OSWorld 衡量（含网页、表格、文件操作），首发模型成功率仅约一成半，远低于演示视频的观感</p>
   </header>
@@ -286,10 +356,10 @@
   <footer class="scr-foot rv d6">💡 11 期的铁律在像素世界加倍成立：<b>步骤越多越易漂</b> —— MAX_LOOPS、截图复核、可随时接管缺一不可</footer>
 </section>
 
-<!-- 屏6 · STEP 5 风险与边界 -->
+<!-- 屏7 · STEP 6 风险与边界 -->
 <section class="screen s-risk">
   <header class="scr-head">
-    <div class="step-badge rv d1"><b>STEP 5</b>像素世界的注入面</div>
+    <div class="step-badge rv d1"><b>STEP 6</b>像素世界的注入面</div>
     <h2 class="rv d1">屏幕上的字，也可能是指令</h2>
   </header>
   <div class="stage">
@@ -316,10 +386,10 @@
   <header class="scr-head">
     <div class="step-badge rv d1"><b>RECAP</b>全景</div>
     <h2 class="rv d1">给 Agent 一双能操作世界的手</h2>
-    <p class="scr-desc rv d2">像素通道 → 截图闭环 → a11y 混合定位 → 诚实的成功率 → 视觉域安全边界</p>
+    <p class="scr-desc rv d2">像素通道 → 截图闭环 → 建语义树（a11y/SoM）→ 融合定位 → 诚实的成功率与安全边界</p>
   </header>
   <div class="stage">
-    <div class="sum-flow rv d2"><span>截图</span><i>→</i><span>理解</span><i>→</i><span>坐标动作</span><i>→</i><span>新截图</span><i>→</i><span>done/接管</span></div>
+    <div class="sum-flow rv d2"><span>截图</span><i>→</i><span>a11y/SoM 建树</span><i>→</i><span>融合定位</span><i>→</i><span>坐标动作</span><i>→</i><span>done/接管</span></div>
     <div class="adv-grid">
       <div class="adv rv d3">
         <div class="adv-ico">🖥️</div>
@@ -327,7 +397,7 @@
       </div>
       <div class="adv rv d4">
         <div class="adv-ico">🌳</div>
-        <div><b>截图 + a11y 树混合</b><p>视觉负责画面理解，无障碍树的 ref 提供精确锚点；本质是 06 期 a11y 精炼与 AI 19 期「语义+精确」分工在 GUI 上的重演</p></div>
+        <div><b>语义树：白送的与自建的</b><p>平台无障碍树（CDP/UI Automation）免费提供 role·name·ref；canvas/远程桌面等无树区域由视觉 SoM 检测元素、画锚点编号现造一棵，两树按坐标融合定位</p></div>
       </div>
       <div class="adv rv d5">
         <div class="adv-ico">🛟</div>
