@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="LLM 模型算法原理 · 02 损失与学习：logits→softmax、交叉熵 −log p 数值直觉（0.105 vs 4.6）、反向传播链式法则、梯度下降与学习率（损失景观下山），逐屏动画演示">
+<title>损失与学习 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14;
+    --ink: #e8eefc;
+    --dim: #8b96ad;
+    --cyan: #22d3ee;
+    --purple: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #fb7185;
+    --card: rgba(255,255,255,.05);
+    --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+
+  .dots {
+    position: fixed; right: 9px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 11px; z-index: 60;
+  }
+  .dots button {
+    width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0;
+    background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s;
+  }
+  .dots button.on { background: var(--cyan); transform: scale(1.4); box-shadow: 0 0 10px rgba(34,211,238,.85); }
+
+  .screen {
+    position: relative; z-index: 1;
+    height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always;
+    overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before {
+    content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%);
+  }
+  .s-hero { --glow: rgba(34,211,238,.10); }
+  .s-soft { --glow: rgba(52,211,153,.11); }
+  .s-ent  { --glow: rgba(251,113,133,.10); }
+  .s-bp   { --glow: rgba(167,139,250,.11); }
+  .s-desc { --glow: rgba(251,191,36,.09); }
+  .s-sum  { --glow: rgba(244,114,182,.08); }
+
+  .scr-head {
+    width: 100%; max-width: 640px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .step-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07);
+    padding: 4px 13px; border-radius: 999px;
+  }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code { color: var(--cyan); font-size: .92em; background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px; }
+  .code-chip {
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap; scrollbar-width: none;
+  }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage {
+    position: relative; z-index: 1; flex: 1; min-height: 0;
+    width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 13px;
+  }
+  .scr-foot {
+    width: 100%; max-width: 640px; text-align: center;
+    font-size: 12px; line-height: 1.65; color: var(--dim);
+  }
+  .scr-foot b { color: #c3cde2; }
+
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; }
+  .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; }
+  .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; }
+  .screen.active .d6 { animation-delay: 1.15s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+  @keyframes msgIn { from { opacity: 0; transform: translateY(16px) scale(.97); } to { opacity: 1; transform: none; } }
+  @keyframes glowGood { 0%,100% { box-shadow: 0 0 0 rgba(52,211,153,0) } 50% { box-shadow: 0 0 22px rgba(52,211,153,.3) } }
+  @keyframes badGlow { 0%,100% { box-shadow: 0 0 0 rgba(251,113,133,0) } 50% { box-shadow: 0 0 20px rgba(251,113,133,.25) } }
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+
+  /* ============ 屏1 · 封面 ============ */
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker {
+    font-size: 10px; letter-spacing: .28em; color: var(--dim);
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 6px 16px; border-radius: 999px;
+  }
+  h1 { font-size: clamp(34px, 9vw, 54px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad { background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node {
+    font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line); white-space: nowrap;
+  }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i { position: absolute; top: 50%; transform: translateY(-50%); left: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); opacity: 0; }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint {
+    position: absolute; bottom: calc(16px + env(safe-area-inset-bottom));
+    left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em;
+  }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* ============ 概率条组件（复用） ============ */
+  .prob-list { display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 560px; }
+  .prob {
+    display: grid; grid-template-columns: 82px 1fr 62px;
+    align-items: center; gap: 10px;
+    padding: 7px 12px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 12.5px; font-weight: 700; opacity: 0;
+  }
+  .prob .bar { height: 9px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .prob .bar i { display: block; height: 100%; width: 0; border-radius: 99px; }
+  .prob .pct { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--dim); text-align: right; }
+  .pc0 { border-color: rgba(52,211,153,.45); color: #6ee7b7; } .pc0 .bar i { background: var(--green); }
+  .pc1 { color: #67e8f9; } .pc1 .bar i { background: var(--cyan); }
+  .pc2 { color: #c4b5fd; } .pc2 .bar i { background: var(--purple); }
+  .pcr { border-color: rgba(251,113,133,.45); color: #ffb9c4; } .pcr .bar i { background: var(--red); }
+  @keyframes barGrow { to { width: var(--w); } }
+
+  /* ============ 屏2 · STEP 1 softmax ============ */
+  .grp-label {
+    font-family: var(--mono); font-size: 10px; color: var(--dim); letter-spacing: .08em;
+    width: 100%; max-width: 560px; text-align: left; opacity: 0;
+  }
+  .s-soft.active .grp-label { animation: rise .4s ease both; }
+  .s-soft.active .grp-label:nth-of-type(1) { animation-delay: .4s; }
+  .s-soft.active .grp-label:nth-of-type(3) { animation-delay: 1.7s; }
+  .s-soft.active .prob { animation: msgIn .45s ease both; }
+  .s-soft.active .prob .bar i { animation: barGrow .9s cubic-bezier(.25,1,.4,1) both; }
+  .s-soft.active .grp1 .prob { animation-delay: .55s, .75s, .95s; }
+  .s-soft.active .grp1 .prob:nth-child(2) .bar i { animation-delay: 1s; }
+  .s-soft.active .grp1 .prob:nth-child(3) .bar i { animation-delay: 1.15s; }
+  .s-soft.active .grp1 .prob:nth-child(4) .bar i { animation-delay: 1.3s; }
+  .s-soft.active .grp2 .prob { animation-delay: 2.3s, 2.5s, 2.7s; }
+  .s-soft.active .grp2 .prob:nth-child(2) .bar i { animation-delay: 2.75s; }
+  .s-soft.active .grp2 .prob:nth-child(3) .bar i { animation-delay: 2.9s; }
+  .s-soft.active .grp2 .prob:nth-child(4) .bar i { animation-delay: 3.05s; }
+  .s-soft.active .soft-note { animation: rise .6s ease 3.4s both; }
+  .soft-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .soft-note b { color: #6ee7b7; }
+
+  /* ============ 屏3 · STEP 2 交叉熵 ============ */
+  .ent-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .ent {
+    flex: 1; text-align: center; padding: 14px 12px; border-radius: 14px;
+    background: var(--card); border: 1px solid var(--line); opacity: 0;
+  }
+  .ent .p { font-family: var(--mono); font-size: 12px; color: var(--dim); }
+  .ent .loss { font-family: var(--mono); font-size: clamp(24px, 7vw, 34px); font-weight: 800; margin: 6px 0 4px; }
+  .ent small { font-size: 10.5px; color: var(--dim); line-height: 1.6; display: block; }
+  .ent.good { border-color: rgba(52,211,153,.45); }
+  .ent.good .loss { color: #6ee7b7; }
+  .ent.bad { border-color: rgba(251,113,133,.45); }
+  .ent.bad .loss { color: #ffb9c4; }
+  .s-ent.active .ent { animation: msgIn .55s ease both; }
+  .s-ent.active .ent.good { animation-delay: .4s; }
+  .s-ent.active .ent.bad { animation-delay: 1.2s, 2s; animation-name: msgIn, badGlow; animation-duration: .55s, 2.4s; animation-iteration-count: 1, infinite; }
+  .s-ent.active .ent-note { animation: rise .6s ease 2.6s both; }
+  .ent-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .ent-note b { color: #fda4af; }
+
+  /* ============ 屏4 · STEP 3 反向传播 ============ */
+  .bp-chain { display: flex; flex-direction: column-reverse; gap: 6px; width: 100%; max-width: 560px; }
+  .bp {
+    display: grid; grid-template-columns: 92px 1fr 66px; gap: 9px; align-items: center;
+    padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 11.5px; opacity: 0;
+  }
+  .bp .layer { font-weight: 700; color: #c3cde2; }
+  .bp p { font-size: 10.5px; color: var(--dim); line-height: 1.55; }
+  .bp .gr { font-family: var(--mono); font-size: 10px; text-align: right; }
+  .bp1 { border-color: rgba(251,113,133,.45); }
+  .bp2 { border-color: rgba(251,191,36,.4); }
+  .bp3 { border-color: rgba(34,211,238,.4); }
+  .bp4 { border-color: rgba(52,211,153,.4); }
+  .bp1 .gr { color: var(--red); }
+  .bp2 .gr { color: var(--amber); }
+  .bp3 .gr { color: var(--cyan); }
+  .bp4 .gr { color: var(--green); }
+  .s-bp.active .bp { animation: msgIn .45s ease both; }
+  .s-bp.active .bp:nth-of-type(1) { animation-delay: .4s; }
+  .s-bp.active .bp:nth-of-type(2) { animation-delay: .85s; }
+  .s-bp.active .bp:nth-of-type(3) { animation-delay: 1.3s; }
+  .s-bp.active .bp:nth-of-type(4) { animation-delay: 1.75s; }
+  .bp-arrows { display: flex; gap: 0; width: 100%; max-width: 560px; opacity: 0; }
+  .bp-arrows i { flex: 1; text-align: center; color: var(--purple); font-style: normal; font-size: 13px; }
+  .s-bp.active .bp-arrows { animation: rise .4s ease 2.2s both; }
+  .s-bp.active .bp-note { animation: rise .6s ease 2.7s both; }
+  .bp-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .bp-note b { color: #c4b5fd; }
+
+  /* ============ 屏5 · STEP 4 梯度下降 ============ */
+  .valley-box {
+    width: 100%; max-width: 560px;
+    border-radius: 14px; overflow: hidden;
+    border: 1px solid var(--line); background: var(--card);
+    opacity: 0;
+  }
+  .valley-box svg { display: block; width: 100%; height: auto; }
+  .s-desc.active .valley-box { animation: msgIn .55s ease .4s both; }
+  .lr-cards { display: flex; gap: 8px; width: 100%; max-width: 560px; }
+  .lrc {
+    flex: 1; text-align: center; padding: 10px 8px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 10.5px; color: var(--dim); line-height: 1.6; opacity: 0;
+  }
+  .lrc b { display: block; font-size: 12px; margin-bottom: 3px; }
+  .lrc.ok { border-color: rgba(52,211,153,.45); } .lrc.ok b { color: #a7f3d0; }
+  .lrc.big { border-color: rgba(251,113,133,.45); } .lrc.big b { color: #ffb9c4; }
+  .lrc.small { border-color: rgba(251,191,36,.45); } .lrc.small b { color: #fde68a; }
+  .s-desc.active .lr-cards { animation: msgIn .5s ease 2s both; }
+  .s-desc.active .lr-cards .lrc:nth-child(1) { animation-delay: 2.1s; }
+  .s-desc.active .lr-cards .lrc:nth-child(2) { animation-delay: 2.3s; }
+  .s-desc.active .lr-cards .lrc:nth-child(3) { animation-delay: 2.5s; }
+  .s-desc.active .desc-note { animation: rise .6s ease 3.1s both; }
+  .desc-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .desc-note b { color: #6ee7b7; }
+
+  /* ============ 屏6 · 总结 ============ */
+  .sum-flow {
+    display: flex; gap: 4px; align-items: center; justify-content: center;
+    flex-wrap: wrap; font-size: 10px; color: var(--dim);
+  }
+  .sum-flow span { border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv {
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px 15px;
+  }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote {
+    font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center;
+    line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .replay {
+    font-size: 12.5px; color: #06121c; background: var(--cyan);
+    border: none; padding: 10px 26px; border-radius: 999px;
+    font-weight: 700; cursor: pointer; letter-spacing: .06em;
+  }
+  .replay:active { transform: scale(.96); }
+  .series-badge {
+    position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px;
+    font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em;
+  }
+
+  @media (max-height: 560px) {
+    .screen { overflow-y: auto; justify-content: flex-start; }
+    .stage { flex: 0 0 auto; padding: 14px 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition: none !important; scroll-behavior: auto !important;
+    }
+    .rv, .prob, .grp-label, .soft-note, .ent, .ent-note, .bp, .bp-arrows, .bp-note,
+    .valley-box, .lr-cards, .desc-note {
+      opacity: 1 !important; transform: none !important; filter: none !important;
+    }
+    .prob .bar i { width: var(--w) !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面" aria-label="封面"></button>
+  <button title="STEP 1 softmax" aria-label="softmax"></button>
+  <button title="STEP 2 交叉熵" aria-label="交叉熵"></button>
+  <button title="STEP 3 反向传播" aria-label="反向传播"></button>
+  <button title="STEP 4 梯度下降" aria-label="梯度下降"></button>
+  <button title="总结" aria-label="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">LLM 模型算法原理 · 02</div>
+    <h1 class="rv d2">损失与学习<br><span class="grad">模型的自省</span></h1>
+    <p class="hero-sub rv d3">softmax · 交叉熵 · 反向传播 · 梯度下降 · 逐屏动画演示</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">🎯 预测</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">📏 量错</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">⛰️ 下山</span>
+    </div>
+    <p class="hero-quote rv d5">「模型每进步一点，都被批改过亿万次」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 softmax -->
+<section class="screen s-soft">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>softmax</div>
+    <h2 class="rv d1">原始分数，变成概率</h2>
+    <p class="scr-desc rv d2">模型输出的 logits 是任意大小的分数 —— softmax 用 exp 归一化，压成<b>和为 1 的概率</b></p>
+    <div class="code-chip rv d2">softmax(xᵢ) = eˣⁱ ÷ Σeˣʲ · 例：3.2 → <b>71.4%</b></div>
+  </header>
+  <div class="stage">
+    <div class="grp-label grp1">① logits（原始分数，可正可负可大可小）</div>
+    <div class="prob-list grp1">
+      <div class="prob pc0"><span>猫</span><span class="bar"><i style="--w:100%"></i></span><span class="pct">3.2</span></div>
+      <div class="prob pc1"><span>狗</span><span class="bar"><i style="--w:66%"></i></span><span class="pct">2.1</span></div>
+      <div class="prob pc2"><span>鱼</span><span class="bar"><i style="--w:16%"></i></span><span class="pct">0.5</span></div>
+    </div>
+    <div class="grp-label grp2">② softmax 之后（概率，和为 100%）</div>
+    <div class="prob-list grp2">
+      <div class="prob pc0"><span>猫</span><span class="bar"><i style="--w:100%"></i></span><span class="pct">71.4%</span></div>
+      <div class="prob pc1"><span>狗</span><span class="bar"><i style="--w:33%"></i></span><span class="pct">23.8%</span></div>
+      <div class="prob pc2"><span>鱼</span><span class="bar"><i style="--w:7%"></i></span><span class="pct">4.8%</span></div>
+    </div>
+    <div class="soft-note rv d6">exp 放大差距：<b>分数高的词赢面更大，但每个词都保留一线机会</b> —— 这正是 12 期采样要的概率表</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 softmax 是<b>「分数 → 概率」的标准汇率兑换</b></footer>
+</section>
+
+<!-- 屏3 · STEP 2 交叉熵 -->
+<section class="screen s-ent">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>交叉熵</div>
+    <h2 class="rv d1">损失 = −log(正确答案的概率)</h2>
+    <p class="scr-desc rv d2">训练的「批改老师」只看一件事：<b>你给正确答案的概率有多高</b></p>
+    <div class="code-chip rv d2">loss = −ln p · 对数曲线：<b>越自信地错，罚得越狠</b></div>
+  </header>
+  <div class="stage">
+    <div class="ent-row">
+      <div class="ent good">
+        <span class="p">正确词概率 p = 0.9</span>
+        <div class="loss">0.105</div>
+        <small>−ln 0.9 ≈ 0.105<br>自信且答对 —— 温和的小罚单</small>
+      </div>
+      <div class="ent bad">
+        <span class="p">正确词概率 p = 0.01</span>
+        <div class="loss">4.605</div>
+        <small>−ln 0.01 ≈ 4.6<br><b>自信地错 —— 天价罚单（差 44 倍）</b></small>
+      </div>
+    </div>
+    <div class="ent-note rv d5">损失函数从不问「你答了什么」—— <b>只问「你给正确答案留了多少概率」</b></div>
+  </div>
+  <footer class="scr-foot rv d6">💡 交叉熵专治<b>自信的错误</b> —— 罚单金额是对数的</footer>
+</section>
+
+<!-- 屏4 · STEP 3 反向传播 -->
+<section class="screen s-bp">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>反向传播</div>
+    <h2 class="rv d1">从损失出发，层层倒推「怪谁」</h2>
+    <p class="scr-desc rv d2">链式法则把损失的责任，沿着网络<b>从输出层倒推回输入层</b>，每个权重分到一份梯度</p>
+    <div class="code-chip rv d2">链式法则：∂L/∂w 逐层相乘回传</div>
+  </header>
+  <div class="stage">
+    <div class="bp-chain">
+      <div class="bp bp1"><span class="layer">输出层</span><p>概率没给足正确答案 —— 直接责任最大</p><span class="gr">梯度大</span></div>
+      <div class="bp bp2"><span class="layer">FFN 层</span><p>上一步变换带了偏差 —— 分到一部分责任</p><span class="gr">梯度中</span></div>
+      <div class="bp bp3"><span class="layer">注意力层</span><p>关注点略有偏移 —— 责任继续传导</p><span class="gr">梯度中↓</span></div>
+      <div class="bp bp4"><span class="layer">输入 embedding</span><p>责任最稀薄 —— 但仍在（残差通道保它不归零，04 期）</p><span class="gr">梯度小≠0</span></div>
+    </div>
+    <div class="bp-arrows"><i>↑</i><i>↑</i><i>↑</i></div>
+    <div class="bp-note rv d5">类比：菜难吃，主厨顺着工序<b>逐环节追责</b> —— 每道工序都知道自己该改多少</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 反向传播 = <b>责任倒推算法</b> —— 亿万参数各自领到整改清单</footer>
+</section>
+
+<!-- 屏5 · STEP 4 梯度下降 -->
+<section class="screen s-desc">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>梯度下降</div>
+    <h2 class="rv d1">损失是座山，参数是登山人</h2>
+    <p class="scr-desc rv d2">梯度指向<b>最陡的上坡</b> —— 沿反方向迈一步，损失就降一点</p>
+    <div class="code-chip rv d2">新参数 = 旧参数 − <b>学习率</b> × 梯度</div>
+  </header>
+  <div class="stage">
+    <div class="valley-box">
+      <svg viewBox="0 0 240 100" xmlns="http://www.w3.org/2000/svg">
+        <path d="M0,14 Q120,120 240,14" fill="none" stroke="rgba(148,163,184,.5)" stroke-width="2.5"/>
+        <circle cx="52" cy="53" r="5" fill="#fbbf24"><title>步幅太小</title></circle>
+        <circle cx="120" cy="91" r="5.5" fill="#34d399"><title>步幅刚好</title></circle>
+        <circle cx="196" cy="57" r="5" fill="#fb7185"><title>步幅太大</title></circle>
+        <text x="52" y="44" text-anchor="middle" font-size="7" fill="#fde68a" font-family="monospace">太小·半山腰</text>
+        <text x="120" y="83" text-anchor="middle" font-size="7" fill="#6ee7b7" font-family="monospace">刚好·谷底</text>
+        <text x="196" y="48" text-anchor="middle" font-size="7" fill="#ffb9c4" font-family="monospace">太大·跨过谷底</text>
+      </svg>
+    </div>
+    <div class="lr-cards">
+      <div class="lrc ok"><b>🪜 学习率刚好</b>稳步下到谷底</div>
+      <div class="lrc big"><b>🦘 学习率过大</b>跨过谷底来回弹，损失反升</div>
+      <div class="lrc small"><b>🐌 学习率过小</b>走到天黑还在半山腰</div>
+    </div>
+    <div class="desc-note rv d5">Goodfellow 教材的描述：过大 → <b>剧烈震荡、损失反而显著上升</b>；过小 → learning proceeds slowly</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 训练 = 亿万次「预测 → 量错 → 倒推 → 下山」的循环（01 期）</footer>
+</section>
+
+<!-- 屏6 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">预测、量错、倒推、下山</h2>
+    <p class="scr-desc rv d2">logits → softmax → 交叉熵 → 反向传播 → 梯度下降</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>logits</span><i>→</i><span>softmax 概率</span><i>→</i><span>交叉熵罚单</span><i>→</i><span>反向追责</span><i>→</i><span>梯度下山</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">📊</div>
+        <div><b>softmax 定汇率</b><p>分数变概率 —— 差距放大但人人有份，是采样与训练共用的地基</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🧾</div>
+        <div><b>交叉熵开罚单</b><p>只看正确答案的概率 —— p=0.01 的自信错误，罚单是 p=0.9 的 44 倍</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">⛰️</div>
+        <div><b>学习率是步幅</b><p>太大跨越谷底来回弹，太小天黑还在半山腰 —— 训练崩了先查它</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“模型每进步一点，<br>都被批改过亿万次。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">LLM 模型算法原理 · 02 / 损失与学习篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else {
+    secs.forEach((s) => s.classList.add('active'));
+  }
+
+  dots.forEach((d, i) => d.addEventListener('click', () => {
+    secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+</script>
+</body>
+</html>

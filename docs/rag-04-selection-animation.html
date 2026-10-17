@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="AGENT 实战工坊 · 04 选题指南：选型四问、三大类型图谱（知识问答/分析生成/操作执行）、难度评级与推荐路线 —— 下一个实战项目选什么，逐屏动画演示">
+<title>AGENT 实战工坊 · 选题指南 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14;
+    --bg1: #0c1322;
+    --ink: #e8eefc;
+    --dim: #8b96ad;
+    --cyan: #22d3ee;
+    --purple: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #fb7185;
+    --card: rgba(255,255,255,.05);
+    --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+
+  /* ===== 右侧进度圆点 ===== */
+  .dots {
+    position: fixed; right: 9px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 11px; z-index: 60;
+  }
+  .dots button {
+    width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0;
+    background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s;
+  }
+  .dots button.on {
+    background: var(--cyan); transform: scale(1.4);
+    box-shadow: 0 0 10px rgba(34,211,238,.85);
+  }
+
+  /* ===== 整屏骨架 ===== */
+  .screen {
+    position: relative; z-index: 1;
+    height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always;
+    overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before {
+    content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%);
+  }
+  .s-hero  { --glow: rgba(34,211,238,.10); }
+  .s-ask   { --glow: rgba(52,211,153,.10); }
+  .s-map1  { --glow: rgba(34,211,238,.11); }
+  .s-map2  { --glow: rgba(167,139,250,.11); }
+  .s-map3  { --glow: rgba(251,113,133,.09); }
+  .s-stars { --glow: rgba(251,191,36,.09); }
+  .s-sum   { --glow: rgba(244,114,182,.08); }
+
+  .scr-head {
+    width: 100%; max-width: 640px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .step-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07);
+    padding: 4px 13px; border-radius: 999px;
+  }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code {
+    color: var(--cyan); font-size: .92em;
+    background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px;
+  }
+  .code-chip {
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage {
+    position: relative; z-index: 1; flex: 1; min-height: 0;
+    width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 13px;
+  }
+  .scr-foot {
+    width: 100%; max-width: 640px; text-align: center;
+    font-size: 12px; line-height: 1.65; color: var(--dim);
+  }
+  .scr-foot b { color: #c3cde2; }
+
+  /* ===== 通用入场动画 ===== */
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; }
+  .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; }
+  .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; }
+  .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  /* ===== 通用小组件 ===== */
+  .meta-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.65; }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(16px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes glowGood { 0%,100% { box-shadow: 0 0 0 rgba(52,211,153,0) } 50% { box-shadow: 0 0 22px rgba(52,211,153,.3) } }
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+
+  /* ============ 屏1 · 封面 ============ */
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker {
+    font-size: 10px; letter-spacing: .28em; color: var(--dim);
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 6px 16px; border-radius: 999px;
+  }
+  h1 { font-size: clamp(34px, 9vw, 54px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad {
+    background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node {
+    font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line); white-space: nowrap;
+  }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i {
+    position: absolute; top: 50%; transform: translateY(-50%); left: 0;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan); opacity: 0;
+  }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint {
+    position: absolute; bottom: calc(16px + env(safe-area-inset-bottom));
+    left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em;
+  }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* ============ 屏2 · STEP 1 选型四问 ============ */
+  .ask-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .ask {
+    display: flex; gap: 13px; align-items: flex-start;
+    padding: 12px 15px; border-radius: 14px;
+    background: var(--card); border: 1px solid var(--line);
+    opacity: 0;
+  }
+  .ask .q-badge {
+    font-family: var(--mono); font-size: 10px; font-weight: 700;
+    width: 34px; height: 34px; border-radius: 10px; flex: none;
+    display: grid; place-items: center;
+    color: var(--green); border: 1px solid rgba(52,211,153,.45); background: rgba(52,211,153,.08);
+  }
+  .ask b { font-size: 13.5px; display: block; }
+  .ask code { color: #7dd3fc; font-size: .9em; }
+  .ask p { font-size: 11.5px; color: var(--dim); line-height: 1.65; margin-top: 3px; }
+  .s-ask.active .ask { animation: msgIn .5s ease both; }
+  .s-ask.active .ask:nth-child(1) { animation-delay: .4s; }
+  .s-ask.active .ask:nth-child(2) { animation-delay: .9s; }
+  .s-ask.active .ask:nth-child(3) { animation-delay: 1.4s; }
+  .s-ask.active .ask:nth-child(4) { animation-delay: 1.9s; }
+  .s-ask.active .ask-note { animation: rise .6s ease 2.5s both; }
+  .ask-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; }
+  .ask-note b { color: #a7f3d0; }
+
+  /* ============ 屏3-5 · 类型图谱 ============ */
+  .map-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .map {
+    display: flex; gap: 13px; align-items: flex-start;
+    padding: 12px 15px; border-radius: 14px;
+    background: var(--card); border: 1px solid var(--line);
+    opacity: 0;
+  }
+  .map .m-ico { font-size: 21px; flex: none; }
+  .map b { font-size: 13.5px; display: block; }
+  .map code { color: #7dd3fc; font-size: .9em; }
+  .map p { font-size: 11.5px; color: var(--dim); line-height: 1.65; margin-top: 3px; }
+  .map .m-tag {
+    display: inline-block; font-family: var(--mono); font-size: 9px; font-weight: 700;
+    letter-spacing: .06em; padding: 1px 7px; border-radius: 999px; margin-left: 6px;
+    vertical-align: 1px;
+  }
+  .mt-done { color: var(--green); border: 1px solid rgba(52,211,153,.4); background: rgba(52,211,153,.08); }
+  .mt-hot  { color: var(--amber); border: 1px solid rgba(251,191,36,.4); background: rgba(251,191,36,.08); }
+  .mt-rec  { color: var(--cyan); border: 1px solid rgba(34,211,238,.4); background: rgba(34,211,238,.08); }
+  .m1 { border-color: rgba(34,211,238,.4); }
+  .m2 { border-color: rgba(167,139,250,.45); }
+  .m3 { border-color: rgba(52,211,153,.45); }
+  .s-map1.active .map, .s-map2.active .map, .s-map3.active .map { animation: msgIn .5s ease both; }
+  .s-map1.active .map:nth-child(1), .s-map2.active .map:nth-child(1), .s-map3.active .map:nth-child(1) { animation-delay: .4s; }
+  .s-map1.active .map:nth-child(2), .s-map2.active .map:nth-child(2), .s-map3.active .map:nth-child(2) { animation-delay: .95s; }
+  .s-map1.active .map:nth-child(3), .s-map2.active .map:nth-child(3), .s-map3.active .map:nth-child(3) { animation-delay: 1.5s; }
+  .s-map1.active .map-note, .s-map2.active .map-note, .s-map3.active .map-note { animation: rise .6s ease 2.2s both; }
+  .map-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .map-note b { color: #c3cde2; }
+  .s-map3.active .m-gate { animation: msgIn .5s ease 2.2s both, mGlow 2.4s ease-in-out 2.8s infinite; }
+  @keyframes mGlow { 0%,100% { box-shadow: 0 0 0 rgba(251,113,133,0) } 50% { box-shadow: 0 0 18px rgba(251,113,133,.22) } }
+
+  /* ============ 屏6 · STEP 5 难度路线图 ============ */
+  .rate-list { display: flex; flex-direction: column; gap: 7px; width: 100%; max-width: 560px; }
+  .rate-head, .rate-row {
+    display: grid; grid-template-columns: 150px 1fr 1fr 1fr; gap: 6px; align-items: center;
+    padding: 8px 13px; border-radius: 12px;
+  }
+  .rate-head {
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; color: var(--dim);
+    background: none; border: none;
+    opacity: 0;
+  }
+  .rate-head span:not(:first-child) { text-align: center; }
+  .rate-row {
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 12px; opacity: 0;
+  }
+  .rate-row b { font-size: 12.5px; color: #c3cde2; }
+  .rate-row .st { text-align: center; font-size: 11px; letter-spacing: 1px; white-space: nowrap; }
+  .st-on { color: var(--amber); }
+  .st-off { color: rgba(148,163,184,.3); }
+  .rate-row.rec { border-color: rgba(52,211,153,.5); }
+  .s-stars.active .rate-head { animation: rise .5s ease .3s both; }
+  .s-stars.active .rate-row { animation: msgIn .45s ease both; }
+  .s-stars.active .rate-row:nth-of-type(1) { animation-delay: .55s; }
+  .s-stars.active .rate-row:nth-of-type(2) { animation-delay: .85s; }
+  .s-stars.active .rate-row:nth-of-type(3) { animation-delay: 1.15s; }
+  .s-stars.active .rate-row:nth-of-type(4) { animation-delay: 1.45s, 2.3s; animation-name: msgIn, glowGood; animation-duration: .45s, 2.4s; animation-iteration-count: 1, infinite; }
+  .s-stars.active .rate-row:nth-of-type(5) { animation-delay: 1.75s; }
+  .s-stars.active .route { animation: rise .6s ease 2.7s both; }
+  .route {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    flex-wrap: wrap; font-family: var(--mono); font-size: 10.5px; color: #9fb3d1;
+    opacity: 0;
+  }
+  .route span {
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  .route i { color: var(--cyan); font-style: normal; }
+  .route .now { border-color: rgba(52,211,153,.5); color: #6ee7b7; }
+
+  /* ============ 屏7 · 总结 ============ */
+  .sum-flow {
+    display: flex; gap: 4px; align-items: center; justify-content: center;
+    flex-wrap: wrap; font-size: 10px; color: var(--dim);
+  }
+  .sum-flow span {
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv {
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px 15px;
+  }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote {
+    font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center;
+    line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .replay {
+    font-size: 12.5px; color: #06121c; background: var(--cyan);
+    border: none; padding: 10px 26px; border-radius: 999px;
+    font-weight: 700; cursor: pointer; letter-spacing: .06em;
+  }
+  .replay:active { transform: scale(.96); }
+  .series-badge {
+    position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px;
+    font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em;
+  }
+
+  /* ============ 通用关键帧 ============ */
+  @keyframes bob2 { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+
+  /* ============ 兜底与无障碍 ============ */
+  @media (max-height: 560px) {
+    .screen { overflow-y: auto; justify-content: flex-start; }
+    .stage { flex: 0 0 auto; padding: 14px 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition: none !important; scroll-behavior: auto !important;
+    }
+    .rv, .ask, .ask-note, .map, .map-note, .rate-head, .rate-row, .route {
+      opacity: 1 !important; transform: none !important; filter: none !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面" aria-label="封面"></button>
+  <button title="STEP 1 选型四问" aria-label="选型四问"></button>
+  <button title="STEP 2 知识问答族" aria-label="知识问答族"></button>
+  <button title="STEP 3 分析生成族" aria-label="分析生成族"></button>
+  <button title="STEP 4 操作执行族" aria-label="操作执行族"></button>
+  <button title="STEP 5 难度路线图" aria-label="难度路线图"></button>
+  <button title="总结" aria-label="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">AGENT 实战工坊 · 04 · 选题指南</div>
+    <h1 class="rv d2">下一个实战项目<br><span class="grad">选什么</span></h1>
+    <p class="hero-sub rv d3">九大类型 · 难度评级 · 推荐路线 · 逐屏动画演示</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">🗺️ 类型图谱</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">⭐ 难度评级</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">🧭 选型原则</span>
+    </div>
+    <p class="hero-quote rv d5">「选项目不是选架构 —— 是选你拿得到的数据」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 选型四问 -->
+<section class="screen s-ask">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>选型四问</div>
+    <h2 class="rv d1">动手之前，先问自己四句</h2>
+    <p class="scr-desc rv d2">知识问答能跑通，靠的不是架构聪明 —— 是「一本书就在手边」。这四问适用于任何选题</p>
+    <div class="code-chip rv d2">数据 → 复用 → 评测 → <b>风险</b></div>
+  </header>
+  <div class="stage">
+    <div class="ask-grid">
+      <div class="ask">
+        <span class="q-badge">Q1</span>
+        <div><b>数据拿得到吗？</b>
+        <p>公开数据集、免费 API、自己手上的语料 —— <code>没有数据的项目，架构再漂亮也是空转</code></p></div>
+      </div>
+      <div class="ask">
+        <span class="q-badge">Q2</span>
+        <div><b>架构复用多少？</b>
+        <p>五段流水线、工具循环、权限闸门、评估集 —— <code>积木能搬多少，成本就省多少</code></p></div>
+      </div>
+      <div class="ask">
+        <span class="q-badge">Q3</span>
+        <div><b>评测怎么定？</b>
+        <p>有没有客观对错：SQL 能不能跑通、题目有没有标准答案 —— <code>能自动判卷的项目才迭代得动</code></p></div>
+      </div>
+      <div class="ask">
+        <span class="q-badge">Q4</span>
+        <div><b>翻车代价多大？</b>
+        <p>只读不碰真实世界（查资料）随便试；会发消息、动浏览器、花钱的 —— <code>先建闸门再上线</code>（Hermes 09 期）</p></div>
+      </div>
+    </div>
+    <div class="ask-note rv d6">四问里 <b>Q1 权重最高</b> —— 数据决定项目能不能开始</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 知识问答赢在起点：<b>语料就是一本书，评测就是 50 个真实问题</b></footer>
+</section>
+
+<!-- 屏3 · STEP 2 知识问答族 -->
+<section class="screen s-map1">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>类型图谱 ①</div>
+    <h2 class="rv d1">知识问答族 —— 已经跑通</h2>
+    <p class="scr-desc rv d2">Anthropic、OpenAI 的官方示例集里都有它的身影，是公认的入门第一课</p>
+    <div class="code-chip rv d2">ingest → retrieve → rerank → generate → <b>cite/refuse</b></div>
+  </header>
+  <div class="stage">
+    <div class="map-grid">
+      <div class="map m1">
+        <div class="m-ico">📚</div>
+        <div><b>文档 / 书籍问答 <span class="m-tag mt-done">✓ 已做</span></b>
+        <p>《经典古诗文诵读》实战 demo —— 六个脚本 + Web 问答页，TF-IDF 检索 + LLM 有据回答</p></div>
+      </div>
+      <div class="map m2">
+        <div class="m-ico">🎧</div>
+        <div><b>智能客服 / 工单</b>
+        <p>路由分流 + 知识库检索 + 工单 API + 转人工 —— OpenAI、Anthropic、LangChain 官方示例集的固定嘉宾</p></div>
+      </div>
+      <div class="map m3">
+        <div class="m-ico">🧪</div>
+        <div><b>升级方向</b>
+        <p>TF-IDF 换语义向量 + rerank、加语义缓存、上 RAGAS 评测（忠实度 / 召回率）—— 现有 demo 的自然下一步</p></div>
+      </div>
+    </div>
+    <div class="map-note rv d5">这一族的价值：<b>语料随便换</b> —— 换教材是学科问答，换手册是客服，换 wiki 是企业知识库</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 打牢这一族，<b>后面每个项目都在复用它的五段流水线</b></footer>
+</section>
+
+<!-- 屏4 · STEP 3 分析生成族 -->
+<section class="screen s-map2">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>类型图谱 ②</div>
+    <h2 class="rv d1">分析生成族 —— 引入工具执行</h2>
+    <p class="scr-desc rv d2">从「答对」升级到「做对」：LLM 产出结构化结果，代码去执行，错了还能自修复</p>
+    <div class="code-chip rv d2">LLM 生成 SQL / 题目 → 执行 → <b>自动判卷</b></div>
+  </header>
+  <div class="stage">
+    <div class="map-grid">
+      <div class="map m3">
+        <div class="m-ico">📝</div>
+        <div><b>出题 / 教育 Agent <span class="m-tag mt-rec">首推</span></b>
+        <p>知识点抽取 → 生成题目+解析 → 评审 Agent 打分打回重写 —— <b>直接复用古诗文语料</b>，评测天然客观</p></div>
+      </div>
+      <div class="map m1">
+        <div class="m-ico">📊</div>
+        <div><b>CSV / SQL 数据问答 <span class="m-tag mt-hot">热度高</span></b>
+        <p>自然语言 → 生成 SQL → 执行 → 图表；有 BIRD 基准（12751 道真题，SOTA 82.95% vs 人类 92.96%）可对标</p></div>
+      </div>
+      <div class="map m2">
+        <div class="m-ico">📜</div>
+        <div><b>合同 / 文档审查</b>
+        <p>分条款抽取 → 并行审查投票 → 风险清单；公开数据集 CUAD 可用 —— 「并行 + 投票」的教科书场景</p></div>
+      </div>
+    </div>
+    <div class="map-note rv d5">这一族的命门：<b>结构化输出 + 评估集</b> —— SQL 跑不跑得通、题目对不对答案，机器自己能判卷</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 出题 Agent 是最顺的下一步：<b>语料、引用、评估全部复用</b></footer>
+</section>
+
+<!-- 屏5 · STEP 4 操作执行族 -->
+<section class="screen s-map3">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>类型图谱 ③</div>
+    <h2 class="rv d1">操作执行族 —— 碰真实世界</h2>
+    <p class="scr-desc rv d2">感知-行动循环：看一眼 → 决定点哪 → 执行 → 再看一眼 —— 张力最大，风险也最大</p>
+    <div class="code-chip rv d2">observe → decide → act → <b>observe…</b></div>
+  </header>
+  <div class="stage">
+    <div class="map-grid">
+      <div class="map m2">
+        <div class="m-ico">🌐</div>
+        <div><b>浏览器操作 Agent <span class="m-tag mt-hot">118k★</span></b>
+        <p>browser-use 开源爆火（118k star）；基准 WebArena / OSWorld（人类 72% vs 早期模型 12%）—— 差距就是空间</p></div>
+      </div>
+      <div class="map m1">
+        <div class="m-ico">💻</div>
+        <div><b>编码助手 <span class="m-tag mt-hot">叙事成熟</span></b>
+        <p>读 issue → 改文件 → 跑测试 → 失败回读报错再改；SWE-bench 2294 道真题，OpenHands 91k star —— 「测试当裁判」的循环最出彩</p></div>
+      </div>
+      <div class="map m3">
+        <div class="m-ico">📧</div>
+        <div><b>邮件 / 日程助理</b>
+        <p>分类 → 起草 → 写入日历前<b>人工确认</b> —— human-in-the-loop 卡点的标准示范</p></div>
+      </div>
+    </div>
+    <div class="map-note m-gate rv d5">这一族的命门：<b>权限闸门 + 沙箱</b> —— 会点真按钮、发真邮件的项目，先看 Hermes 09 期再动手</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 操作族翻车最贵 —— <b>先在沙箱里练，再碰真实世界</b></footer>
+</section>
+
+<!-- 屏6 · STEP 5 难度路线图 -->
+<section class="screen s-stars">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>难度路线图</div>
+    <h2 class="rv d1">星级评分与推荐路线</h2>
+    <p class="scr-desc rv d2">星级越少越容易（★=低难度）—— 按积木复用度排序，从会走的路走到要跑的路</p>
+    <div class="code-chip rv d2">评测基准：BIRD · SWE-bench · WebArena / OSWorld · RAGAS</div>
+  </header>
+  <div class="stage">
+    <div class="rate-list">
+      <div class="rate-head"><span>项目类型</span><span>数据获取</span><span>架构难度</span><span>评测难度</span></div>
+      <div class="rate-row"><b>文档知识问答</b><span class="st"><span class="st-on">★</span><span class="st-off">★★</span></span><span class="st"><span class="st-on">★★</span><span class="st-off">★</span></span><span class="st"><span class="st-on">★★</span><span class="st-off">★</span></span></div>
+      <div class="rate-row rec"><b>出题 / 教育 Agent</b><span class="st"><span class="st-on">★</span><span class="st-off">★★</span></span><span class="st"><span class="st-on">★★</span><span class="st-off">★</span></span><span class="st"><span class="st-on">★</span><span class="st-off">★★</span></span></div>
+      <div class="rate-row"><b>CSV / SQL 问答</b><span class="st"><span class="st-on">★★</span><span class="st-off">★</span></span><span class="st"><span class="st-on">★★</span><span class="st-off">★</span></span><span class="st"><span class="st-on">★</span><span class="st-off">★★</span></span></div>
+      <div class="rate-row rec"><b>浏览器操作</b><span class="st"><span class="st-on">★★</span><span class="st-off">★</span></span><span class="st"><span class="st-on">★★★</span></span><span class="st"><span class="st-on">★★</span><span class="st-off">★</span></span></div>
+      <div class="rate-row"><b>编码助手 / 深度研究</b><span class="st"><span class="st-on">★★</span><span class="st-off">★</span></span><span class="st"><span class="st-on">★★★</span></span><span class="st"><span class="st-on">★★</span><span class="st-off">★</span></span></div>
+    </div>
+    <div class="route">
+      <span class="now">✓ 知识问答（已跑通）</span><i>→</i>
+      <span>出题 Agent</span><i>→</i>
+      <span>SQL 问答</span><i>→</i>
+      <span>浏览器操作</span><i>→</i>
+      <span>多 Agent 协作</span>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 每走一步都在<b>复用上一步的积木</b> —— 路线比跳跃省一半力气</footer>
+</section>
+
+<!-- 屏7 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">选项目不是选架构</h2>
+    <p class="scr-desc rv d2">选型四问 → 三大类型图谱 → 星级路线 → 积木复用</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>选型四问</span><i>→</i><span>三大类型</span><i>→</i><span>星级路线</span><i>→</i><span>积木复用</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">📦</div>
+        <div><b>数据先行</b><p>书在手边所以知识问答先跑通 —— 没有数据的项目，架构再好也是空转</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🧩</div>
+        <div><b>积木复用</b><p>五段流水线、工具循环、权限闸门、评估集 —— 每个新项目都是旧积木的新拼法</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">🧭</div>
+        <div><b>评测先行</b><p>能自动判卷的项目才迭代得动 —— SQL 可执行、题目有答案，就是天然评分器</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“选项目不是选架构——<br>是选你拿得到的数据。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">AGENT 实战工坊 · 04 / 选题指南篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else {
+    secs.forEach((s) => s.classList.add('active'));
+  }
+
+  dots.forEach((d, i) => d.addEventListener('click', () => {
+    secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+</script>
+</body>
+</html>

@@ -69,18 +69,18 @@ Frontend (run from `frontend/`):
   `backend/app/data/saved_models/` (no database). The directory is git-ignored and
   created at runtime by `services/model_store.py`; don't commit model files.
 - `docs/` holds a self-contained animated demo series with an index page
-  (`index.html` links all of them): HERMES AGENT 对象拆解 ·01–19 (08 跨会话
-  记忆篇 is 前瞻演绎/designed extrapolation; 12–19 cover thinking-budget
-  loop integration, Skills progressive disclosure, hooks, sandbox/Auto
-  mode, the 2025–2026 MCP evolution, the A2A/multi-agent retrenchment,
-  harness/checkpoints, and CUA), AI 运作原理拆解 ·01–20
-  (13–20 cover Transformer anatomy, MoE, KV Cache/inference acceleration,
-  reasoning models & thinking chains, RLVR/GRPO & distillation, LoRA
-  finetuning, embeddings/reranking, and multimodality),
-  AGENT 开发避坑指南 ·01–05 (developer-facing pitfalls: tools, loop
-  cost, context engineering, evals, and prompt-injection attack surfaces),
-  and AGENT 实战工坊 ·01–05 (knowledge-QA RAG: ingest, dialogue, ship,
-  agentic retrieval, GraphRAG). None
+  (`index.html` links all of them): HERMES AGENT 对象拆解 ·01–18 (08 跨会话
+  记忆篇 is 前瞻演绎/designed extrapolation), AI 运作原理拆解 ·01–15,
+  LLM 模型算法原理 ·01–05 (embedding/loss/position-encoding/residual
+  algorithm internals + a worked vector-attention poem example), AGENT
+  开发避坑指南 ·01–04 (developer-facing
+  pitfalls), AGENT 实战工坊
+  ·01–04 (knowledge-QA RAG build walkthrough + project-selection guide), and
+  AGENT 模式进阶 ·01–06 (pat- prefix: Plan-and-Execute, Reflection, CoALA
+  memory extraction/routing, sliding-window/summarization compression, MCP
+  Host/Client/Server + tools/list discovery, soft-vs-hard guardrails). The
+  `docs/research/` subfolder holds protocol/spec research reports (not demos).
+  None
   are part of the Vite app — each demo is a single
   file (no build step, no external deps) using full-screen CSS scroll-snap
   sections where one animation segment plays per screen. Keep new demos in this

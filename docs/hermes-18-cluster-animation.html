@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="Hermes Agent 集群：API 池与 worker 池分离、状态外置（Postgres/Redis 摇人铃）、会话黏性 vs 叫号模式、KEDA 按队列深度扩缩容与优雅排空、lease 并发锁 —— 逐屏动画演示">
+<title>Hermes Agent 集群 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14;
+    --bg1: #0c1322;
+    --ink: #e8eefc;
+    --dim: #8b96ad;
+    --cyan: #22d3ee;
+    --purple: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #fb7185;
+    --card: rgba(255,255,255,.05);
+    --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+
+  /* ===== 右侧进度圆点 ===== */
+  .dots {
+    position: fixed; right: 9px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 11px; z-index: 60;
+  }
+  .dots button {
+    width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0;
+    background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s;
+  }
+  .dots button.on {
+    background: var(--cyan); transform: scale(1.4);
+    box-shadow: 0 0 10px rgba(34,211,238,.85);
+  }
+
+  /* ===== 整屏骨架 ===== */
+  .screen {
+    position: relative; z-index: 1;
+    height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always;
+    overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before {
+    content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%);
+  }
+  .s-hero   { --glow: rgba(34,211,238,.10); }
+  .s-arch   { --glow: rgba(52,211,153,.10); }
+  .s-state  { --glow: rgba(34,211,238,.11); }
+  .s-mode   { --glow: rgba(167,139,250,.11); }
+  .s-scale  { --glow: rgba(251,191,36,.09); }
+  .s-lock   { --glow: rgba(251,113,133,.08); }
+  .s-sum    { --glow: rgba(244,114,182,.08); }
+
+  .scr-head {
+    width: 100%; max-width: 640px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .step-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07);
+    padding: 4px 13px; border-radius: 999px;
+  }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code {
+    color: var(--cyan); font-size: .92em;
+    background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px;
+  }
+  .code-chip {
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage {
+    position: relative; z-index: 1; flex: 1; min-height: 0;
+    width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 13px;
+  }
+  .scr-foot {
+    width: 100%; max-width: 640px; text-align: center;
+    font-size: 12px; line-height: 1.65; color: var(--dim);
+  }
+  .scr-foot b { color: #c3cde2; }
+
+  /* ===== 通用入场动画 ===== */
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; }
+  .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; }
+  .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; }
+  .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  /* ===== 通用小组件 ===== */
+  .meta-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.65; }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(16px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes glowGood { 0%,100% { box-shadow: 0 0 0 rgba(52,211,153,0) } 50% { box-shadow: 0 0 22px rgba(52,211,153,.3) } }
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+
+  /* ============ 屏1 · 封面 ============ */
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker {
+    font-size: 10px; letter-spacing: .28em; color: var(--dim);
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 6px 16px; border-radius: 999px;
+  }
+  h1 { font-size: clamp(36px, 10vw, 58px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad {
+    background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node {
+    font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line); white-space: nowrap;
+  }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i {
+    position: absolute; top: 50%; transform: translateY(-50%); left: 0;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan); opacity: 0;
+  }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint {
+    position: absolute; bottom: calc(16px + env(safe-area-inset-bottom));
+    left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em;
+  }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* ============ 屏2 · STEP 1 典型架构 ============ */
+  .arch-flow { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 6px; opacity: 0; }
+  .arch {
+    display: grid; grid-template-columns: 86px 1fr; gap: 10px; align-items: center;
+    padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line);
+    opacity: 0;
+  }
+  .arch .a-tag { font-size: 11px; font-weight: 700; text-align: center; border-radius: 999px; padding: 5px 0; }
+  .arch p { font-size: 11px; color: var(--dim); line-height: 1.6; }
+  .arch p b { color: #c3cde2; }
+  .arch p code { color: #7dd3fc; font-size: .92em; }
+  .a1 { border-color: rgba(34,211,238,.4); }
+  .a1 .a-tag { color: var(--cyan); border: 1px solid rgba(34,211,238,.4); background: rgba(34,211,238,.08); }
+  .a2 { border-color: rgba(167,139,250,.45); }
+  .a2 .a-tag { color: var(--purple); border: 1px solid rgba(167,139,250,.4); background: rgba(167,139,250,.08); }
+  .a3 { border-color: rgba(251,191,36,.4); }
+  .a3 .a-tag { color: var(--amber); border: 1px solid rgba(251,191,36,.4); background: rgba(251,191,36,.08); }
+  .a4 { border-color: rgba(52,211,153,.45); }
+  .a4 .a-tag { color: var(--green); border: 1px solid rgba(52,211,153,.4); background: rgba(52,211,153,.08); }
+  .s-arch.active .arch-flow { animation: msgIn .5s ease .4s both; }
+  .s-arch.active .arch { animation: msgIn .45s ease both; }
+  .s-arch.active .arch:nth-child(2) { animation-delay: .7s; }
+  .s-arch.active .arch:nth-child(3) { animation-delay: 1s; }
+  .s-arch.active .arch:nth-child(4) { animation-delay: 1.3s; }
+  .s-arch.active .arch:nth-child(5) { animation-delay: 1.6s; }
+  .s-arch.active .arch-note { animation: rise .6s ease 2.2s both; }
+  .arch-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .arch-note b { color: #a7f3d0; }
+
+  /* ============ 屏3 · STEP 2 状态外置 ============ */
+  .state-cmp { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .scol {
+    flex: 1; padding: 12px 13px; border-radius: 14px;
+    background: var(--card); border: 1px solid var(--line);
+    opacity: 0;
+  }
+  .scol b { font-size: 13px; display: block; margin-bottom: 7px; }
+  .scol p { font-size: 11.5px; color: var(--dim); line-height: 1.7; }
+  .scol p b { color: #c3cde2; }
+  .scol p code { color: #7dd3fc; font-size: .92em; }
+  .sc1 { border-color: rgba(251,113,133,.4); }
+  .sc1 b { color: #ffb9c4; }
+  .sc2 { border-color: rgba(52,211,153,.45); }
+  .sc2 b { color: #a7f3d0; }
+  .s-state.active .scol { animation: msgIn .55s ease both; }
+  .s-state.active .sc1 { animation-delay: .4s; }
+  .s-state.active .sc2 { animation-delay: 1.1s, 1.9s; animation-name: msgIn, glowGood; animation-duration: .55s, 2.4s; animation-iteration-count: 1, infinite; }
+  .s-state.active .state-note { animation: rise .6s ease 2.6s both; }
+  .state-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .state-note b { color: #6ee7b7; }
+
+  /* ============ 屏4 · STEP 3 黏性 vs 叫号 ============ */
+  .mode-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .mode {
+    flex: 1; padding: 12px 14px; border-radius: 14px;
+    background: var(--card); border: 1px solid var(--line);
+    opacity: 0;
+  }
+  .mode b { font-size: 13px; display: block; margin-bottom: 6px; }
+  .mode p { font-size: 11.5px; color: var(--dim); line-height: 1.75; }
+  .mode p b { color: #c3cde2; }
+  .mode p code { color: #7dd3fc; font-size: .92em; }
+  .md1 { border-color: rgba(34,211,238,.45); }
+  .md1 b { color: #67e8f9; }
+  .md2 { border-color: rgba(167,139,250,.45); }
+  .md2 b { color: #c4b5fd; }
+  .s-mode.active .mode { animation: msgIn .55s ease both; }
+  .s-mode.active .md1 { animation-delay: .4s; }
+  .s-mode.active .md2 { animation-delay: 1.1s; }
+  .s-mode.active .mode-note { animation: rise .6s ease 2.1s both; }
+  .mode-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .mode-note b { color: #c4b5fd; }
+
+  /* ============ 屏5 · STEP 4 扩缩容 ============ */
+  .scale-list { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 560px; }
+  .scale {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 11px 14px; border-radius: 13px;
+    background: var(--card); border: 1px solid var(--line);
+    opacity: 0;
+  }
+  .scale .t-ico { font-size: 19px; flex: none; }
+  .scale b { font-size: 13px; display: block; }
+  .scale code { color: #7dd3fc; font-size: .9em; }
+  .scale p { font-size: 11.5px; color: var(--dim); line-height: 1.65; margin-top: 3px; }
+  .sc1 { border-color: rgba(251,191,36,.4); }
+  .sc2 { border-color: rgba(52,211,153,.4); }
+  .sc3 { border-color: rgba(167,139,250,.45); }
+  .s-scale.active .scale { animation: msgIn .5s ease both; }
+  .s-scale.active .sc1 { animation-delay: .4s; }
+  .s-scale.active .sc2 { animation-delay: .95s; }
+  .s-scale.active .sc3 { animation-delay: 1.5s; }
+  .s-scale.active .scale-note { animation: rise .6s ease 2.2s both; }
+  .scale-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .scale-note b { color: #fde68a; }
+
+  /* ============ 屏6 · STEP 5 并发锁 ============ */
+  .lock-flow { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 7px; opacity: 0; }
+  .lock {
+    display: flex; gap: 10px; align-items: center;
+    padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line);
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    opacity: 0; white-space: nowrap; overflow: hidden;
+  }
+  .lock i { font-style: normal; flex: none; }
+  .lock span { overflow: hidden; text-overflow: ellipsis; }
+  .lock span b { color: #c3cde2; }
+  .lock .l-res { margin-left: auto; flex: none; }
+  .lr-ok { color: var(--green); }
+  .lr-wait { color: var(--amber); }
+  .lr-bad { color: var(--red); }
+  .s-lock.active .lock-flow { animation: msgIn .55s ease .4s both; }
+  .s-lock.active .lock { animation: msgIn .45s ease both; }
+  .s-lock.active .lock:nth-child(2) { animation-delay: .9s; }
+  .s-lock.active .lock:nth-child(3) { animation-delay: 1.4s, 2.2s; animation-name: msgIn, badGlow; animation-duration: .45s, 2.4s; animation-iteration-count: 1, infinite; }
+  .s-lock.active .lock-note { animation: rise .6s ease 2.8s both; }
+  .lock-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .lock-note b { color: #ffb9c4; }
+
+  /* ============ 屏7 · 总结 ============ */
+  .sum-flow {
+    display: flex; gap: 4px; align-items: center; justify-content: center;
+    flex-wrap: wrap; font-size: 10px; color: var(--dim);
+  }
+  .sum-flow span {
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv {
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px 15px;
+  }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote {
+    font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center;
+    line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .replay {
+    font-size: 12.5px; color: #06121c; background: var(--cyan);
+    border: none; padding: 10px 26px; border-radius: 999px;
+    font-weight: 700; cursor: pointer; letter-spacing: .06em;
+  }
+  .replay:active { transform: scale(.96); }
+  .series-badge {
+    position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px;
+    font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em;
+  }
+
+  /* ============ 兜底与无障碍 ============ */
+  @media (max-height: 560px) {
+    .screen { overflow-y: auto; justify-content: flex-start; }
+    .stage { flex: 0 0 auto; padding: 14px 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition: none !important; scroll-behavior: auto !important;
+    }
+    .rv, .arch-flow, .arch, .arch-note, .scol, .state-note, .mode, .mode-note,
+    .scale, .scale-note, .lock-flow, .lock, .lock-note {
+      opacity: 1 !important; transform: none !important; filter: none !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面" aria-label="封面"></button>
+  <button title="STEP 1 典型架构" aria-label="典型架构"></button>
+  <button title="STEP 2 状态外置" aria-label="状态外置"></button>
+  <button title="STEP 3 黏性 vs 叫号" aria-label="黏性 vs 叫号"></button>
+  <button title="STEP 4 扩缩容" aria-label="扩缩容"></button>
+  <button title="STEP 5 并发锁" aria-label="并发锁"></button>
+  <button title="总结" aria-label="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">HERMES AGENT 对象拆解 · 18</div>
+    <h1 class="rv d2">Agent 集群<br><span class="grad">一群店员值班</span></h1>
+    <p class="hero-sub rv d3">运行时基础设施 · 逐屏动画演示</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">📥 队列派发</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">🗄️ 状态外置</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">📈 扩缩容</span>
+    </div>
+    <p class="hero-quote rv d5">「店员随便换 —— 账本必须交接」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 典型架构 -->
+<section class="screen s-arch">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>典型架构</div>
+    <h2 class="rv d1">入口池与 worker 池，是两拨人</h2>
+    <p class="scr-desc rv d2">LangGraph Server 的分层实锤：API 池只收请求入队、<b>从不执行 Agent 代码</b></p>
+    <div class="code-chip rv d2">API 按请求量扩 · worker 按积压 run 数扩 —— <b>两池独立</b></div>
+  </header>
+  <div class="stage">
+    <div class="arch-flow">
+      <div class="arch a1"><span class="a-tag">API 入口池</span><p>收请求 → 入队 → 返回任务号 —— <b>一行 Agent 代码都不跑</b></p></div>
+      <div class="arch a2"><span class="a-tag">任务队列</span><p>pending run 排队 —— <b>积压深度就是扩缩容的仪表</b></p></div>
+      <div class="arch a3"><span class="a-tag">Worker 池</span><p>认领任务 → 获取 lease → 加载对话 → 执行 → checkpoint 写库</p></div>
+      <div class="arch a4"><span class="a-tag">外置状态</span><p><b>Postgres</b> 存对话/执行/checkpoint；<b>Redis 只当摇人铃</b>（唤醒/取消/流转发）</p></div>
+    </div>
+    <div class="arch-note rv d5">一个用户字节都不进 Redis —— <b>它只负责「摇人」，不负责「记账」</b></div>
+  </div>
+  <footer class="scr-foot rv d6">💡 池子分开扩 —— <b>请求暴涨加入口，任务积压加 worker</b></footer>
+</section>
+
+<!-- 屏3 · STEP 2 状态外置 -->
+<section class="screen s-state">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>状态外置</div>
+    <h2 class="rv d1">worker 身上不能有状态</h2>
+    <p class="scr-desc rv d2">状态在实例内存里 = 换机即死 —— 集群的第一原则就是把它请出去</p>
+    <div class="code-chip rv d2">无状态 worker —— <b>一台就能照看数百万个执行</b></div>
+  </header>
+  <div class="stage">
+    <div class="state-cmp">
+      <div class="scol sc1">
+        <b>✕ 状态放实例内存</b>
+        <p>MemorySaver 重启即失，官方明说<b>「不适合生产」</b>；实例一挂，对话与执行全部蒸发；也无法扩缩容（一缩就丢用户）</p>
+      </div>
+      <div class="scol sc2">
+        <b>✓ 状态外置到 Postgres</b>
+        <p>凭 <code>thread_id</code> 恢复任意对话；worker 只是「代驾」—— 被驱逐随时换人接手，<b>一台 worker 可照看数百万个进行中执行</b></p>
+      </div>
+    </div>
+    <div class="state-note rv d5">便利店的比喻：店员随便换，<b>账本必须交接</b> —— Temporal 的「安全驱逐 + 异机恢复」就是这句话的工程实现</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 worker 无状态 —— <b>所以集群才敢随便加减人</b></footer>
+</section>
+
+<!-- 屏4 · STEP 3 黏性 vs 叫号 -->
+<section class="screen s-mode">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>黏性 vs 叫号</div>
+    <h2 class="rv d1">会话派给谁，两种模式</h2>
+    <p class="scr-desc rv d2">主流是「叫号」—— 但黏性作为延迟优化也真实存在</p>
+    <div class="code-chip rv d2">session_affinity TTL 3600s · <b>驱逐后回源重建</b></div>
+  </header>
+  <div class="stage">
+    <div class="mode-row">
+      <div class="mode md1">
+        <b>🏦 取任务即拉上下文（主流）</b>
+        <p>银行柜台叫号：谁空谁上，<b>你的档案在库里不在柜员手里</b>——worker 认领 run 后凭 lease 从 Postgres 加载，干完走人</p>
+      </div>
+      <div class="mode md2">
+        <b>💈 会话黏性（优化项）</b>
+        <p>熟客固定找同一个理发师：<code>session_affinity</code> 按会话 id 钉住实例（空闲 1 小时过期）；Temporal sticky 用内存缓存热执行——<b>驱逐后回源重建</b></p>
+      </div>
+    </div>
+    <div class="mode-note rv d5">黏性是<b>锦上添花的缓存</b>，不是正确性依赖 —— 柜员休假，客人照样办得成业务</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 正确性靠外置状态 —— <b>黏性只买回一点延迟</b></footer>
+</section>
+
+<!-- 屏5 · STEP 4 扩缩容 -->
+<section class="screen s-scale">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>扩缩容</div>
+    <h2 class="rv d1">看队列深度，加减店员</h2>
+    <p class="scr-desc rv d2">KEDA 盯着 Redis 队列长度 —— 积压多了加副本，空了缩到零</p>
+    <div class="code-chip rv d2">listLength 超标 → 按比例加副本 · <b>可从 0 起扩</b></div>
+  </header>
+  <div class="stage">
+    <div class="scale-list">
+      <div class="scale sc1">
+        <div class="t-ico">📈</div>
+        <div><b>按积压扩容</b>
+        <p>队列长度超过 <code>listLength</code> 目标值 → 按比例加 worker 副本；<code>activationListLength</code> 设「从 0 起扩」门槛 —— <b>队列空时副本数可以是 0</b>，第一个客人才雇第一个店员</p></div>
+      </div>
+      <div class="scale sc2">
+        <div class="t-ico">🚪</div>
+        <div><b>缩容先优雅排空</b>
+        <p>摘出服务列表（不再派新活）→ preStop 钩子收尾 → SIGTERM → <b>30 秒宽限</b> → 到点才 SIGKILL —— 手里的活干完再走</p></div>
+      </div>
+      <div class="scale sc3">
+        <div class="t-ico">🎚️</div>
+        <div><b>两池独立伸缩</b>
+        <p>API 池按请求量、worker 池按积压 run 数 —— <b>两个仪表盘，两个旋钮</b>（17 期网关同理）</p></div>
+      </div>
+    </div>
+    <div class="scale-note rv d5">扩缩容的前提还是那句话：<b>worker 身上没有状态</b> —— 有状态就缩不动</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 队列空到 0 副本 —— <b>「零失业经济」由无状态化买单</b></footer>
+</section>
+
+<!-- 屏6 · STEP 5 并发锁 -->
+<section class="screen s-lock">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>并发锁</div>
+    <h2 class="rv d1">同一本账，只许一个店员记账</h2>
+    <p class="scr-desc rv d2">每个会话同一时刻最多一个执行 —— 锁外置在队列层，不在任何实例内存里</p>
+    <div class="code-chip rv d2">认领前先获取 <b>lease</b> · Workflow ID 全局唯一</div>
+  </header>
+  <div class="stage">
+    <div class="lock-flow">
+      <div class="lock"><i>🎫</i><span>worker-A 认领 thread-42 → 获取 <b>lease</b>（租约到手，开始执行）</span><span class="l-res lr-ok">✓</span></div>
+      <div class="lock"><i>🎫</i><span>worker-B 同时认领 thread-42 → 队列层发现已被租约占用</span><span class="l-res lr-wait">⏳ 等待</span></div>
+      <div class="lock"><i>💥</i><span>若不设锁：A、B 同时改同一份 checkpoint → <b>更新互相覆盖，账目错乱</b></span><span class="l-res lr-bad">✕ 禁止</span></div>
+    </div>
+    <div class="lock-note rv d5">同类机制：Temporal 靠 <b>Workflow ID 全局唯一 + Reuse Policy</b> 杜绝双执行；自建可用 Redis <b>SET NX PX</b>（先到先得带过期）<br>不是信不过谁 —— <b>是两个人同时改一页账，必然丢更新</b></div>
+  </div>
+  <footer class="scr-foot rv d6">💡 锁外置在队列层 —— <b>实例挂了锁还在，换人接着干</b></footer>
+</section>
+
+<!-- 屏7 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">店员随便换，账本必须交接</h2>
+    <p class="scr-desc rv d2">双池架构 → 状态外置 → 叫号派发 → 队列深度扩缩 → lease 并发锁</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>入口/worker 双池</span><i>→</i><span>状态外置 Postgres</span><i>→</i><span>叫号 + lease</span><i>→</i><span>KEDA 扩缩</span><i>→</i><span>优雅排空</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">🗄️</div>
+        <div><b>无状态是集群的入场券</b><p>worker 不带状态才敢随时加减 —— 一台照看数百万执行的「代驾」</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🧾</div>
+        <div><b>账本交接制</b><p>checkpoint 写外置库 —— 换机恢复、缩容排空，全靠账本不在人身上</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">🔒</div>
+        <div><b>锁外置在队列层</b><p>thread 同刻只跑一个 run —— 实例挂了锁还在，集群才靠得住</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“店员随便换——<br>账本必须交接。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">HERMES AGENT 对象拆解 · 18 / Agent 集群篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else {
+    secs.forEach((s) => s.classList.add('active'));
+  }
+
+  dots.forEach((d, i) => d.addEventListener('click', () => {
+    secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+</script>
+</body>
+</html>

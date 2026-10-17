@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#070b14">
-<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-19 + AI 运作原理拆解 01-20 + Agent 开发避坑指南 01-05 + AGENT 实战工坊 01-05，共 49 个自包含逐屏动画">
+<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-18 + AI 运作原理拆解 01-15 + LLM 模型算法原理 01-05 + Agent 开发避坑指南 01-04 + AGENT 实战工坊 01-04 + AGENT 模式进阶 01-06，共 52 个自包含逐屏动画">
 <title>AI 运作原理 · 动画演示索引</title>
 <style>
   :root {
@@ -64,6 +64,16 @@
   }
   .series-head::after { content: ""; flex: 1; height: 1px; background: var(--line); }
   .series-head b { color: #c3cde2; font-weight: 700; }
+  .series-note {
+    font-size: 11.5px; color: var(--dim); line-height: 1.7;
+    margin: -6px 0 14px;
+  }
+  .series-note a { color: var(--green); text-decoration: none; }
+  .series-note a:hover { text-decoration: underline; }
+  .series-note code {
+    font-family: var(--mono); font-size: .9em; color: var(--cyan);
+    background: rgba(34,211,238,.08); padding: 1px 6px; border-radius: 5px;
+  }
   .grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     gap: 12px;
@@ -115,7 +125,7 @@
 <div class="wrap">
   <span class="kicker">AI-INSIGHT · DOCS</span>
   <h1>运作动画<span class="grad">演示索引</span></h1>
-  <p class="sub">49 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
+  <p class="sub">52 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
 
   <div class="series">
     <div class="series-head"><b>HERMES AGENT 对象拆解</b></div>
@@ -183,55 +193,49 @@
       <a class="card" href="hermes-11-recovery-animation.html">
         <div class="card-top"><span class="card-ico">🧯</span><span class="num n-h5">· 11</span></div>
         <b>错误恢复</b>
-        <p>报错回填 → 指数退避 + 抖动 · 熔断/降级上报 · 报错即观察，禁止谎报成功</p>
+        <p>报错回填 → 退避重试 → 熔断上报 —— 错误不是崩溃，是塞回循环的观察</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
-      <a class="card" href="hermes-12-thinking-animation.html">
-        <div class="card-top"><span class="card-ico">🧠</span><span class="num n-h6">· 12</span></div>
-        <b>思考预算接入主循环</b>
-        <p>thinking 与 tool_use 同条消息 · 岔路口交替思考 · 思考 token 进预算闸门</p>
+      <a class="card" href="hermes-12-toolcall-animation.html">
+        <div class="card-top"><span class="card-ico">🧾</span><span class="num n-h6">· 12</span></div>
+        <b>工具调用协议</b>
+        <p>tool_use / tool_result 严格配对 → schema 校验 → 并行按序回填 —— 协议即状态机</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
-      <a class="card" href="hermes-13-skills-animation.html">
-        <div class="card-top"><span class="card-ico">📚</span><span class="num n-h1">· 13</span></div>
-        <b>Skills 渐进式披露</b>
-        <p>启动只看名录 → 命中读 SKILL.md → 按需取脚本，上百技能不占常驻上下文</p>
+      <a class="card" href="hermes-13-context-animation.html">
+        <div class="card-top"><span class="card-ico">🧱</span><span class="num n-h1">· 13</span></div>
+        <b>上下文组装</b>
+        <p>五层拼装 → 静态前置命中缓存 → 超线裁剪 → 按需注入 —— 它决定模型看见什么</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
-      <a class="card" href="hermes-14-hooks-animation.html">
-        <div class="card-top"><span class="card-ico">🪝</span><span class="num n-h2">· 14</span></div>
-        <b>Hooks 生命周期挂点</b>
-        <p>PreToolUse/PostToolUse 拦截 · allow/deny/ask/改参 · fail-safe 审计</p>
+      <a class="card" href="hermes-14-distributed-animation.html">
+        <div class="card-top"><span class="card-ico">🛰️</span><span class="num n-h2">· 14</span></div>
+        <b>分布式 Agent</b>
+        <p>名片发现 → 委托状态机 → 事件重放恢复 —— 并行不是免费的，是用 token 买的</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
       <a class="card" href="hermes-15-sandbox-animation.html">
-        <div class="card-top"><span class="card-ico">🛡️</span><span class="num n-h3">· 15</span></div>
-        <b>沙箱与 Auto 模式</b>
-        <p>文件/网络双边界 · 凭证代理 · 输入输出双分类器 · 93% 审批疲劳与接管</p>
+        <div class="card-top"><span class="card-ico">📦</span><span class="num n-h3">· 15</span></div>
+        <b>沙箱两兄弟</b>
+        <p>OS 过滤式（namespace/cgroups/seccomp）vs WASM 能力式 —— 跑模型写的代码，先选笼子</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
-      <a class="card" href="hermes-16-mcp2026-animation.html">
-        <div class="card-top"><span class="card-ico">🔌</span><span class="num n-h4">· 16</span></div>
-        <b>MCP 的 2026 演进</b>
-        <p>Streamable HTTP · OAuth 2.1 · Tasks 长任务 · 2026-07 无状态化（口径标注）</p>
+      <a class="card" href="hermes-16-sandbox-internals-animation.html">
+        <div class="card-top"><span class="card-ico">🔬</span><span class="num n-h4">· 16</span></div>
+        <b>沙箱机制深入</b>
+        <p>imports 即世界 → 线性内存越界自爆 → 句柄不可伪造 —— 零权限是构造，不是策略</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
-      <a class="card" href="hermes-17-a2a-animation.html">
-        <div class="card-top"><span class="card-ico">🤝</span><span class="num n-h5">· 17</span></div>
-        <b>A2A 与多 Agent 反思</b>
-        <p>上下文丢失与决策冲突 · 单 Agent 默认 · 15× token 成本 · A2A 横向协议</p>
+      <a class="card" href="hermes-17-gateway-animation.html">
+        <div class="card-top"><span class="card-ico">🛫</span><span class="num n-h5">· 17</span></div>
+        <b>AI 网关</b>
+        <p>统一接入 → 五种路由降级 → 虚拟密钥托管 → 限流记账 —— 塔台不飞飞机</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
-      <a class="card" href="hermes-18-harness-animation.html">
-        <div class="card-top"><span class="card-ico">🎛️</span><span class="num n-h6">· 18</span></div>
-        <b>Harness 与检查点</b>
-        <p>大脑/手脚解耦 · 会话即事件日志 · 崩溃重放 · 后台 Agent 与长任务经济</p>
-        <span class="go">▶ 逐屏观看 →</span>
-      </a>
-      <a class="card" href="hermes-19-cua-animation.html">
-        <div class="card-top"><span class="card-ico">🖱️</span><span class="num n-h1">· 19</span></div>
-        <b>CUA 看屏幕点鼠标</b>
-        <p>截图→坐标动作闭环 · a11y 树混合定位 · OSWorld 真实成功率 · 视觉注入防线</p>
+      <a class="card" href="hermes-18-cluster-animation.html">
+        <div class="card-top"><span class="card-ico">🏢</span><span class="num n-h6">· 18</span></div>
+        <b>Agent 集群</b>
+        <p>双池架构 → 状态外置 → 叫号 + lease → KEDA 扩缩 —— 店员随便换，账本必须交接</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
     </div>
@@ -312,52 +316,58 @@
         <p>概率表 → top-k / top-p 过滤 → 温度调形 → 抽签 —— 打分归模型，拍板归采样</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
-      <a class="card" href="ai-13-transformer-animation.html">
-        <div class="card-top"><span class="card-ico">🏗️</span><span class="num n-h1">· 13</span></div>
-        <b>Transformer 骨架</b>
-        <p>嵌入 + RoPE 位置 → 注意力 + FFN 叠 N 层 → logits 采样 —— 把 10/11/12 期零件拼成整机</p>
+      <a class="card" href="ai-13-thinking-animation.html">
+        <div class="card-top"><span class="card-ico">🤔</span><span class="num n-h4">· 13</span></div>
+        <b>推理模型与思维链</b>
+        <p>思考 token → 测试时算力换性能 → 预算旋钮 —— 先打草稿再交卷</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
-      <a class="card" href="ai-14-moe-animation.html">
-        <div class="card-top"><span class="card-ico">🩺</span><span class="num n-h2">· 14</span></div>
-        <b>混合专家 MoE</b>
-        <p>router 逐词分诊、top-k 专家出诊 —— 671B 总参，每个 token 只激活 37B</p>
+      <a class="card" href="ai-14-speed-animation.html">
+        <div class="card-top"><span class="card-ico">⚡</span><span class="num n-h5">· 14</span></div>
+        <b>推理加速四件套</b>
+        <p>KV Cache → 量化 → 投机解码 → MoE —— 快不是算得猛，是算得少</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
-      <a class="card" href="ai-15-kv-cache-animation.html">
-        <div class="card-top"><span class="card-ico">⚡</span><span class="num n-h3">· 15</span></div>
-        <b>KV Cache 与推理加速</b>
-        <p>prefill/decode · GQA 共享 · PagedAttention 分页显存 · 量化与推测解码</p>
+      <a class="card" href="ai-15-diffusion-animation.html">
+        <div class="card-top"><span class="card-ico">🖼️</span><span class="num n-h6">· 15</span></div>
+        <b>图像扩散模型</b>
+        <p>学猜噪声 → 反向雕刻 → CFG 引导 → 潜空间降本 —— 雕像本来就在石头里</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
-      <a class="card" href="ai-16-reasoning-animation.html">
-        <div class="card-top"><span class="card-ico">📝</span><span class="num n-h4">· 16</span></div>
-        <b>推理模型与思考链</b>
-        <p>交卷前先打草稿 —— test-time compute、思考预算、effort 档位、思考与工具交替</p>
+    </div>
+  </div>
+
+  <div class="series">
+    <div class="series-head"><b>LLM 模型算法原理</b></div>
+    <div class="grid">
+      <a class="card" href="llm-01-embedding-animation.html">
+        <div class="card-top"><span class="card-ico">📍</span><span class="num n-h1">· 01</span></div>
+        <b>词向量几何学</b>
+        <p>词→箭头 → 相似=夹角 → king−man+woman —— 几何即语义</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
-      <a class="card" href="ai-17-rlvr-animation.html">
-        <div class="card-top"><span class="card-ico">🎯</span><span class="num n-h5">· 17</span></div>
-        <b>RLVR 与蒸馏</b>
-        <p>程序自动判对错 · GRPO 组内排名 · R1 思考链自发涌现 · 大师带徒弟</p>
+      <a class="card" href="llm-02-loss-animation.html">
+        <div class="card-top"><span class="card-ico">📏</span><span class="num n-h2">· 02</span></div>
+        <b>损失与学习</b>
+        <p>softmax → 交叉熵罚单 → 反向传播追责 → 梯度下山 —— 模型的自省</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
-      <a class="card" href="ai-18-finetune-animation.html">
-        <div class="card-top"><span class="card-ico">🔌</span><span class="num n-h6">· 18</span></div>
-        <b>微调与 LoRA</b>
-        <p>改知识用 RAG、改行为用微调 —— 冻结底座挂低秩插件，DPO / QLoRA 降门槛</p>
+      <a class="card" href="llm-03-position-animation.html">
+        <div class="card-top"><span class="card-ico">🌊</span><span class="num n-h3">· 03</span></div>
+        <b>位置编码</b>
+        <p>注意力顺序盲 → 正弦钟摆 → RoPE 旋转指针 —— 顺序是额外上的色</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
-      <a class="card" href="ai-19-embedding-animation.html">
-        <div class="card-top"><span class="card-ico">🧭</span><span class="num n-h1">· 19</span></div>
-        <b>Embedding 与向量检索</b>
-        <p>句子变语义坐标 · 对比学习双塔 · 余弦 Top-K · rerank 交叉精排与 ColBERT</p>
+      <a class="card" href="llm-04-residual-animation.html">
+        <div class="card-top"><span class="card-ico">🛗</span><span class="num n-h4">· 04</span></div>
+        <b>残差与归一化</b>
+        <p>梯度应急车道 → LayerNorm 体检 → 一层配方堆 N 次 —— 深度才成为可能</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
-      <a class="card" href="ai-20-multimodal-animation.html">
-        <div class="card-top"><span class="card-ico">🖼️</span><span class="num n-h2">· 20</span></div>
-        <b>多模态：看图与生成</b>
-        <p>patch 变图像 token 进同一大脑 · 原生多模态 · 扩散去噪 · 时空 patch 生成视频</p>
+      <a class="card" href="llm-05-vector-poem-animation.html">
+        <div class="card-top"><span class="card-ico">🖋️</span><span class="num n-h5">· 05</span></div>
+        <b>实例拆解：向量写诗</b>
+        <p>16 维示意向量 → 注意力拉扯 → 上下文打分选「霜」—— 一句诗的向量流水账</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
     </div>
@@ -387,13 +397,7 @@
       <a class="card" href="dev-04-evals-animation.html">
         <div class="card-top"><span class="card-ico">📊</span><span class="num n-h4">· 04</span></div>
         <b>评估与可观测</b>
-        <p>全链路 trace → 最小评估集 → 断言分层 → CI 回归进日常</p>
-        <span class="go">▶ 逐屏观看 →</span>
-      </a>
-      <a class="card" href="dev-05-injection-animation.html">
-        <div class="card-top"><span class="card-ico">💉</span><span class="num n-h5">· 05</span></div>
-        <b>注入新战场</b>
-        <p>致命三要素 · MCP 工具投毒/Shadowing · 仓库指令注入 · 隔离分类器防线</p>
+        <p>全链路 trace → 最小评估集 → 断言分层 → 回归进 CI —— 没有评估就是掷骰子</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
     </div>
@@ -401,6 +405,7 @@
 
   <div class="series">
     <div class="series-head"><b>AGENT 实战工坊 · 知识问答</b></div>
+    <div class="series-note">🎬 本系列配套<b>可运行 demo</b>：<a href="../examples/rag-demo/README.md">examples/rag-demo/README.md</a> —— 把《经典古诗文诵读.pdf》整本入库，六个 Python 脚本走完 提取→清洗→切块→TF-IDF 检索→LLM 有据回答 全流程（含拒答与页码引用），命令与真实输出全部记录在案</div>
     <div class="grid">
       <a class="card" href="rag-01-ingest-animation.html">
         <div class="card-top"><span class="card-ico">🗄️</span><span class="num n-h1">· 01</span></div>
@@ -416,20 +421,56 @@
       </a>
       <a class="card" href="rag-03-ship-animation.html">
         <div class="card-top"><span class="card-ico">🚀</span><span class="num n-h3">· 03</span></div>
-        <b>拒答与引用上线</b>
-        <p>强制引用 → 阈值拒答 → 语义缓存 → 换语料不重训 · 架构通用</p>
+        <b>拒答引用与上线</b>
+        <p>强制引用 → 阈值拒答 → 语义缓存 → 换语料复用 —— 架构通用，语料是你的</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
-      <a class="card" href="rag-04-agentic-rag-animation.html">
-        <div class="card-top"><span class="card-ico">🔁</span><span class="num n-h4">· 04</span></div>
-        <b>Agentic RAG 会纠错的检索</b>
-        <p>查询路由分诊 · CRAG 置信度红绿灯 · Self-RAG 反思标签 · 并行取数</p>
+      <a class="card" href="rag-04-selection-animation.html">
+        <div class="card-top"><span class="card-ico">🧭</span><span class="num n-h4">· 04</span></div>
+        <b>选题指南</b>
+        <p>九大实战类型 · 难度星级 · 推荐路线 —— 选项目不是选架构，是选你拿得到的数据</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
-      <a class="card" href="rag-05-graphrag-animation.html">
-        <div class="card-top"><span class="card-ico">🕸️</span><span class="num n-h5">· 05</span></div>
-        <b>GraphRAG 把碎片连成地图</b>
-        <p>实体关系抽取 · 社区分层摘要 · local/global 搜索 · DRIFT 与成本选型</p>
+    </div>
+  </div>
+
+  <div class="series">
+    <div class="series-head"><b>AGENT 模式进阶</b></div>
+    <div class="grid">
+      <a class="card" href="pat-01-plan-execute-animation.html">
+        <div class="card-top"><span class="card-ico">🗺️</span><span class="num n-h1">· 01</span></div>
+        <b>先谋后动：Plan-and-Execute</b>
+        <p>Planner 一次出全图 → Executor 逐步领单 → 撞墙带观察回流重规划，长任务少走冤枉路</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="pat-02-reflection-animation.html">
+        <div class="card-top"><span class="card-ico">🔍</span><span class="num n-h2">· 02</span></div>
+        <b>自我批评：Reflection</b>
+        <p>同一个模型换审稿帽子 → 结构化问题清单 → 带批注逐条修订，72→88→94 后见好就收</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="pat-03-memory-routing-animation.html">
+        <div class="card-top"><span class="card-ico">🗂️</span><span class="num n-h3">· 03</span></div>
+        <b>三色文件夹：记忆提取与路由</b>
+        <p>CoALA 三色分流 → function calling 提取 → 置信过滤同 key 覆盖 → 检索时三路汇合注入</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="pat-04-sliding-window-animation.html">
+        <div class="card-top"><span class="card-ico">🪟</span><span class="num n-h4">· 04</span></div>
+        <b>窗口与漏斗：上下文压缩三策略</b>
+        <p>裸截断丢事实 → 滑动窗口钉住 system 保尾巴 → 摘要便签 5.8k→1.6k → 生产环境分层拼预算</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="pat-05-mcp-discovery-animation.html">
+        <div class="card-top"><span class="card-ico">🔌</span><span class="num n-h5">· 05</span></div>
+        <b>插上 USB：MCP 三角与工具发现</b>
+        <p>Host/Client/Server 三角 → initialize 能力协商 → tools/list 动态菜单 → 多 Server 热插拔授权</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="pat-06-guardrails-animation.html">
+        <div class="card-top"><span class="card-ico">🚧</span><span class="num n-h6">· 06</span></div>
+        <b>墙上家规与门上锁：软约束 vs 硬约束</b>
+        <p>注入可绕过 prompt 家规 → Policy Engine 代码层拦截 → HITL 危险操作人工兜底，纵深防御三层</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
     </div>

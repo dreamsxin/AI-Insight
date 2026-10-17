@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="AI 运作原理拆解 · 15 图像扩散模型：Canvas 实时演示前向加噪与反向去噪全过程、文本条件与 CFG 强度对比、潜空间降本可视化、U-Net→DiT→流匹配演进，逐屏动画演示">
+<title>图像扩散模型 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14;
+    --bg1: #0c1322;
+    --ink: #e8eefc;
+    --dim: #8b96ad;
+    --cyan: #22d3ee;
+    --purple: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #fb7185;
+    --card: rgba(255,255,255,.05);
+    --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+
+  /* ===== 右侧进度圆点 ===== */
+  .dots {
+    position: fixed; right: 9px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 11px; z-index: 60;
+  }
+  .dots button {
+    width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0;
+    background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s;
+  }
+  .dots button.on {
+    background: var(--cyan); transform: scale(1.4);
+    box-shadow: 0 0 10px rgba(34,211,238,.85);
+  }
+
+  /* ===== 整屏骨架 ===== */
+  .screen {
+    position: relative; z-index: 1;
+    height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always;
+    overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before {
+    content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%);
+  }
+  .s-hero   { --glow: rgba(34,211,238,.10); }
+  .s-fwd    { --glow: rgba(167,139,250,.11); }
+  .s-rev    { --glow: rgba(52,211,153,.11); }
+  .s-cond   { --glow: rgba(34,211,238,.11); }
+  .s-latent { --glow: rgba(251,191,36,.09); }
+  .s-evo    { --glow: rgba(251,113,133,.08); }
+  .s-sum    { --glow: rgba(244,114,182,.08); }
+
+  .scr-head {
+    width: 100%; max-width: 640px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .step-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07);
+    padding: 4px 13px; border-radius: 999px;
+  }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code {
+    color: var(--cyan); font-size: .92em;
+    background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px;
+  }
+  .code-chip {
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage {
+    position: relative; z-index: 1; flex: 1; min-height: 0;
+    width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 13px;
+  }
+  .scr-foot {
+    width: 100%; max-width: 640px; text-align: center;
+    font-size: 12px; line-height: 1.65; color: var(--dim);
+  }
+  .scr-foot b { color: #c3cde2; }
+
+  /* ===== 通用入场动画 ===== */
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; }
+  .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; }
+  .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; }
+  .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  /* ===== 通用小组件 ===== */
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(16px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes glowGood { 0%,100% { box-shadow: 0 0 0 rgba(52,211,153,0) } 50% { box-shadow: 0 0 22px rgba(52,211,153,.3) } }
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+
+  /* ============ 屏1 · 封面 ============ */
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker {
+    font-size: 10px; letter-spacing: .28em; color: var(--dim);
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 6px 16px; border-radius: 999px;
+  }
+  h1 { font-size: clamp(34px, 9vw, 54px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad {
+    background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node {
+    font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line); white-space: nowrap;
+  }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i {
+    position: absolute; top: 50%; transform: translateY(-50%); left: 0;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan); opacity: 0;
+  }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint {
+    position: absolute; bottom: calc(16px + env(safe-area-inset-bottom));
+    left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em;
+  }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* ============ Canvas 舞台（屏2/3 复用） ============ */
+  .cv-stage {
+    width: 100%; max-width: 470px;
+    border-radius: 16px; overflow: hidden;
+    border: 1px solid var(--line); background: #000;
+    position: relative;
+  }
+  .cv-stage canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+  .cv-t {
+    position: absolute; top: 10px; left: 12px;
+    font-family: var(--mono); font-size: 11px; color: #e8eefc;
+    background: rgba(0,0,0,.55); border-radius: 999px; padding: 3px 11px;
+  }
+  .cv-badge {
+    position: absolute; top: 10px; right: 12px;
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em;
+    background: rgba(0,0,0,.55); border-radius: 999px; padding: 3px 10px;
+  }
+  .cv-badge.think { color: #c4b5fd; }
+  .cv-badge.draw { color: #6ee7b7; }
+  .insight-cards { display: flex; flex-direction: column; gap: 9px; width: 100%; max-width: 560px; }
+  .icard {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 11px 14px; border-radius: 13px;
+    background: var(--card); border: 1px solid var(--line);
+    opacity: 0;
+  }
+  .icard i { font-style: normal; font-size: 18px; flex: none; }
+  .icard p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .icard p b { color: #c3cde2; }
+  .icard p code { color: #7dd3fc; font-size: .92em; }
+
+  /* ============ 屏4 · STEP 3 提示词与 CFG ============ */
+  .cond-pipe { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; width: 100%; max-width: 560px; font-family: var(--mono); font-size: 11px; }
+  .cond-pipe .cp {
+    padding: 7px 12px; border-radius: 10px; white-space: nowrap;
+    background: var(--card); border: 1px solid var(--line); color: #c3cde2;
+    opacity: 0;
+  }
+  .cond-pipe .cp.hi { border-color: rgba(34,211,238,.5); color: #67e8f9; }
+  .cond-pipe i { color: var(--dim); font-style: normal; opacity: 0; }
+  .s-cond.active .cond-pipe .cp { animation: msgIn .45s ease both; }
+  .s-cond.active .cond-pipe .cp:nth-child(1) { animation-delay: .4s; }
+  .s-cond.active .cond-pipe .cp:nth-child(3) { animation-delay: .9s; }
+  .s-cond.active .cond-pipe .cp:nth-child(5) { animation-delay: 1.4s; }
+  .s-cond.active .cond-pipe .cp:nth-child(7) { animation-delay: 1.9s; }
+  .s-cond.active .cond-pipe i { animation: rise .3s ease both; }
+  .s-cond.active .cond-pipe i:nth-child(2) { animation-delay: .7s; }
+  .s-cond.active .cond-pipe i:nth-child(4) { animation-delay: 1.2s; }
+  .s-cond.active .cond-pipe i:nth-child(6) { animation-delay: 1.7s; }
+  .gamma-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .gcol {
+    flex: 1; padding: 10px 11px; border-radius: 13px;
+    background: var(--card); border: 1px solid var(--line); text-align: center;
+    opacity: 0;
+  }
+  .gcol canvas { width: 100%; height: auto; border-radius: 8px; image-rendering: pixelated; display: block; }
+  .gcol b { font-size: 11.5px; display: block; margin-top: 7px; }
+  .gcol small { font-family: var(--mono); font-size: 9px; color: var(--dim); display: block; margin-top: 2px; line-height: 1.5; }
+  .g1 { border-color: rgba(251,191,36,.45); }
+  .g1 b { color: #fde68a; }
+  .g2 { border-color: rgba(52,211,153,.45); }
+  .g2 b { color: #a7f3d0; }
+  .s-cond.active .gamma-row .gcol { animation: msgIn .55s ease both; }
+  .s-cond.active .g1 { animation-delay: 2.5s; }
+  .s-cond.active .g2 { animation-delay: 2.9s; }
+  .s-cond.active .cond-note { animation: rise .6s ease 3.4s both; }
+  .cond-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .cond-note b { color: #67e8f9; }
+
+  /* ============ 屏5 · STEP 4 潜空间 ============ */
+  .latent-flow { width: 100%; max-width: 560px; display: flex; align-items: center; justify-content: center; gap: 9px; }
+  .lf {
+    text-align: center; padding: 10px 11px; border-radius: 13px;
+    background: var(--card); border: 1px solid var(--line);
+    opacity: 0;
+  }
+  .lf canvas { display: block; border-radius: 6px; image-rendering: pixelated; }
+  .lf .big canvas { width: 150px; height: 112px; }
+  .lf .small canvas { width: 150px; height: 112px; }
+  .lf b { font-size: 11.5px; display: block; color: #c3cde2; margin-top: 7px; }
+  .lf small { font-family: var(--mono); font-size: 9px; color: var(--dim); display: block; margin-top: 2px; }
+  .lf-arrow { color: var(--dim); font-size: 12px; opacity: 0; flex: none; text-align: center; font-family: var(--mono); font-size: 9px; line-height: 1.6; }
+  .s-latent.active .lf { animation: msgIn .5s ease both; }
+  .s-latent.active .lf-big { animation-delay: .4s; }
+  .s-latent.active .lf-lat { animation-delay: 1.2s; }
+  .s-latent.active .lf-arrow { animation: rise .3s ease both; }
+  .s-latent.active .lf-arrow:nth-child(2) { animation-delay: .85s; }
+  .s-latent.active .lf-arrow:nth-child(4) { animation-delay: 1.65s; }
+  .latent-stats { display: flex; gap: 8px; width: 100%; max-width: 560px; }
+  .lstat {
+    flex: 1; text-align: center; padding: 10px 8px; border-radius: 12px;
+    background: var(--card); border: 1px solid rgba(251,191,36,.4);
+    font-size: 11px; color: var(--dim); line-height: 1.6; opacity: 0;
+  }
+  .lstat b { display: block; font-size: 13px; color: #fde68a; margin-bottom: 2px; }
+  .s-latent.active .lstat { animation: msgIn .5s ease both; }
+  .s-latent.active .lstat:nth-child(1) { animation-delay: 2.3s; }
+  .s-latent.active .lstat:nth-child(2) { animation-delay: 2.5s; }
+  .s-latent.active .lstat:nth-child(3) { animation-delay: 2.7s; }
+  .s-latent.active .latent-note { animation: rise .6s ease 3.2s both; }
+  .latent-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .latent-note b { color: #fde68a; }
+
+  /* ============ 屏6 · STEP 5 架构演进 ============ */
+  .evo-list { display: flex; flex-direction: column; gap: 9px; width: 100%; max-width: 560px; }
+  .evo {
+    display: flex; gap: 13px; align-items: flex-start;
+    padding: 12px 15px; border-radius: 14px;
+    background: var(--card); border: 1px solid var(--line);
+    opacity: 0;
+  }
+  .evo .t-ico { font-size: 21px; flex: none; }
+  .evo b { font-size: 13.5px; display: block; }
+  .evo code { color: #7dd3fc; font-size: .9em; }
+  .evo p { font-size: 11.5px; color: var(--dim); line-height: 1.65; margin-top: 3px; }
+  .e1 { border-color: rgba(34,211,238,.4); }
+  .e2 { border-color: rgba(167,139,250,.45); }
+  .e3 { border-color: rgba(52,211,153,.45); }
+  .s-evo.active .evo { animation: msgIn .5s ease both; }
+  .s-evo.active .e1 { animation-delay: .4s; }
+  .s-evo.active .e2 { animation-delay: .95s; }
+  .s-evo.active .e3 { animation-delay: 1.5s; }
+  .s-evo.active .evo-note { animation: rise .6s ease 2.2s both; }
+  .evo-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
+  .evo-note b { color: #f9a8d4; }
+
+  /* ============ 屏7 · 总结 ============ */
+  .sum-flow {
+    display: flex; gap: 4px; align-items: center; justify-content: center;
+    flex-wrap: wrap; font-size: 10px; color: var(--dim);
+  }
+  .sum-flow span {
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv {
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px 15px;
+  }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote {
+    font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center;
+    line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .replay {
+    font-size: 12.5px; color: #06121c; background: var(--cyan);
+    border: none; padding: 10px 26px; border-radius: 999px;
+    font-weight: 700; cursor: pointer; letter-spacing: .06em;
+  }
+  .replay:active { transform: scale(.96); }
+  .series-badge {
+    position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px;
+    font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em;
+  }
+
+  /* ============ 兜底与无障碍 ============ */
+  @media (max-height: 560px) {
+    .screen { overflow-y: auto; justify-content: flex-start; }
+    .stage { flex: 0 0 auto; padding: 14px 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition: none !important; scroll-behavior: auto !important;
+    }
+    .rv, .icard, .cond-pipe .cp, .cond-pipe i, .gcol, .lf, .lf-arrow,
+    .lstat, .latent-note, .evo, .evo-note {
+      opacity: 1 !important; transform: none !important; filter: none !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面" aria-label="封面"></button>
+  <button title="STEP 1 前向：学猜噪声" aria-label="前向加噪"></button>
+  <button title="STEP 2 反向：逐步去噪" aria-label="反向去噪"></button>
+  <button title="STEP 3 提示词与 CFG" aria-label="提示词与 CFG"></button>
+  <button title="STEP 4 潜空间扩散" aria-label="潜空间扩散"></button>
+  <button title="STEP 5 架构演进" aria-label="架构演进"></button>
+  <button title="总结" aria-label="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">AI 运作原理拆解 · 15</div>
+    <h1 class="rv d2">扩散模型<br><span class="grad">把噪声雕成图</span></h1>
+    <p class="hero-sub rv d3">图像生成原理 · 逐屏动画演示</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">🏋️ 学猜噪声</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">🗿 反向雕刻</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">📝 提示词引导</span>
+    </div>
+    <p class="hero-quote rv d5">「雕像本来就在大理石里 —— 生成只是凿掉噪声」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 前向：学猜噪声 -->
+<section class="screen s-fwd">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>前向过程 · 训练</div>
+    <h2 class="rv d1">先把图泡进噪声里</h2>
+    <p class="scr-desc rv d2">对一张真图加 T=1000 步高斯噪声，每步只加一点，直到变成纯噪声 —— 下图是实时演示</p>
+    <div class="code-chip rv d2">网络的任务只有一个：<b>看加噪图，猜「这步混进什么噪声」</b></div>
+  </header>
+  <div class="stage">
+    <div class="cv-stage">
+      <canvas id="cvFwd" width="160" height="120"></canvas>
+      <span class="cv-t" id="cvFwdT">t = 0 / 1000</span>
+      <span class="cv-badge think">🫥 前向加噪</span>
+    </div>
+    <div class="insight-cards">
+      <div class="icard" style="animation-delay:0s"><i>🏷️</i><p><b>免费的自监督</b> —— 「正确答案」由真图用公式算出，永不缺标签</p></div>
+      <div class="icard" style="animation-delay:0s"><i>🧮</i><p><b>把凭空画图拆成 1000 道小题</b> —— 每题只答「噪声在哪」，学全所有噪声等级 = 学会整张图的分布</p></div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 训练听着笨：<b>「猜加了什么噪声」—— 但学完它就懂了什么叫「像一张图」</b></footer>
+</section>
+
+<!-- 屏3 · STEP 2 反向：逐步去噪 -->
+<section class="screen s-rev">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>反向过程 · 生成</div>
+    <h2 class="rv d1">从纯噪声里，把图一步一步雕出来</h2>
+    <p class="scr-desc rv d2">生成 = 反着走：每步减去一点预测的噪声 —— 米开朗基罗式雕刻，下图实时演示</p>
+    <div class="code-chip rv d2">DDPM 原版要跑满 <b>1000 步</b>；DDIM 跳步后 <b>20~50 步</b>出图（快 10~50 倍）</div>
+  </header>
+  <div class="stage">
+    <div class="cv-stage">
+      <canvas id="cvRev" width="160" height="120"></canvas>
+      <span class="cv-t" id="cvRevT">t = 1000 / 1000</span>
+      <span class="cv-badge draw">🗿 反向去噪</span>
+    </div>
+    <div class="insight-cards">
+      <div class="icard"><i>🪜</i><p><b>每步只走一小段</b> —— 一次去掉太多噪声，画面直接崩</p></div>
+      <div class="icard"><i>⚡</i><p><b>DDIM 的贡献</b>：同一模型换条更「直」的路径跳步 —— 20~50 步即可出图，消费级显卡秒级生成</p></div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 每张图都藏在一块噪声里 —— <b>生成就是把它凿出来</b></footer>
+</section>
+
+<!-- 屏4 · STEP 3 提示词与 CFG -->
+<section class="screen s-cond">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>提示词引导</div>
+    <h2 class="rv d1">提示词怎么「指挥」雕刻刀</h2>
+    <p class="scr-desc rv d2">文本编码成向量，cross-attention 在<b>每一步</b>去噪时注入 —— 引导强度还是个旋钮</p>
+    <div class="code-chip rv d2">本屏示意提示词：<b>「月夜，雪山与湖泊，一只飞鸟」</b></div>
+  </div>
+  <div class="stage">
+    <div class="cond-pipe">
+      <span class="cp">📝 提示词</span><i>→</i>
+      <span class="cp">🔤 文本编码器（CLIP / T5）</span><i>→</i>
+      <span class="cp hi">🧠 cross-attention 每步注入</span><i>→</i>
+      <span class="cp">🖼️ 引导去噪方向</span>
+    </div>
+    <div class="gamma-row">
+      <div class="gcol g1">
+        <canvas id="cvG1" width="160" height="120"></canvas>
+        <b>γ = 1 · 自由发挥</b>
+        <small>构图还在，但配色气质全跑了<br>「 loosely 照 brief」</small>
+      </div>
+      <div class="gcol g2">
+        <canvas id="cvG8" width="160" height="120"></canvas>
+        <b>γ = 7.5 · 严格照 brief</b>
+        <small>月夜 · 冷色 · 雪山湖泊，贴合提示词<br>（示意：CFG 拉近「条件方向」）</small>
+      </div>
+    </div>
+    <div class="cond-note rv d6">CFG 公式：预测 = 无条件 + <b>γ</b> ×（条件 − 无条件）——「没看 brief 的画家」与「照 brief 的画家」之差，放大 γ 倍就是 brief 的方向；拧过头会过饱和</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 提示词不是关键词咒语 —— <b>是被编码后按步注入的导航信号</b></footer>
+</section>
+
+<!-- 屏5 · STEP 4 潜空间扩散 -->
+<section class="screen s-latent">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>潜空间扩散</div>
+    <h2 class="rv d1">为什么你的显卡跑得动</h2>
+    <p class="scr-desc rv d2">Stable Diffusion 的答案：不在像素上做扩散，先压缩几十倍到潜空间</p>
+    <div class="code-chip rv d2">512×512×3 → <b>32×32×4</b> → 去噪 → VAE 解码还原</div>
+  </header>
+  <div class="stage">
+    <div class="latent-flow">
+      <div class="lf lf-big">
+        <canvas id="cvBig" width="160" height="120"></canvas>
+        <b>像素空间</b><small>512×512×3 · 在这里扩散=烧卡</small>
+      </div>
+      <div class="lf-arrow">VAE<br>压缩 ⇄<br>解码</div>
+      <div class="lf lf-lat">
+        <canvas id="cvLat" width="32" height="24"></canvas>
+        <b>潜空间（示意）</b><small>32×32×4 · 在这里去噪</small>
+      </div>
+    </div>
+    <div class="latent-stats">
+      <div class="lstat"><b>≈1/48</b>元素数量，工作量省几十倍</div>
+      <div class="lstat"><b>数百 GPU 天 → 单卡</b>像素扩散 vs 潜空间训练成本</div>
+      <div class="lstat"><b>~10 亿参数</b>SD1.5：U-Net 860M + CLIP + VAE</div>
+    </div>
+    <div class="latent-note rv d6">分工：<b>扩散只管语义构图，高频细节交给 VAE 解码「脑补」</b>—— 所以偶发手部畸变，病根在草稿信息有限</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 先画小草稿定构图，最后才描细节 —— <b>草稿纸小 48 倍，家用显卡才跑得动</b></footer>
+</section>
+
+<!-- 屏6 · STEP 5 架构演进 -->
+<section class="screen s-evo">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>架构演进</div>
+    <h2 class="rv d1">从修图师到总设计师</h2>
+    <p class="scr-desc rv d2">骨干与训练目标都在换代 —— 算力越大图越好，且可预测</p>
+    <div class="code-chip rv d2">SD1.5 ~1B · SD3 2B/8B · <b>FLUX.1 12B</b></div>
+  </header>
+  <div class="stage">
+    <div class="evo-list">
+      <div class="evo e1">
+        <div class="t-ico">🩹</div>
+        <div><b>U-Net 时代（SD1.5 / XL）</b>
+        <p>逐像素修图师：编码-解码 + 跳跃连接，卷积为主 —— 稳定但扩展性一般</p></div>
+      </div>
+      <div class="evo e2">
+        <div class="t-ico">🏗️</div>
+        <div><b>DiT：扩散 Transformer（SD3 / Sora / FLUX）</b>
+        <p>潜空间切成 patch 交给 Transformer —— 给出「算力越大 FID 越低」的<b>可预测扩展律</b>；SD3 用 MM-DiT 图文双流</p></div>
+      </div>
+      <div class="evo e3">
+        <div class="t-ico">📈</div>
+        <div><b>流匹配：新一代训练目标</b>
+        <p>回归「噪声→数据」的<b>直线速度场</b>，扩散路径只是特例 —— 路径更直，训练采样都更快（SD3/FLUX 已采用）</p></div>
+      </div>
+    </div>
+    <div class="evo-note rv d5">两年从 10 亿到 120 亿参数 —— <b>而且仍然能在书桌上跑</b></div>
+  </div>
+  <footer class="scr-foot rv d6">💡 语言模型有 scaling law —— <b>图像生成同样有，且可预测</b></footer>
+</section>
+
+<!-- 屏7 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">雕像本来就在石头里</h2>
+    <p class="scr-desc rv d2">前向学猜噪声 → 反向逐步雕刻 → 提示词导航 → 潜空间降本 → 架构换代</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>加噪训练</span><i>→</i><span>去噪生成</span><i>→</i><span>CFG 引导</span><i>→</i><span>潜空间降本</span><i>→</i><span>DiT/流匹配</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">🏋️</div>
+        <div><b>训练只做一件事</b><p>猜「这步混进什么噪声」—— 免费自监督，学全所有噪声等级 = 学会图像分布</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🗿</div>
+        <div><b>生成是雕刻</b><p>从纯噪声每步凿掉一点；DDIM 跳步让 1000 步变 20~50 步出图</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">📝</div>
+        <div><b>提示词是导航</b><p>cross-attention 每步注入 + CFG 强度旋钮 —— 7.5 是听话与创意的平衡点</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“雕像本来就在大理石里——<br>生成只是凿掉多余的部分。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">AI 运作原理拆解 · 15 / 扩散模型篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+
+  /* ===== 场景绘制：月夜 · 雪山 · 湖泊 · 飞鸟（160×120） ===== */
+  function drawScene(ctx, w, h, palette) {
+    const P = palette || {sky1:'#0b1a3a', sky2:'#123055', sky3:'#1b3d63', mFar:'#2a3f6e',
+      mNear:'#3d5182', snow:'#dfe7f5', water:'#0d2138', moon:'#f5f0dc', bird:'#e8eefc'};
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, P.sky1); sky.addColorStop(.6, P.sky2); sky.addColorStop(.72, P.sky3);
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, w, h);
+    // 星星
+    ctx.fillStyle = '#e8eefc';
+    [[18,12],[40,8],[70,18],[100,10],[118,22],[30,30],[88,34],[55,20],[136,14]].forEach(([x,y]) => ctx.fillRect(x, y, 1.3, 1.3));
+    // 月亮（弦月）
+    ctx.beginPath(); ctx.arc(w * .74, h * .26, 10, 0, Math.PI * 2);
+    ctx.fillStyle = P.moon; ctx.fill();
+    ctx.beginPath(); ctx.arc(w * .74 + 5, h * .26 - 3, 8, 0, Math.PI * 2);
+    ctx.fillStyle = P.sky1; ctx.fill();
+    // 远山
+    ctx.fillStyle = P.mFar;
+    ctx.beginPath(); ctx.moveTo(0, h * .68); ctx.lineTo(w * .3, h * .42); ctx.lineTo(w * .56, h * .68); ctx.closePath(); ctx.fill();
+    // 近山 + 雪顶
+    ctx.fillStyle = P.mNear;
+    ctx.beginPath(); ctx.moveTo(w * .36, h * .7); ctx.lineTo(w * .64, h * .36); ctx.lineTo(w * .95, h * .7); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = P.snow;
+    ctx.beginPath(); ctx.moveTo(w * .64 - 10, h * .45); ctx.lineTo(w * .64, h * .36); ctx.lineTo(w * .64 + 10, h * .45); ctx.closePath(); ctx.fill();
+    // 湖面 + 月光倒影
+    ctx.fillStyle = P.water; ctx.fillRect(0, h * .7, w, h * .3);
+    ctx.fillStyle = 'rgba(245,240,220,.5)'; ctx.fillRect(w * .74 - 2, h * .76, 4, 16);
+    // 飞鸟
+    ctx.strokeStyle = P.bird; ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(w * .18, h * .3); ctx.quadraticCurveTo(w * .23, h * .255, w * .28, h * .3);
+    ctx.moveTo(w * .28, h * .3); ctx.quadraticCurveTo(w * .33, h * .255, w * .38, h * .3);
+    ctx.stroke();
+  }
+
+  /* ===== 噪声帧（4 帧轮换，产生闪烁的活噪声） ===== */
+  const NW = 160, NH = 120, NFRAMES = 4;
+  const noiseFrames = [];
+  (function makeNoise() {
+    for (let f = 0; f < NFRAMES; f++) {
+      const c = document.createElement('canvas'); c.width = NW; c.height = NH;
+      const cx = c.getContext('2d');
+      const img = cx.createImageData(NW, NH);
+      for (let i = 0; i < img.data.length; i += 4) {
+        const v = Math.random() * 255;
+        img.data[i] = v; img.data[i+1] = v; img.data[i+2] = v; img.data[i+3] = 255;
+      }
+      cx.putImageData(img, 0, 0);
+      noiseFrames.push(c);
+    }
+  })();
+
+  function renderDiffusion(ctx, t, frame) {
+    const a = Math.min(1, t / 1000);
+    ctx.globalAlpha = 1 - a; ctx.drawImage(sceneCv, 0, 0);
+    ctx.globalAlpha = a; ctx.drawImage(noiseFrames[frame % NFRAMES], 0, 0);
+    ctx.globalAlpha = 1;
+  }
+  function stepCount(period, ts) {
+    const p = (ts % period) / period;
+    return p < .88 ? Math.round(p / .88 * 1000) : 1000;
+  }
+
+  const sceneCv = document.createElement('canvas');
+  sceneCv.width = NW; sceneCv.height = NH;
+  drawScene(sceneCv.getContext('2d'), NW, NH);
+
+  const cvFwd = document.getElementById('cvFwd').getContext('2d');
+  const cvRev = document.getElementById('cvRev').getContext('2d');
+  const tFwdEl = document.getElementById('cvFwdT');
+  const tRevEl = document.getElementById('cvRevT');
+
+  let activeIdx = 0, raf1 = 0, raf2 = 0;
+  function loopFwd(ts) {
+    if (activeIdx !== 1) { raf1 = 0; return; }
+    const t = stepCount(9000, ts);
+    renderDiffusion(cvFwd, t, Math.floor(ts / 90));
+    tFwdEl.textContent = 't = ' + t + ' / 1000';
+    raf1 = requestAnimationFrame(loopFwd);
+  }
+  function loopRev(ts) {
+    if (activeIdx !== 2) { raf2 = 0; return; }
+    const p = (ts % 9000) / 9000;
+    const t = p < .12 ? 1000 : Math.max(0, Math.round((1 - (p - .12) / .8) * 1000));
+    renderDiffusion(cvRev, t, Math.floor(ts / 90));
+    tRevEl.textContent = 't = ' + t + ' / 1000';
+    raf2 = requestAnimationFrame(loopRev);
+  }
+
+  /* ===== γ 对比双图（示意：低 γ 跑题偏色，高 γ 贴合提示词） ===== */
+  function renderGamma() {
+    // γ 低：自由发挥 —— 暖色调、构图偏移
+    drawScene(document.getElementById('cvG1').getContext('2d'), NW, NH, {
+      sky1:'#3a2410', sky2:'#7a4a1e', sky3:'#9a6a2e', mFar:'#4a6e2a',
+      mNear:'#2a7a5e', snow:'#f0e68c', water:'#2a4a1e', moon:'#ff9a4a', bird:'#ffe4b5'
+    });
+    // γ 高：严格贴合「月夜，雪山与湖泊」
+    drawScene(document.getElementById('cvG8').getContext('2d'), NW, NH, null);
+  }
+
+  /* ===== 潜空间：大图 → 缩小成块状「潜空间示意」 ===== */
+  function renderLatent() {
+    const big = document.getElementById('cvBig').getContext('2d');
+    big.drawImage(sceneCv, 0, 0);
+    // 加一点轻微噪声让「潜空间里仍在去噪」可见
+    const lat = document.getElementById('cvLat').getContext('2d');
+    lat.imageSmoothingEnabled = true;
+    lat.drawImage(sceneCv, 0, 0, 32, 24);
+    lat.globalAlpha = .35; lat.drawImage(noiseFrames[1], 0, 0, 32, 24); lat.globalAlpha = 1;
+  }
+
+  function onActiveChange() {
+    if (activeIdx === 1 && !raf1) raf1 = requestAnimationFrame(loopFwd);
+    if (activeIdx === 2 && !raf2) raf2 = requestAnimationFrame(loopRev);
+    if (activeIdx === 3) renderGamma();
+    if (activeIdx === 4) renderLatent();
+  }
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+          activeIdx = idx;
+          onActiveChange();
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else {
+    secs.forEach((s) => s.classList.add('active'));
+    activeIdx = 0;
+  }
+
+  dots.forEach((d, i) => d.addEventListener('click', () => {
+    secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+</script>
+</body>
+</html>

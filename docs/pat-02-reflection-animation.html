@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="AGENT 模式进阶 02 Reflection：初稿错误批注、同模型换帽审稿、带批注修订、版本分数曲线与刹车、适用边界 —— 逐屏动画演示">
+<title>自我批评 · Reflection · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14;
+    --bg1: #0c1322;
+    --ink: #e8eefc;
+    --dim: #8b96ad;
+    --cyan: #22d3ee;
+    --purple: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #fb7185;
+    --card: rgba(255,255,255,.05);
+    --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+
+  .dots {
+    position: fixed; right: 9px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 11px; z-index: 60;
+  }
+  .dots button {
+    width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0;
+    background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s;
+  }
+  .dots button.on {
+    background: var(--cyan); transform: scale(1.4);
+    box-shadow: 0 0 10px rgba(34,211,238,.85);
+  }
+
+  .screen {
+    position: relative; z-index: 1;
+    height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always;
+    overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before {
+    content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%);
+  }
+  .s-hero    { --glow: rgba(34,211,238,.10); }
+  .s-draft   { --glow: rgba(251,113,133,.09); }
+  .s-critic  { --glow: rgba(167,139,250,.11); }
+  .s-revise  { --glow: rgba(34,211,238,.11); }
+  .s-score   { --glow: rgba(52,211,153,.10); }
+  .s-when    { --glow: rgba(251,191,36,.09); }
+  .s-sum     { --glow: rgba(244,114,182,.08); }
+
+  .scr-head {
+    width: 100%; max-width: 600px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+  }
+  .step-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07);
+    padding: 4px 13px; border-radius: 999px;
+  }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 13.5px); color: #aab6cf; line-height: 1.6; max-width: 520px; }
+  .stage {
+    position: relative; z-index: 1; flex: 1; min-height: 0;
+    width: 100%; max-width: 600px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 13px;
+  }
+  .scr-foot {
+    width: 100%; max-width: 600px; text-align: center;
+    font-size: 12px; line-height: 1.6; color: var(--dim);
+  }
+  .scr-foot b { color: #c3cde2; }
+
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; }
+  .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; }
+  .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; }
+  .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(16px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes glowGood { 0%,100% { box-shadow: 0 0 0 rgba(52,211,153,0) } 50% { box-shadow: 0 0 22px rgba(52,211,153,.3) } }
+  @keyframes glowPurple { 0%,100% { box-shadow: 0 0 0 rgba(167,139,250,0) } 50% { box-shadow: 0 0 22px rgba(167,139,250,.3) } }
+  @keyframes glowRed { 0%,100% { box-shadow: 0 0 0 rgba(251,113,133,0) } 50% { box-shadow: 0 0 20px rgba(251,113,133,.28) } }
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+
+  /* ============ 封面 ============ */
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker {
+    font-size: 10px; letter-spacing: .28em; color: var(--dim);
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 6px 16px; border-radius: 999px;
+  }
+  h1 { font-size: clamp(34px, 9vw, 54px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad {
+    background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node {
+    font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line); white-space: nowrap;
+  }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i {
+    position: absolute; top: 50%; transform: translateY(-50%); left: 0;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan); opacity: 0;
+  }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint {
+    position: absolute; bottom: calc(16px + env(safe-area-inset-bottom));
+    left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em;
+  }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* ============ STEP 1 · 初稿批注 ============ */
+  .mail {
+    width: 100%; border-radius: 14px; background: #0b1424;
+    border: 1px solid rgba(251,113,133,.4); padding: 13px 15px; opacity: 0;
+  }
+  .mail-head {
+    font-size: 10px; color: var(--dim); letter-spacing: .12em;
+    display: flex; justify-content: space-between; margin-bottom: 9px;
+  }
+  .mail-q { font-size: 11px; color: #9fb3d1; line-height: 1.65; padding-bottom: 9px; margin-bottom: 9px; border-bottom: 1px dashed rgba(255,255,255,.1); }
+  .mail-a { font-size: 12.5px; color: #c3cde2; line-height: 2; }
+  .err { border-bottom: 2px wavy rgba(251,113,133,.85); padding-bottom: 1px; }
+  .issue-row { display: flex; gap: 8px; width: 100%; flex-wrap: wrap; justify-content: center; }
+  .issue {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 10.5px; color: #ffc2cc; opacity: 0;
+    background: rgba(251,113,133,.07); border: 1px solid rgba(251,113,133,.4);
+    border-radius: 999px; padding: 6px 12px;
+  }
+  .issue b { font-weight: 700; }
+  .issue code { font-size: .92em; color: #fda4af; }
+  .s-draft.active .mail { animation: msgIn .5s ease .4s both; }
+  .s-draft.active .err { animation: errBlink 2s ease-in-out 1.4s 2; }
+  @keyframes errBlink { 0%,100% { background: transparent; } 50% { background: rgba(251,113,133,.18); border-radius: 3px; } }
+  .s-draft.active .issue { animation: msgIn .4s ease both; }
+  .s-draft.active .issue:nth-child(1) { animation-delay: 2.3s; }
+  .s-draft.active .issue:nth-child(2) { animation-delay: 2.6s; }
+  .s-draft.active .issue:nth-child(3) { animation-delay: 2.9s, glowRed; animation-duration: .4s, 2.2s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
+
+  /* ============ STEP 2 · 换帽 ============ */
+  .hat-flow { display: flex; align-items: center; gap: 9px; width: 100%; justify-content: center; }
+  .h-node {
+    text-align: center; border-radius: 13px; padding: 10px 14px; opacity: 0;
+    background: var(--card); border: 1px solid var(--line);
+  }
+  .h-node .ico { font-size: 19px; }
+  .h-node b { display: block; font-size: 11px; margin-top: 3px; }
+  .h-node small { display: block; font-size: 9px; color: var(--dim); margin-top: 2px; }
+  .h-node.brain { border-color: rgba(167,139,250,.55); background: rgba(167,139,250,.08); }
+  .h-node.brain b { color: #c4b5fd; }
+  .h-arrow { color: var(--dim); font-size: 13px; opacity: 0; }
+  .hat-swap {
+    display: flex; gap: 0; align-items: center; font-family: var(--mono); font-size: 10px;
+    border: 1px solid rgba(167,139,250,.4); border-radius: 999px; overflow: hidden; opacity: 0;
+  }
+  .hat-swap span { padding: 4px 11px; }
+  .hat-swap .off { color: var(--dim); background: rgba(255,255,255,.03); text-decoration: line-through; }
+  .hat-swap .on { color: #1b1040; background: #a78bfa; font-weight: 700; }
+  .crit-list {
+    width: 100%; border-radius: 13px; padding: 11px 15px; opacity: 0;
+    background: rgba(167,139,250,.06); border: 1px solid rgba(167,139,250,.4);
+  }
+  .crit-list .ch { font-size: 10px; color: #c4b5fd; letter-spacing: .12em; margin-bottom: 6px; }
+  .ci {
+    font-family: var(--mono); font-size: 11px; color: #d3ccfb;
+    padding: 4px 0; display: flex; gap: 8px; opacity: 0;
+  }
+  .ci .lv { font-family: var(--mono); flex: none; width: 34px; font-size: 9.5px; border-radius: 5px; text-align: center; padding: 1px 0; }
+  .ci .lv.hi { color: #fda4af; background: rgba(251,113,133,.12); }
+  .ci .lv.mid { color: #fde68a; background: rgba(251,191,36,.12); }
+  .ci .lv.lo { color: #aab6cf; background: rgba(255,255,255,.06); }
+  .s-critic.active .h-node { animation: msgIn .45s ease both; }
+  .s-critic.active .h-node:nth-child(1) { animation-delay: .4s; }
+  .s-critic.active .h-node:nth-child(3) { animation-delay: 1s, 2s; animation-name: msgIn, glowPurple; animation-duration: .45s, 2.4s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
+  .s-critic.active .h-node:nth-child(5) { animation-delay: 2.4s; }
+  .s-critic.active .h-arrow { animation: rise .35s ease both; }
+  .s-critic.active .h-arrow:nth-child(2) { animation-delay: .75s; }
+  .s-critic.active .h-arrow:nth-child(4) { animation-delay: 2.15s; }
+  .s-critic.active .hat-swap { animation: rise .4s ease 1.55s both; }
+  .s-critic.active .crit-list { animation: msgIn .5s ease 2.4s both; }
+  .s-critic.active .ci { animation: msgIn .3s ease both; }
+  .s-critic.active .ci:nth-child(2) { animation-delay: 2.7s; }
+  .s-critic.active .ci:nth-child(3) { animation-delay: 2.95s; }
+  .s-critic.active .ci:nth-child(4) { animation-delay: 3.2s; }
+
+  /* ============ STEP 3 · 修订 ============ */
+  .diff-cols { display: flex; gap: 10px; width: 100%; }
+  .diff { flex: 1; border-radius: 13px; padding: 11px 12px; opacity: 0; background: var(--card); border: 1px solid var(--line); }
+  .diff .dv { font-size: 10px; letter-spacing: .1em; margin-bottom: 8px; }
+  .dl {
+    font-family: var(--mono); font-size: 10.5px; line-height: 1.5;
+    padding: 6px 8px; border-radius: 7px; margin-bottom: 6px; opacity: 0;
+  }
+  .diff.old { border-color: rgba(251,113,133,.35); }
+  .diff.old .dv { color: #fda4af; }
+  .diff.new { border-color: rgba(52,211,153,.45); }
+  .diff.new .dv { color: #a7f3d0; }
+  .dl.bad { background: rgba(251,113,133,.08); color: #ffc2cc; text-decoration: line-through; }
+  .dl.good { background: rgba(52,211,153,.08); color: #bbf7d0; }
+  .dl.note { background: rgba(251,191,36,.07); color: #fde68a; font-size: 9.5px; text-decoration: none; }
+  .loop-chip {
+    font-family: var(--mono); font-size: 10.5px; color: var(--dim); opacity: 0;
+    border: 1px dashed var(--line); border-radius: 999px; padding: 6px 14px;
+  }
+  .loop-chip b { color: var(--cyan); }
+  .s-revise.active .diff.old { animation: msgIn .5s ease .4s both; }
+  .s-revise.active .diff.new { animation: msgIn .5s ease 1.7s both; }
+  .s-revise.active .dl { animation: msgIn .3s ease both; }
+  .s-revise.active .old .dl:nth-child(2) { animation-delay: .65s; }
+  .s-revise.active .old .dl:nth-child(3) { animation-delay: .9s; }
+  .s-revise.active .old .dl:nth-child(4) { animation-delay: 1.15s; }
+  .s-revise.active .new .dl:nth-child(2) { animation-delay: 1.95s; }
+  .s-revise.active .new .dl:nth-child(3) { animation-delay: 2.3s; }
+  .s-revise.active .new .dl:nth-child(4) { animation-delay: 2.65s; }
+  .s-revise.active .loop-chip { animation: rise .5s ease 3s both; }
+
+  /* ============ STEP 4 · 分数曲线 ============ */
+  .chart-card { width: 100%; border-radius: 14px; padding: 16px 18px 10px; opacity: 0; background: var(--card); border: 1px solid var(--line); }
+  .chart {
+    position: relative; height: 178px;
+    display: flex; align-items: flex-end; justify-content: space-around;
+    border-bottom: 1px solid var(--line); border-left: 1px solid var(--line);
+    padding: 0 12px;
+  }
+  .chart::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background-image: linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px); background-size: 100% 25%;
+  }
+  .pt-col { display: flex; flex-direction: column; align-items: center; gap: 5px; z-index: 1; width: 22%; }
+  .pt-val { font-family: var(--mono); font-size: 12px; font-weight: 700; opacity: 0; }
+  .pt-bar { width: 100%; max-width: 66px; border-radius: 7px 7px 0 0; background: linear-gradient(180deg, rgba(52,211,153,.9), rgba(52,211,153,.3)); }
+  .pt-x { font-family: var(--mono); font-size: 10px; color: var(--dim); margin-top: 6px; }
+  .pt-col.v1 .pt-val { color: #fda4af; }
+  .pt-col.v1 .pt-bar { background: linear-gradient(180deg, rgba(251,113,133,.85), rgba(251,113,133,.3)); }
+  .pt-col.v3 .pt-val, .pt-col.v4 .pt-val { color: #fde68a; }
+  .pt-col.v3 .pt-bar, .pt-col.v4 .pt-bar { background: linear-gradient(180deg, rgba(251,191,36,.85), rgba(251,191,36,.3)); }
+  .s-score.active .chart-card { animation: msgIn .5s ease .4s both; }
+  .s-score.active .pt-bar { animation: barGrow .8s cubic-bezier(.22,1,.36,1) both; }
+  .s-score.active .v1 .pt-bar { animation-delay: .8s; }
+  .s-score.active .v2 .pt-bar { animation-delay: 1.3s; }
+  .s-score.active .v3 .pt-bar { animation-delay: 1.8s; }
+  .s-score.active .v4 .pt-bar { animation-delay: 2.3s; }
+  .s-score.active .pt-val { animation: rise .4s ease both; }
+  .s-score.active .v1 .pt-val { animation-delay: 1.2s; }
+  .s-score.active .v2 .pt-val { animation-delay: 1.7s; }
+  .s-score.active .v3 .pt-val { animation-delay: 2.2s; }
+  .s-score.active .v4 .pt-val { animation-delay: 2.7s; }
+  @keyframes barGrow { from { height: 0; } to { height: var(--h, 50%); } }
+  .stop-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .stop {
+    font-size: 10.5px; padding: 6px 12px; border-radius: 999px; opacity: 0;
+    background: var(--card); border: 1px solid var(--line); color: #aab6cf;
+  }
+  .stop b { color: #fde68a; }
+  .s-score.active .stop { animation: msgIn .4s ease both; }
+  .s-score.active .stop:nth-child(1) { animation-delay: 3s; }
+  .s-score.active .stop:nth-child(2) { animation-delay: 3.25s; }
+  .s-score.active .stop:nth-child(3) { animation-delay: 3.5s; }
+
+  /* ============ STEP 5 · 边界 ============ */
+  .when-cols { display: flex; gap: 10px; width: 100%; }
+  .when { flex: 1; border-radius: 14px; padding: 13px 14px; opacity: 0; background: var(--card); border: 1px solid var(--line); }
+  .when .wt { font-size: 12px; font-weight: 700; margin-bottom: 9px; }
+  .when ul { list-style: none; display: flex; flex-direction: column; gap: 7px; }
+  .when li { font-size: 11px; color: var(--dim); line-height: 1.5; padding-left: 18px; position: relative; }
+  .when.good { border-color: rgba(52,211,153,.45); }
+  .when.good .wt { color: #a7f3d0; }
+  .when.good li::before { content: "✓"; position: absolute; left: 0; color: #6ee7b7; }
+  .when.bad { border-color: rgba(251,113,133,.4); }
+  .when.bad .wt { color: #ffb9c4; }
+  .when.bad li::before { content: "✕"; position: absolute; left: 0; color: #fb7185; }
+  .when-chip {
+    font-size: 10.5px; color: var(--dim); text-align: center; line-height: 1.7; opacity: 0;
+    border: 1px dashed var(--line); border-radius: 12px; padding: 8px 14px;
+  }
+  .when-chip b { color: #c4b5fd; }
+  .s-when.active .when.good { animation: msgIn .5s ease .5s, glowGood; animation-duration: .5s, 2.6s; animation-iteration-count: 1, infinite; animation-fill-mode: both; }
+  .s-when.active .when.bad { animation: msgIn .5s ease 1s both; }
+  .s-when.active .when-chip { animation: rise .5s ease 2s both; }
+
+  /* ============ 总结 ============ */
+  .sum-flow {
+    display: flex; gap: 4px; align-items: center; justify-content: center;
+    flex-wrap: wrap; font-size: 10px; color: var(--dim);
+  }
+  .sum-flow span {
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 540px; }
+  .adv {
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px 15px;
+  }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 2px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.6; }
+  .sum-quote {
+    font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center;
+    line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .replay {
+    font-size: 12.5px; color: #06121c; background: var(--cyan);
+    border: none; padding: 10px 26px; border-radius: 999px;
+    font-weight: 700; cursor: pointer; letter-spacing: .06em;
+  }
+  .replay:active { transform: scale(.96); }
+  .series-badge {
+    position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px;
+    font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em;
+  }
+
+  @media (max-height: 560px) {
+    .screen { overflow-y: auto; justify-content: flex-start; }
+    .stage { flex: 0 0 auto; padding: 14px 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition: none !important; scroll-behavior: auto !important;
+    }
+    .rv, .hc-arrow i, .mail, .err, .issue, .h-node, .h-arrow, .hat-swap, .crit-list, .ci,
+    .diff, .dl, .loop-chip, .chart-card, .pt-val, .pt-bar, .stop, .when, .when-chip {
+      opacity: 1 !important; transform: none !important; filter: none !important;
+    }
+    .v1 .pt-bar { height: 52% !important; }
+    .v2 .pt-bar { height: 74% !important; }
+    .v3 .pt-bar { height: 84% !important; }
+    .v4 .pt-bar { height: 87% !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面" aria-label="封面"></button>
+  <button title="STEP 1 一稿的毛病" aria-label="一稿的毛病"></button>
+  <button title="STEP 2 换帽审稿" aria-label="换帽审稿"></button>
+  <button title="STEP 3 带批注修订" aria-label="带批注修订"></button>
+  <button title="STEP 4 迭代与刹车" aria-label="迭代与刹车"></button>
+  <button title="STEP 5 什么时候值得" aria-label="什么时候值得"></button>
+  <button title="总结" aria-label="总结"></button>
+</nav>
+
+<!-- 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-kicker rv d1">AGENT 模式进阶 · 02 · 工作流模式</div>
+  <h1 class="rv d2">自我批评<br><span class="grad">Reflection</span></h1>
+  <p class="hero-sub rv d3">写完别立刻交，先让自己挑一遍毛病</p>
+  <div class="hero-chain rv d4">
+    <span class="hc-node">✍️ 出初稿</span>
+    <span class="hc-arrow"><i></i></span>
+    <span class="hc-node">🔍 挑毛病</span>
+    <span class="hc-arrow hc-arrow-2"><i></i></span>
+    <span class="hc-node">✏️ 改了又改</span>
+  </div>
+  <p class="hero-quote rv d5">「好稿是改出来的」</p>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- STEP 1 · 初稿批注 -->
+<section class="screen s-draft">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>一稿成型</div>
+    <h2 class="rv d1">第一稿，常带三种伤</h2>
+    <p class="scr-desc rv d2">一次生成完就交 —— 不是不会，是没人让它回头看</p>
+  </header>
+  <div class="stage">
+    <div class="mail">
+      <div class="mail-head"><span>QUOTE MAIL · v1</span><span>30 人会议报价</span></div>
+      <div class="mail-q">场地 8000 · 茶歇每人 80 · 专家费 6000 —— 报价邮件，金额用万元</div>
+      <div class="mail-a">
+        总费用 = <span class="err">8000 + 80×30 = 1.04 万</span>，<span class="err">含茶歇报价如下……</span><span class="err">顺颂商祺！</span>
+      </div>
+    </div>
+    <div class="issue-row">
+      <span class="issue">🧮 <b>算错</b> · 漏专家费 <code>6000</code></span>
+      <span class="issue">📋 <b>漏项</b> · 无明细无有效期</span>
+      <span class="issue">🧑‍💼 <b>不合规</b> · 缺称呼落款</span>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 一稿的错不是能力问题 —— <b>是少一道「回头检查」</b></footer>
+</section>
+
+<!-- STEP 2 · 换帽 -->
+<section class="screen s-critic">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>换顶帽子</div>
+    <h2 class="rv d1">同一个模型，当一回审稿人</h2>
+    <p class="scr-desc rv d2">不调新模型 —— 换一条审稿 prompt，输出结构化问题清单</p>
+  </header>
+  <div class="stage">
+    <div class="hat-flow">
+      <div class="h-node"><div class="ico">✍️</div><b>v1 初稿</b></div>
+      <div class="h-arrow">→</div>
+      <div class="h-node brain">
+        <div class="ico">🧠</div><b>同一个 LLM</b>
+        <div class="hat-swap" style="margin-top:6px"><span class="off">writer</span><span class="on">critic</span></div>
+      </div>
+      <div class="h-arrow">→</div>
+      <div class="h-node"><div class="ico">🔍</div><b>问题清单</b></div>
+    </div>
+    <div class="crit-list">
+      <div class="ch">CRITIQUE · 只报问题，按严重度排序</div>
+      <div class="ci"><span class="lv hi">高</span><span>总额漏算专家费 6000，金额错误</span></div>
+      <div class="ci"><span class="lv mid">中</span><span>缺明细拆分与报价有效期</span></div>
+      <div class="ci"><span class="lv lo">低</span><span>缺称呼 / 落款，格式不完整</span></div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 挑别人毛病，<b>往往比自己一次写对更在行</b></footer>
+</section>
+
+<!-- STEP 3 · 修订 -->
+<section class="screen s-revise">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>带着批注改</div>
+    <h2 class="rv d1">问题清单，就是修订说明书</h2>
+    <p class="scr-desc rv d2">初稿 + 审稿意见一起喂回 —— 有的放矢，不是重抽彩票</p>
+  </header>
+  <div class="stage">
+    <div class="diff-cols">
+      <div class="diff old">
+        <div class="dv">V1 · 初稿</div>
+        <div class="dl bad">总额 1.04 万</div>
+        <div class="dl bad">含茶歇报价如下……</div>
+        <div class="dl bad">顺颂商祺！</div>
+      </div>
+      <div class="diff new">
+        <div class="dv">V2 · 修订稿</div>
+        <div class="dl note">← 按 [高] 重算</div>
+        <div class="dl good">合计 1.64 万（明细附后，7 日有效）</div>
+        <div class="dl good">尊敬的客户……（落款：商务组）</div>
+      </div>
+    </div>
+    <div class="loop-chip">🔁 v2 → 审稿 → v3 …　每轮只带 <b>「稿 + 批注」</b></div>
+  </div>
+  <footer class="scr-foot rv d6">💡 每顶帽子只干一件事，<b>都干得更好</b></footer>
+</section>
+
+<!-- STEP 4 · 分数曲线 -->
+<section class="screen s-score">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>迭代与刹车</div>
+    <h2 class="rv d1">越改越好，但有天花板</h2>
+    <p class="scr-desc rv d2">涨幅快速递减 —— Reflection 必须自带停止条件</p>
+  </header>
+  <div class="stage">
+    <div class="chart-card">
+      <div class="chart">
+        <div class="pt-col v1"><span class="pt-val">72</span><i class="pt-bar" style="--h:52%"></i><span class="pt-x">v1</span></div>
+        <div class="pt-col v2"><span class="pt-val">88</span><i class="pt-bar" style="--h:74%"></i><span class="pt-x">v2</span></div>
+        <div class="pt-col v3"><span class="pt-val">94</span><i class="pt-bar" style="--h:84%"></i><span class="pt-x">v3</span></div>
+        <div class="pt-col v4"><span class="pt-val">95</span><i class="pt-bar" style="--h:87%"></i><span class="pt-x">v4</span></div>
+      </div>
+    </div>
+    <div class="stop-row">
+      <span class="stop">🛑 <b>无新问题</b>就收工</span>
+      <span class="stop">🛑 最多 <b>2~3 轮</b></span>
+      <span class="stop">🛑 提分 &lt; 阈值就停</span>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 用 token 买质量 —— <b>买够了就要会停</b>（dev-02 保险丝）</footer>
+</section>
+
+<!-- STEP 5 · 边界 -->
+<section class="screen s-when">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>什么时候值得</div>
+    <h2 class="rv d1">不是所有任务都配一轮审稿</h2>
+    <p class="scr-desc rv d2">有客观对错的任务收益最大</p>
+  </header>
+  <div class="stage">
+    <div class="when-cols">
+      <div class="when good">
+        <div class="wt">✓ 审稿很划算</div>
+        <ul>
+          <li>数学 / 数据核算，能重算</li>
+          <li>写代码，能跑测试、能 lint</li>
+          <li>翻译 / 长文，有事实可核</li>
+          <li>结构化输出，能对 schema 查</li>
+        </ul>
+      </div>
+      <div class="when bad">
+        <div class="wt">✕ 白烧钱</div>
+        <ul>
+          <li>闲聊、寒暄、创意发散</li>
+          <li>一步能答的简单事实</li>
+          <li>没有标准的口味题</li>
+          <li>延迟敏感的实时回复</li>
+        </ul>
+      </div>
+    </div>
+    <div class="when-chip">📌 模型自评可能自我感觉良好 —— 上线验收仍靠<b>独立评估集</b>（dev-04），互补不替代</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 能客观验证的任务才值得反思 —— <b>裁判也得有尺子</b></footer>
+</section>
+
+<!-- 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">写完回头看，好稿是改出来的</h2>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>✍️ 初稿</span><i>→</i><span>🎩 critic 帽</span><i>→</i><span>🔍 问题清单</span><i>→</i><span>✏️ 逐条修订</span><i>→</i><span>🛑 达标停</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">🎩</div>
+        <div><b>同一模型，两顶帽子</b><p>writer 写、critic 挑，一条审稿 prompt 变身严格评审</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">✏️</div>
+        <div><b>批注驱动修订</b><p>结构化、分严重度的清单让修订有的放矢，72→88→94</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">🛑</div>
+        <div><b>会开始，更要会停</b><p>无新问题 / 轮数上限 / 提分过小，只在可验证任务上开</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“能验证的任务才反思，<br>见好就收，是手艺也是纪律。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">AGENT 模式进阶 · 02 / 自我批评篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else {
+    secs.forEach((s) => s.classList.add('active'));
+  }
+
+  dots.forEach((d, i) => d.addEventListener('click', () => {
+    secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+</script>
+</body>
+</html>
