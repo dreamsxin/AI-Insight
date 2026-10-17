@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="混合专家 MoE：router 分诊台为每个 token 选择少数专家，总参数巨大但每次只激活一小部分 —— DeepSeek-V3 671B/37B、top-8 与共享专家，逐屏动画演示">
+<title>混合专家 MoE · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14;
+    --bg1: #0c1322;
+    --ink: #e8eefc;
+    --dim: #8b96ad;
+    --cyan: #22d3ee;
+    --purple: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #fb7185;
+    --card: rgba(255,255,255,.05);
+    --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+
+  .dots {
+    position: fixed; right: 9px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 11px; z-index: 60;
+  }
+  .dots button {
+    width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0;
+    background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s;
+  }
+  .dots button.on {
+    background: var(--cyan); transform: scale(1.4);
+    box-shadow: 0 0 10px rgba(34,211,238,.85);
+  }
+
+  .screen {
+    position: relative; z-index: 1;
+    height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always;
+    overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before {
+    content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%);
+  }
+  .s-hero  { --glow: rgba(34,211,238,.10); }
+  .s-dense { --glow: rgba(251,113,133,.09); }
+  .s-route { --glow: rgba(34,211,238,.11); }
+  .s-gate  { --glow: rgba(52,211,153,.10); }
+  .s-size  { --glow: rgba(167,139,250,.12); }
+  .s-cost  { --glow: rgba(251,191,36,.09); }
+  .s-sum   { --glow: rgba(244,114,182,.08); }
+
+  .scr-head {
+    width: 100%; max-width: 640px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .step-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07);
+    padding: 4px 13px; border-radius: 999px;
+  }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code {
+    color: var(--cyan); font-size: .92em;
+    background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px;
+  }
+  .code-chip {
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage {
+    position: relative; z-index: 1; flex: 1; min-height: 0;
+    width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 13px;
+  }
+  .scr-foot {
+    width: 100%; max-width: 640px; text-align: center;
+    font-size: 12px; line-height: 1.65; color: var(--dim);
+  }
+  .scr-foot b { color: #c3cde2; }
+
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; }
+  .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; }
+  .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; }
+  .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  /* ===== 封面 ===== */
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker {
+    font-size: 10px; letter-spacing: .28em; color: var(--dim);
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 6px 16px; border-radius: 999px;
+  }
+  h1 { font-size: clamp(34px, 9vw, 54px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad {
+    background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node {
+    font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line); white-space: nowrap;
+  }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i {
+    position: absolute; top: 50%; transform: translateY(-50%); left: 0;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan);
+  }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint {
+    position: absolute; bottom: calc(16px + env(safe-area-inset-bottom));
+    left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em;
+  }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* ============ 屏2 · 稠密模型 ============ */
+  .corridor {
+    width: 100%; max-width: 560px;
+    background: var(--card); border: 1px solid rgba(251,113,133,.4);
+    border-radius: 14px; padding: 14px;
+  }
+  .corr-row { display: flex; align-items: center; gap: 9px; }
+  .tk-in {
+    flex: 0 0 auto; font-family: var(--mono); font-size: 12px; font-weight: 700; color: #ffb9c4;
+    background: rgba(251,113,133,.1); border: 1px solid rgba(251,113,133,.45);
+    border-radius: 10px; padding: 7px 10px; white-space: nowrap;
+  }
+  .dense-blocks { flex: 1; display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .db {
+    height: 40px; border-radius: 9px;
+    background: rgba(251,113,133,.14); border: 1px solid rgba(251,113,133,.45);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; color: #ffb9c4; letter-spacing: .05em;
+  }
+  .s-dense.active .db { animation: denseGlow 2.2s ease-in-out infinite; }
+  .s-dense.active .db:nth-child(2) { animation-delay: .15s; }
+  .s-dense.active .db:nth-child(3) { animation-delay: .3s; }
+  .s-dense.active .db:nth-child(4) { animation-delay: .45s; }
+  .s-dense.active .db:nth-child(5) { animation-delay: .6s; }
+  .s-dense.active .db:nth-child(6) { animation-delay: .75s; }
+  @keyframes denseGlow { 0%,100% { box-shadow: 0 0 0 rgba(251,113,133,0) } 50% { box-shadow: 0 0 14px rgba(251,113,133,.4) } }
+  .corr-cap { font-size: 10.5px; color: var(--dim); text-align: center; margin-top: 9px; line-height: 1.6; }
+  .corr-cap b { color: #ffb9c4; }
+
+  /* ============ 屏3 · 分诊台 ============ */
+  .route-box {
+    display: flex; align-items: center; gap: 12px; width: 100%; max-width: 560px;
+  }
+  .rtoken {
+    flex: 0 0 auto; font-family: var(--mono); font-size: 13px; font-weight: 700; color: #67e8f9;
+    background: rgba(34,211,238,.1); border: 1px solid rgba(34,211,238,.45);
+    border-radius: 11px; padding: 10px 12px; text-align: center;
+  }
+  .rtoken small { display: block; font-size: 9px; color: var(--dim); font-weight: 400; margin-top: 2px; }
+  .rarrow { position: relative; flex: 0 0 26px; height: 2px; background: var(--line); }
+  .rarrow i {
+    position: absolute; top: 50%; transform: translateY(-50%); left: 0;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan);
+  }
+  .s-route.active .rarrow i { animation: flowDot 1.4s linear infinite; }
+  .rrouter {
+    flex: 0 0 auto; text-align: center; font-size: 12.5px; font-weight: 800; color: #c4b5fd;
+    background: rgba(167,139,250,.1); border: 1px solid rgba(167,139,250,.5);
+    border-radius: 12px; padding: 12px 14px;
+  }
+  .rrouter small { display: block; font-size: 9px; color: var(--dim); font-weight: 400; margin-top: 3px; font-family: var(--mono); }
+  .scorelist { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+  .sc {
+    display: grid; grid-template-columns: 74px 1fr 40px; align-items: center; gap: 8px;
+    font-size: 10.5px; padding: 5px 9px; border-radius: 9px;
+    background: var(--card); border: 1px solid var(--line);
+  }
+  .sc .sb { height: 6px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .sc .sb i { display: block; height: 100%; border-radius: 99px; background: rgba(148,163,184,.6); }
+  .sc .sv { font-family: var(--mono); font-size: 9px; color: var(--dim); text-align: right; }
+  .sc.hot { border-color: rgba(52,211,153,.55); }
+  .sc.hot .sb i { background: var(--green); }
+  .sc.hot .sv { color: #6ee7b7; }
+  .sc.hot span:first-child { color: #6ee7b7; font-weight: 700; }
+  .route-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7; }
+  .route-note code { color: var(--cyan); background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px; font-size: .92em; }
+  .s-route.active .sc.hot { animation: winnerGlow 2s ease-in-out .9s infinite; }
+  @keyframes winnerGlow { 0%,100% { box-shadow: 0 0 0 rgba(52,211,153,0) } 50% { box-shadow: 0 0 14px rgba(52,211,153,.28) } }
+
+  /* ============ 屏4 · 不同 token 进不同门 ============ */
+  .lanes { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 9px; }
+  .lane {
+    display: grid; grid-template-columns: 86px 1fr 96px; align-items: center; gap: 8px;
+  }
+  .ltok {
+    font-family: var(--mono); font-size: 10.5px; font-weight: 700; text-align: center;
+    border-radius: 9px; padding: 7px 6px;
+  }
+  .ltrack { position: relative; height: 26px; border-radius: 8px; background: rgba(255,255,255,.03); border: 1px dashed var(--line); overflow: hidden; }
+  .lpkt {
+    position: absolute; top: 50%; transform: translateY(-50%); left: 4px;
+    width: 12px; height: 12px; border-radius: 50%;
+  }
+  .ldoor {
+    font-size: 10px; text-align: center; border-radius: 9px; padding: 7px 4px;
+    background: var(--card); border: 1px solid var(--line); line-height: 1.35;
+  }
+  .lane.a .ltok { color: #67e8f9; background: rgba(34,211,238,.1); border: 1px solid rgba(34,211,238,.4); }
+  .lane.a .lpkt { background: var(--cyan); box-shadow: 0 0 9px var(--cyan); }
+  .lane.a .ldoor { color: #67e8f9; border-color: rgba(34,211,238,.45); }
+  .lane.b .ltok { color: #6ee7b7; background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.4); }
+  .lane.b .lpkt { background: var(--green); box-shadow: 0 0 9px var(--green); }
+  .lane.b .ldoor { color: #6ee7b7; border-color: rgba(52,211,153,.45); }
+  .lane.c .ltok { color: #c4b5fd; background: rgba(167,139,250,.1); border: 1px solid rgba(167,139,250,.4); }
+  .lane.c .lpkt { background: var(--purple); box-shadow: 0 0 9px var(--purple); }
+  .lane.c .ldoor { color: #c4b5fd; border-color: rgba(167,139,250,.45); }
+  .s-gate.active .lpkt { animation: laneGo 2.4s cubic-bezier(.4,0,.4,1) infinite; }
+  .s-gate.active .lane.b .lpkt { animation-delay: .8s; }
+  .s-gate.active .lane.c .lpkt { animation-delay: 1.6s; }
+  @keyframes laneGo {
+    0% { left: 4px; opacity: 0 }
+    12% { opacity: 1 }
+    70% { left: calc(100% - 18px); opacity: 1 }
+    84%, 100% { left: calc(100% - 18px); opacity: 0 }
+  }
+  .gate-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7; }
+
+  /* ============ 屏5 · 总参≠激活 ============ */
+  .stat-row { display: flex; gap: 12px; width: 100%; max-width: 560px; }
+  .stat {
+    flex: 1; border-radius: 14px; padding: 14px 12px; text-align: center;
+    background: var(--card); border: 1px solid var(--line);
+  }
+  .stat .big { font-family: var(--mono); font-size: clamp(22px, 6vw, 30px); font-weight: 800; }
+  .stat .lab { font-size: 10.5px; color: var(--dim); margin-top: 4px; line-height: 1.5; }
+  .stat.total .big { color: #c4b5fd; }
+  .stat.act .big { color: #6ee7b7; }
+  .stat.act { border-color: rgba(52,211,153,.45); }
+  .recipe {
+    width: 100%; max-width: 560px; font-size: 11.5px; line-height: 1.8; color: #aab6cf;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 12px; padding: 10px 15px; text-align: center;
+  }
+  .recipe code { color: var(--cyan); font-size: .95em; }
+  .recipe b { color: #fde68a; }
+
+  /* ============ 屏6 · 代价 ============ */
+  .trade-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .trade {
+    flex: 1; border-radius: 13px; padding: 12px 13px;
+    background: var(--card); border: 1px solid var(--line);
+  }
+  .trade.good { border-color: rgba(52,211,153,.4); }
+  .trade.warn { border-color: rgba(251,191,36,.4); }
+  .trade h4 { font-size: 12.5px; margin-bottom: 6px; }
+  .trade.good h4 { color: #6ee7b7; }
+  .trade.warn h4 { color: #fde68a; }
+  .trade p { font-size: 10.8px; color: var(--dim); line-height: 1.65; }
+  .gpu-row { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 560px; justify-content: center; flex-wrap: wrap; }
+  .gpu {
+    font-family: var(--mono); font-size: 9.5px; color: #c4b5fd;
+    border: 1px solid rgba(167,139,250,.4); background: rgba(167,139,250,.07);
+    border-radius: 8px; padding: 6px 9px;
+  }
+  .gpu.link { border-style: dashed; color: var(--amber); border-color: rgba(251,191,36,.45); background: rgba(251,191,36,.06); }
+  .cost-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7; }
+  .cost-note code { color: var(--amber); background: rgba(251,191,36,.08); padding: 1px 5px; border-radius: 5px; font-size: .92em; }
+
+  /* ===== 总结 ===== */
+  .sum-flow {
+    display: flex; gap: 4px; align-items: center; justify-content: center;
+    flex-wrap: wrap; font-size: 10px; color: var(--dim);
+  }
+  .sum-flow span {
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv {
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px 15px;
+  }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote {
+    font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center;
+    line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .replay {
+    font-size: 12.5px; color: #06121c; background: var(--cyan);
+    border: none; padding: 10px 26px; border-radius: 999px;
+    font-weight: 700; cursor: pointer; letter-spacing: .06em;
+  }
+  .replay:active { transform: scale(.96); }
+  .series-badge {
+    position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px;
+    font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em;
+  }
+
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+
+  @media (max-height: 560px) {
+    .screen { overflow-y: auto; justify-content: flex-start; }
+    .stage { flex: 0 0 auto; padding: 14px 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition: none !important; scroll-behavior: auto !important;
+    }
+    .rv { opacity: 1 !important; transform: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面" aria-label="封面"></button>
+  <button title="STEP 1 稠密模型" aria-label="稠密模型"></button>
+  <button title="STEP 2 分诊台" aria-label="分诊台"></button>
+  <button title="STEP 3 各走各门" aria-label="各走各门"></button>
+  <button title="STEP 4 总参≠激活" aria-label="总参不等于激活"></button>
+  <button title="STEP 5 代价与均衡" aria-label="代价与均衡"></button>
+  <button title="总结" aria-label="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">AI 运作原理拆解 · 14</div>
+    <h1 class="rv d2">混合专家<br><span class="grad">一群专科医生</span></h1>
+    <p class="hero-sub rv d3">MoE · 分诊台 · top-k 路由 · 稀疏激活</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">🔤 每个 token</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">🧭 分诊台</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">🩺 少数专家</span>
+    </div>
+    <p class="hero-quote rv d5">「模型可以很大，每次计算却很小」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 稠密模型 -->
+<section class="screen s-dense">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>先看普通（稠密）模型</div>
+    <h2 class="rv d1">每个词，都要全体参数上岗</h2>
+    <p class="scr-desc rv d2">13 期的层是「稠密」的：一个 token 穿过时，层里每个参数都要参与计算，谁都不能请假</p>
+    <div class="code-chip rv d2">dense：计算量 ≈ <b>总参数量</b> · 70B 模型每一步都是 70B 的活儿</div>
+  </header>
+  <div class="stage">
+    <div class="corridor rv d3">
+      <div class="corr-row">
+        <span class="tk-in">求导()</span>
+        <div class="dense-blocks">
+          <span class="db">参数</span><span class="db">参数</span><span class="db">参数</span><span class="db">参数</span><span class="db">参数</span><span class="db">参数</span>
+        </div>
+      </div>
+      <div class="corr-cap">无论来的是数学题、英文单词还是代码 —— <b>同一条参数长廊，一个不落地全部走一遍</b></div>
+    </div>
+    <div class="route-note rv d5">想让模型更聪明？堆参数 → 但每个词的成本跟着<b style="color:#ffb9c4">直线上涨</b>，这是稠密模型的两难</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 MoE 的破局思路：<b>参数可以都养着，但不必每次都出诊</b></footer>
+</section>
+
+<!-- 屏3 · STEP 2 分诊台 -->
+<section class="screen s-route">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>router 分诊台</div>
+    <h2 class="rv d1">每层门口，先挂个号</h2>
+    <p class="scr-desc rv d2">MoE 把 FFN 换成一群并列的「专家网络」，并加一个 <code>router</code>（门控）：先打分，再决定让谁看</p>
+    <div class="code-chip rv d2">scores = softmax(router(h)) · 只放行 <b>top-k</b> 个专家</div>
+  </header>
+  <div class="stage">
+    <div class="route-box">
+      <span class="rtoken rv d2">求导<small>token</small></span>
+      <span class="rarrow"><i></i></span>
+      <span class="router rv d3">🧭<br>分诊台<small>router</small></span>
+      <span class="rarrow"><i></i></span>
+      <div class="scorelist rv d4">
+        <div class="sc hot"><span>数学专家</span><span class="sb"><i style="width:82%"></i></span><span class="sv">0.31 ✓</span></div>
+        <div class="sc hot"><span>代码专家</span><span class="sb"><i style="width:54%"></i></span><span class="sv">0.24 ✓</span></div>
+        <div class="sc"><span>诗词专家</span><span class="sb"><i style="width:14%"></i></span><span class="sv">0.05</span></div>
+        <div class="sc"><span>翻译专家</span><span class="sb"><i style="width:8%"></i></span><span class="sv">0.02</span></div>
+      </div>
+    </div>
+    <div class="route-note rv d5">分数加权汇总被选中专家的结果，其余专家这一步<b>完全不计算</b> —— 分诊台本身也在训练中学习</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 注意力层照旧全员互通，<b>被换成专家的是 13 期那台 FFN 搅拌机</b></footer>
+</section>
+
+<!-- 屏4 · STEP 3 各走各门 -->
+<section class="screen s-gate">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>不同的词，不同的门</div>
+    <h2 class="rv d1">每个 token 都在重新挂号</h2>
+    <p class="scr-desc rv d2">路由是逐 token 决定的 —— 同一句话里，相邻的词可能走进完全不同的专家</p>
+  </header>
+  <div class="stage">
+    <div class="lanes">
+      <div class="lane a rv d2">
+        <span class="ltok">∫ 求导</span>
+        <span class="ltrack"><i class="lpkt"></i></span>
+        <span class="ldoor">数学<br>专家</span>
+      </div>
+      <div class="lane b rv d3">
+        <span class="ltok">import os</span>
+        <span class="ltrack"><i class="lpkt"></i></span>
+        <span class="ldoor">代码<br>专家</span>
+      </div>
+      <div class="lane c rv d4">
+        <span class="ltok">的 / the</span>
+        <span class="ltrack"><i class="lpkt"></i></span>
+        <span class="ldoor">共享<br>专家</span>
+      </div>
+    </div>
+    <div class="gate-note rv d5">「的、了、the」这类高频虚词谁都要用 —— 现代 MoE 专设一个 <b style="color:#c4b5fd">共享专家</b>，每次都参与，不参与路由竞争</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 专家不是按学科手工分的 —— <b>分工是训练中自己长出来的</b>，没人给专家写岗位说明书</footer>
+</section>
+
+<!-- 屏5 · STEP 4 总参≠激活 -->
+<section class="screen s-size">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>总参数 ≠ 激活参数</div>
+    <h2 class="rv d1">6710 亿的模型，每次只算 370 亿</h2>
+    <p class="scr-desc rv d2">DeepSeek-V3 把这套做法做成了 2025 年后开源 MoE 的模板</p>
+  </header>
+  <div class="stage">
+    <div class="stat-row">
+      <div class="stat total rv d2"><div class="big">671B</div><div class="lab">总参数<br>全部专家养在显存里</div></div>
+      <div class="stat act rv d3"><div class="big">37B</div><div class="lab">每 token 激活<br>实际计算量与稠密 37B 同级</div></div>
+    </div>
+    <div class="recipe rv d4">
+      <code>256</code> 个路由专家，每 token 选 <code>top-8</code>，外加 <code>1</code> 个共享专家<br>
+      2026 年的 <b>MiniMax-M2</b> 走到更极致：总参 <code>229.9B</code>，每 token 仅激活 <code>9.8B</code>
+    </div>
+    <div class="gate-note rv d5">知识容量看总参（专家越多记得越多），<b style="color:#6ee7b7">单步成本看激活</b> —— 两个指标第一次被解耦</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 MoE 的魔法一句话：<b>用稠密小模型的推理成本，调动稠密大模型的知识储备</b></footer>
+</section>
+
+<!-- 屏6 · STEP 5 代价与均衡 -->
+<section class="screen s-cost">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>代价与负载均衡</div>
+    <h2 class="rv d1">推理便宜，部署不便宜</h2>
+    <p class="scr-desc rv d2">省下的是计算，没省的是显存和通信 —— 没有免费的专家午餐</p>
+  </header>
+  <div class="stage">
+    <div class="gpu-row rv d2">
+      <span class="gpu">GPU 0 · 专家 1~64</span>
+      <span class="gpu link">all-to-all ↔</span>
+      <span class="gpu">GPU 1 · 专家 65~128</span>
+      <span class="gpu link">↔</span>
+      <span class="gpu">GPU 2 · …</span>
+    </div>
+    <div class="trade-row">
+      <div class="trade good rv d3">
+        <h4>✅ 亮点</h4>
+        <p>每 token FLOPs 大降，同样延迟能装下多得多的参数；训练也能利用专家并行铺开</p>
+      </div>
+      <div class="trade warn rv d4">
+        <h4>⚠️ 代价</h4>
+        <p>全部专家都要常驻显存；token 要跨卡「找专家」，all-to-all 通信成为新瓶颈；路由还可能扎堆</p>
+      </div>
+    </div>
+    <div class="cost-note rv d5">为治「所有 token 都挤同一个专家」，V3 用 <code>动态 bias 调节</code>代替辅助损失做负载均衡 —— 不再为均衡牺牲模型质量（aux-loss-free）</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 选型直觉：<b>追求并发与性价比看 MoE，追求部署简单看稠密</b> —— 2025 年后的旗舰几乎都选了 MoE</footer>
+</section>
+
+<!-- 屏7 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">分诊台 + 一群专科专家</h2>
+    <p class="scr-desc rv d2">router 打分 → top-k 专家 → 加权汇总，每个 token 只激活一小部分参数</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>token</span><i>→</i><span>router 打分</span><i>→</i><span>top-k 专家</span><i>→</i><span>加权汇总</span><i>→</i><span>下一层</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">🧭</div>
+        <div><b>路由逐词发生</b><p>分诊台为每个 token 独立选专家，分工在训练中自发形成；共享专家服务高频虚词</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🔋</div>
+        <div><b>总参与激活解耦</b><p>V3：671B 总参 / 37B 激活，256 选 8 加 1 个共享专家 —— 容量与单步成本从此分开计价</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">🛰️</div>
+        <div><b>便宜推理，昂贵部署</b><p>专家常驻显存、跨卡通信与负载均衡是 MoE 的真实门票，aux-loss-free 是新解法</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“稠密模型是全科门诊，<br>MoE 是按需出诊的专家团队。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">AI 运作原理拆解 · 14 / 混合专家篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else {
+    secs.forEach((s) => s.classList.add('active'));
+  }
+
+  dots.forEach((d, i) => d.addEventListener('click', () => {
+    secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+</script>
+</body>
+</html>

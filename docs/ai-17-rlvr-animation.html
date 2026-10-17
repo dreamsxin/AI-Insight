@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="RLVR 与推理模型训练：可验证奖励（数学/单测/格式自动判分）、GRPO 组相对优势、R1-Zero 纯 RL 涌现思考链、拒绝采样蒸馏与 2025 蒸馏之争，逐屏动画演示">
+<title>RLVR 与蒸馏 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14;
+    --bg1: #0c1322;
+    --ink: #e8eefc;
+    --dim: #8b96ad;
+    --cyan: #22d3ee;
+    --purple: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #fb7185;
+    --card: rgba(255,255,255,.05);
+    --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+
+  .dots {
+    position: fixed; right: 9px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 11px; z-index: 60;
+  }
+  .dots button {
+    width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0;
+    background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s;
+  }
+  .dots button.on {
+    background: var(--cyan); transform: scale(1.4);
+    box-shadow: 0 0 10px rgba(34,211,238,.85);
+  }
+
+  .screen {
+    position: relative; z-index: 1;
+    height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always;
+    overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before {
+    content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%);
+  }
+  .s-hero  { --glow: rgba(34,211,238,.10); }
+  .s-prob { --glow: rgba(251,191,36,.09); }
+  .s-verify{ --glow: rgba(52,211,153,.10); }
+  .s-grpo { --glow: rgba(34,211,238,.11); }
+  .s-r1   { --glow: rgba(167,139,250,.12); }
+  .s-dist { --glow: rgba(244,114,182,.08); }
+  .s-sum  { --glow: rgba(244,114,182,.08); }
+
+  .scr-head {
+    width: 100%; max-width: 640px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .step-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07);
+    padding: 4px 13px; border-radius: 999px;
+  }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code {
+    color: var(--cyan); font-size: .92em;
+    background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px;
+  }
+  .code-chip {
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage {
+    position: relative; z-index: 1; flex: 1; min-height: 0;
+    width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 13px;
+  }
+  .scr-foot {
+    width: 100%; max-width: 640px; text-align: center;
+    font-size: 12px; line-height: 1.65; color: var(--dim);
+  }
+  .scr-foot b { color: #c3cde2; }
+
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; }
+  .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; }
+  .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; }
+  .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  /* ===== 封面 ===== */
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker {
+    font-size: 10px; letter-spacing: .28em; color: var(--dim);
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 6px 16px; border-radius: 999px;
+  }
+  h1 { font-size: clamp(34px, 9vw, 54px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad {
+    background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node {
+    font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line); white-space: nowrap;
+  }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i {
+    position: absolute; top: 50%; transform: translateY(-50%); left: 0;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan);
+  }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint {
+    position: absolute; bottom: calc(16px + env(safe-area-inset-bottom));
+    left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em;
+  }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* ============ 屏2 · 旧方法的困境 ============ */
+  .algo-row { display: flex; gap: 9px; width: 100%; max-width: 560px; }
+  .ac {
+    flex: 1; border-radius: 13px; padding: 11px 12px;
+    background: var(--card); border: 1px solid var(--line);
+  }
+  .ac h4 { font-size: 11.5px; margin-bottom: 5px; display: flex; align-items: center; gap: 5px; }
+  .ac p { font-size: 10.4px; color: var(--dim); line-height: 1.6; }
+  .ac.sft h4 { color: #67e8f9; }
+  .ac.rlhf h4 { color: #c4b5fd; }
+  .ac.stuck { border-color: rgba(251,113,133,.5); }
+  .ac.stuck h4 { color: #ffb9c4; }
+  .stuck-box {
+    width: 100%; max-width: 560px; border-radius: 12px;
+    padding: 10px 14px; font-size: 11px; line-height: 1.7; color: #ffb9c4;
+    background: rgba(251,113,133,.07); border: 1px solid rgba(251,113,133,.4);
+    text-align: center;
+  }
+  .stuck-box b { color: #fecdd3; }
+
+  /* ============ 屏3 · 可验证奖励 ============ */
+  .ver-flow { display: flex; align-items: center; gap: 9px; width: 100%; max-width: 560px; justify-content: center; flex-wrap: wrap; }
+  .vf-card {
+    border-radius: 12px; padding: 10px 13px;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 11px; text-align: center;
+  }
+  .vf-card.ans { border-color: rgba(34,211,238,.45); color: #67e8f9; min-width: 92px; }
+  .vf-card.rwd { border-color: rgba(52,211,153,.5); color: #6ee7b7; font-family: var(--mono); font-weight: 700; }
+  .vf-arrow { color: var(--dim); font-size: 12px; }
+  .verifiers { display: flex; gap: 8px; width: 100%; max-width: 560px; }
+  .vr {
+    flex: 1; border-radius: 12px; padding: 10px 9px; text-align: center;
+    background: rgba(52,211,153,.06); border: 1px solid rgba(52,211,153,.35);
+  }
+  .vr .vi { font-size: 19px; }
+  .vr b { display: block; font-size: 11px; color: #6ee7b7; margin: 4px 0 2px; }
+  .vr span { font-size: 9.8px; color: var(--dim); line-height: 1.5; }
+  .verify-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7; }
+  .verify-note code { color: var(--cyan); background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px; font-size: .92em; }
+
+  /* ============ 屏4 · GRPO ============ */
+  .grpo-box { width: 100%; max-width: 560px; }
+  .q-chip {
+    margin: 0 auto 8px; width: fit-content;
+    font-size: 11px; color: #67e8f9; font-family: var(--mono);
+    border: 1px solid rgba(34,211,238,.45); background: rgba(34,211,238,.07);
+    border-radius: 999px; padding: 5px 13px;
+  }
+  .samples { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
+  .smp {
+    border-radius: 9px; padding: 7px 6px; text-align: center;
+    background: var(--card); border: 1px solid var(--line);
+    font-family: var(--mono); font-size: 10px;
+  }
+  .smp.good { border-color: rgba(52,211,153,.5); color: #6ee7b7; background: rgba(52,211,153,.07); }
+  .smp.bad { border-color: rgba(251,113,133,.4); color: #ffb9c4; background: rgba(251,113,133,.05); }
+  .grpo-merge {
+    text-align: center; font-size: 10.5px; color: var(--dim); line-height: 1.7;
+    border: 1px dashed var(--line); border-radius: 10px; padding: 8px 12px;
+  }
+  .grpo-merge b { color: #c4b5fd; }
+  .grpo-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.65; }
+
+  /* ============ 屏5 · R1 ============ */
+  .recipe-flow { display: flex; align-items: center; gap: 5px; width: 100%; max-width: 560px; justify-content: center; flex-wrap: wrap; }
+  .rf {
+    font-size: 10px; padding: 7px 10px; border-radius: 999px; white-space: nowrap;
+    background: var(--card); border: 1px solid var(--line); color: #aab6cf;
+  }
+  .rf.hot { color: #c4b5fd; border-color: rgba(167,139,250,.5); background: rgba(167,139,250,.09); }
+  .recipe-flow i { color: var(--dim); font-style: normal; }
+  .metric-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .mt {
+    flex: 1; border-radius: 13px; padding: 12px; text-align: center;
+    background: var(--card); border: 1px solid rgba(167,139,250,.4);
+  }
+  .mt .mb { font-family: var(--mono); font-size: 24px; font-weight: 800; color: #c4b5fd; }
+  .mt .ml { font-size: 10px; color: var(--dim); margin-top: 3px; line-height: 1.5; }
+  .aha {
+    width: 100%; max-width: 560px; font-size: 11px; line-height: 1.7; text-align: center;
+    color: #fde68a; background: rgba(251,191,36,.07);
+    border: 1px solid rgba(251,191,36,.35); border-radius: 11px; padding: 8px 13px;
+  }
+  .aha code { color: var(--amber); font-size: .95em; }
+
+  /* ============ 屏6 · 蒸馏 ============ */
+  .dist-flow { display: flex; align-items: center; gap: 10px; width: 100%; max-width: 560px; justify-content: center; }
+  .master {
+    border-radius: 13px; padding: 11px 14px; text-align: center;
+    background: rgba(167,139,250,.09); border: 1px solid rgba(167,139,250,.5);
+  }
+  .master b { display: block; font-size: 12.5px; color: #c4b5fd; }
+  .master span { font-size: 9.8px; color: var(--dim); }
+  .dfa { position: relative; width: 44px; height: 2px; background: var(--line); }
+  .dfa i {
+    position: absolute; top: 50%; transform: translateY(-50%); left: 0;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan);
+  }
+  .s-dist.active .dfa i { animation: flowDot 1.5s linear infinite; }
+  .apprentice {
+    border-radius: 13px; padding: 11px 14px; text-align: center;
+    background: rgba(34,211,238,.07); border: 1px solid rgba(34,211,238,.45);
+  }
+  .apprentice b { display: block; font-size: 12.5px; color: #67e8f9; }
+  .apprentice span { font-size: 9.8px; color: var(--dim); }
+  .debate-row { display: flex; gap: 9px; width: 100%; max-width: 560px; }
+  .db {
+    flex: 1; border-radius: 12px; padding: 10px 12px;
+    background: var(--card); border: 1px solid var(--line);
+  }
+  .db h4 { font-size: 11px; margin-bottom: 5px; }
+  .db p { font-size: 10.3px; color: var(--dim); line-height: 1.6; }
+  .db.ok { border-color: rgba(52,211,153,.4); } .db.ok h4 { color: #6ee7b7; }
+  .db.no { border-color: rgba(251,191,36,.4); } .db.no h4 { color: #fde68a; }
+  .algo-strip {
+    max-width: 560px; width: 100%; text-align: center; font-size: 10.5px; color: #c4b5fd;
+    border: 1px dashed rgba(167,139,250,.4); border-radius: 999px; padding: 6px 14px;
+    background: rgba(167,139,250,.05); line-height: 1.6;
+  }
+
+  /* ===== 总结 ===== */
+  .sum-flow {
+    display: flex; gap: 4px; align-items: center; justify-content: center;
+    flex-wrap: wrap; font-size: 10px; color: var(--dim);
+  }
+  .sum-flow span {
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv {
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px 15px;
+  }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote {
+    font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center;
+    line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .replay {
+    font-size: 12.5px; color: #06121c; background: var(--cyan);
+    border: none; padding: 10px 26px; border-radius: 999px;
+    font-weight: 700; cursor: pointer; letter-spacing: .06em;
+  }
+  .replay:active { transform: scale(.96); }
+  .series-badge {
+    position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px;
+    font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em;
+  }
+
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+
+  @media (max-height: 560px) {
+    .screen { overflow-y: auto; justify-content: flex-start; }
+    .stage { flex: 0 0 auto; padding: 14px 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition: none !important; scroll-behavior: auto !important;
+    }
+    .rv { opacity: 1 !important; transform: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面" aria-label="封面"></button>
+  <button title="STEP 1 旧方法的墙" aria-label="旧方法的墙"></button>
+  <button title="STEP 2 可验证奖励" aria-label="可验证奖励"></button>
+  <button title="STEP 3 GRPO 组采样" aria-label="GRPO 组采样"></button>
+  <button title="STEP 4 R1 配方" aria-label="R1 配方"></button>
+  <button title="STEP 5 蒸馏与争议" aria-label="蒸馏与争议"></button>
+  <button title="总结" aria-label="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">AI 运作原理拆解 · 17</div>
+    <h1 class="rv d2">RLVR<br><span class="grad">让模型自己对答案</span></h1>
+    <p class="hero-sub rv d3">可验证奖励 · GRPO · 思考链涌现 · 拒绝采样蒸馏</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">📚 SFT 示范</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">✅ 程序判分</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">🔁 自己练</span>
+    </div>
+    <p class="hero-quote rv d5">「16 期的思考能力，是这样训出来的」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 旧方法的墙 -->
+<section class="screen s-prob">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>旧方法撞上的墙</div>
+    <h2 class="rv d1">教礼貌容易，教推理很难</h2>
+    <p class="scr-desc rv d2">回到 01 期的对齐两件套：SFT 靠示范，RLHF 靠人类偏好 —— 面对数学和代码，它们都不够用了</p>
+  </header>
+  <div class="stage">
+    <div class="algo-row">
+      <div class="ac sft rv d2">
+        <h4>📚 SFT 监督微调</h4>
+        <p>喂标准答案让它模仿格式与分寸 —— 但题库之外的新题，没有示范可抄</p>
+      </div>
+      <div class="ac rlhf rv d3">
+        <h4>👍 RLHF 偏好学习</h4>
+        <p>人类两两比较、训练奖励模型 —— 擅长风格与安全，不擅长判推理</p>
+      </div>
+    </div>
+    <div class="stuck-box rv d4">🧱 困境：一道竞赛题的两份草稿，<b>连标注员都看不出哪条路真能走通</b>；<br>而且「读起来像好答案」≠「答案真的对」—— 奖励可能奖励了流畅的废话</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 推理能力要规模化训练，需要一种<b>不靠人逐条打分、又绝对客观</b>的奖励来源</footer>
+</section>
+
+<!-- 屏3 · STEP 2 可验证奖励 -->
+<section class="screen s-verify">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>RLVR · 可验证奖励</div>
+    <h2 class="rv d1">让程序当考官，对错自动判</h2>
+    <p class="scr-desc rv d2">RLVR = Reinforcement Learning with Verifiable Rewards：答案交出去，规则/程序直接给 1 或 0，不需要人类评委</p>
+    <div class="code-chip rv d2">reward = <b>verifier</b>(answer, ground_truth) ∈ {0, 1}</div>
+  </header>
+  <div class="stage">
+    <div class="verifiers">
+      <div class="vr rv d2"><div class="vi">➗</div><b>数学题</b><span>最终答案与标准答案比对，对就是对</span></div>
+      <div class="vr rv d3"><div class="vi">🧪</div><b>代码题</b><span>跑单元测试，全绿 = 1，有红 = 0，机器最在行</span></div>
+      <div class="vr rv d4"><div class="vi">📐</div><b>格式题</b><span>JSON schema、规则约束，校验通过才给分</span></div>
+    </div>
+    <div class="ver-flow rv d5">
+      <span class="vf-card ans">模型答案</span>
+      <span class="vf-arrow">→</span>
+      <span class="vf-card ans">verifier 验证器</span>
+      <span class="vf-arrow">→</span>
+      <span class="vf-card rwd">+1 / 0</span>
+    </div>
+    <div class="verify-note rv d6">奖励信号客观、无限量、零人工 —— 模型可以在<code>百万道带标准答案的题</code>上反复练，这是 RLHF 给不了的训练场</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 关键转变：<b>不再教「怎么解」，只判「对没对」</b> —— 解题路径让模型自己去摸索</footer>
+</section>
+
+<!-- 屏4 · STEP 3 GRPO -->
+<section class="screen s-grpo">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>GRPO · 组内排名</div>
+    <h2 class="rv d1">同一道题，让它考一小组</h2>
+    <p class="scr-desc rv d2">DeepSeek 提出的 GRPO：对一道题采样一组答案，用「组内相对好坏」当优势信号 —— 连单独的裁判模型都省了</p>
+    <div class="code-chip rv d2">sample G 个答案 → verifier 判对错 → <b>组内归一化</b> → 提优压差</div>
+  </header>
+  <div class="stage">
+    <div class="grpo-box">
+      <div class="q-chip rv d2">题：求方程整数解的个数</div>
+      <div class="samples">
+        <div class="smp good rv d2">尝试 1 · ✓ +1</div>
+        <div class="smp bad rv d2">尝试 2 · ✗ 0</div>
+        <div class="smp good rv d3">尝试 3 · ✓ +1</div>
+        <div class="smp bad rv d3">尝试 4 · ✗ 0</div>
+        <div class="smp bad rv d4">尝试 5 · ✗ 0</div>
+        <div class="smp good rv d4">尝试 6 · ✓ +1</div>
+      </div>
+      <div class="grpo-merge rv d5">比组内平均好的尝试 → <b>提高这类思路的概率</b>；比平均差的 → 压低　·　无需 critic 网络，组就是参照物</div>
+    </div>
+    <div class="grpo-note rv d6">为了偶尔做对，模型会自发尝试更长的推导 —— 多步思考链，就是在这种奖励压力下被<b style="color:#c3cde2">奖励出来</b>的</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 GRPO 的精髓：<b>不跟绝对标准比，跟「同一题的其他自己」比</b> —— 简单、稳定、可规模化</footer>
+</section>
+
+<!-- 屏5 · STEP 4 R1 配方 -->
+<section class="screen s-r1">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>R1：纯 RL 与完整配方</div>
+    <h2 class="rv d1">没人教的反思，自己长出来了</h2>
+    <p class="scr-desc rv d2">DeepSeek-R1-Zero 直接在基础模型上跑 RLVR，没有推理示范，长思考链与「啊哈时刻」自发涌现</p>
+  </header>
+  <div class="stage">
+    <div class="recipe-flow rv d2">
+      <span class="rf">基础模型</span><i>→</i>
+      <span class="rf hot">RLVR 直接开练（R1-Zero）</span><i>→</i>
+      <span class="rf">自发学会反思/回退/换法</span>
+    </div>
+    <div class="aha rv d3">⚡ 「aha moment」：训练日志里模型开始自言自语<code>等等，这里不对，重新算</code> —— 没人教过它这句话<br>正式版 R1 更稳：先 SFT 冷启动给格式，再多阶段 RLVR 放大推理</div>
+    <div class="metric-row">
+      <div class="mt rv d4"><div class="mb">71%</div><div class="ml">AIME 2024 pass@1<br>逼近同类顶尖闭源模型</div></div>
+      <div class="mt rv d5"><div class="mb">97.3%</div><div class="ml">MATH-500<br>竞赛数学基准</div></div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 这是 2025 年最重要的实证之一：<b>可验证奖励 + RL，可以「无师自通」地训出推理行为</b></footer>
+</section>
+
+<!-- 屏6 · STEP 5 蒸馏与争议 -->
+<section class="screen s-dist">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>蒸馏：大师带徒弟</div>
+    <h2 class="rv d1">把思考能力，压进小模型</h2>
+    <p class="scr-desc rv d2">让强模型生成带完整思考链的正确解答（拒绝采样），再用 SFT 教给小模型 —— 1.5B 到 70B 的徒弟都会推理了</p>
+  </header>
+  <div class="stage">
+    <div class="dist-flow rv d2">
+      <div class="master"><b>🧙 大师模型</b><span>生成对的 CoT 示范</span></div>
+      <span class="dfa"><i></i></span>
+      <div class="apprentice"><b>🎓 小模型们</b><span>1.5B / 7B / 70B</span></div>
+    </div>
+    <div class="debate-row">
+      <div class="db ok rv d3">
+        <h4>✓ 常规工艺</h4>
+        <p>自家强模型蒸馏自家小模型：思考/非思考双档、廉价快模型，全行业通行；R1 论文公开了蒸馏权重</p>
+      </div>
+      <div class="db no rv d4">
+        <h4>⚖️ 2025 之争</h4>
+        <p>用商业 API 的输出训练竞品，多数厂商条款明令禁止 —— 「公开数据学习」与「API 搬砖」的边界吵了一整年</p>
+      </div>
+    </div>
+    <div class="algo-strip rv d5">🔭 后浪：DAPO（动态采样/非对称裁剪）→ GSPO（整条序列级优势，专治 MoE 长 CoT 训练不稳）—— RL 算法仍在快速进化</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 <b>SFT 教格式，RLVR 教推理，蒸馏传功力</b> —— 这就是 2025 年后推理模型的标准三件套</footer>
+</section>
+
+<!-- 屏7 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">教会推理，不靠喂答案</h2>
+    <p class="scr-desc rv d2">可验证奖励 → GRPO 组内比较 → 思考链涌现 → 冷启动多阶段 RL → 蒸馏下沉</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>程序判对错</span><i>→</i><span>一组采样</span><i>→</i><span>组内排名</span><i>→</i><span>提优压差</span><i>→</i><span>蒸馏小模型</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">✅</div>
+        <div><b>奖励来自验证而非评委</b><p>数学答案、单元测试、格式校验自动判分 —— RLVR 让推理训练获得客观、海量、零边际成本的奖励</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🔁</div>
+        <div><b>GRPO：跟其他自己比</b><p>一题采样一组，按组内相对好坏更新，无需奖励模型/critic；反思与回退在奖励压力下自发涌现（R1-Zero）</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">🧑‍🎓</div>
+        <div><b>蒸馏让思考下沉</b><p>拒绝采样生成正确思考链再 SFT 给小模型；自家蒸馏是行业工艺，API 蒸馏竞品则是 2025 年的边界之争</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“别再手把手教解法，<br>给它题库、对错，和练习的机会。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">AI 运作原理拆解 · 17 / RLVR 与蒸馏篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else {
+    secs.forEach((s) => s.classList.add('active'));
+  }
+
+  dots.forEach((d, i) => d.addEventListener('click', () => {
+    secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+</script>
+</body>
+</html>

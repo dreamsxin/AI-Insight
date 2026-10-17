@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="推理模型与思考链：o1/DeepSeek-R1 开启的 test-time compute，模型先在隐藏草稿中试错回退再作答，思考预算与 effort 档位，Agent 中的交替思考，逐屏动画演示">
+<title>推理模型与思考链 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14;
+    --bg1: #0c1322;
+    --ink: #e8eefc;
+    --dim: #8b96ad;
+    --cyan: #22d3ee;
+    --purple: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #fb7185;
+    --card: rgba(255,255,255,.05);
+    --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+
+  .dots {
+    position: fixed; right: 9px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 11px; z-index: 60;
+  }
+  .dots button {
+    width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0;
+    background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s;
+  }
+  .dots button.on {
+    background: var(--cyan); transform: scale(1.4);
+    box-shadow: 0 0 10px rgba(34,211,238,.85);
+  }
+
+  .screen {
+    position: relative; z-index: 1;
+    height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always;
+    overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before {
+    content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%);
+  }
+  .s-hero  { --glow: rgba(34,211,238,.10); }
+  .s-two   { --glow: rgba(34,211,238,.11); }
+  .s-chain { --glow: rgba(167,139,250,.12); }
+  .s-budget{ --glow: rgba(251,191,36,.09); }
+  .s-dial  { --glow: rgba(52,211,153,.10); }
+  .s-use   { --glow: rgba(167,139,250,.11); }
+  .s-sum   { --glow: rgba(244,114,182,.08); }
+
+  .scr-head {
+    width: 100%; max-width: 640px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .step-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07);
+    padding: 4px 13px; border-radius: 999px;
+  }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code {
+    color: var(--cyan); font-size: .92em;
+    background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px;
+  }
+  .code-chip {
+    font-family: var(--mono); font-size: 11px; color: #9fb3d1;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage {
+    position: relative; z-index: 1; flex: 1; min-height: 0;
+    width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 13px;
+  }
+  .scr-foot {
+    width: 100%; max-width: 640px; text-align: center;
+    font-size: 12px; line-height: 1.65; color: var(--dim);
+  }
+  .scr-foot b { color: #c3cde2; }
+
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; }
+  .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; }
+  .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; }
+  .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  /* ===== 封面 ===== */
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker {
+    font-size: 10px; letter-spacing: .28em; color: var(--dim);
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 6px 16px; border-radius: 999px;
+  }
+  h1 { font-size: clamp(34px, 9vw, 54px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad {
+    background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node {
+    font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line); white-space: nowrap;
+  }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i {
+    position: absolute; top: 50%; transform: translateY(-50%); left: 0;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan);
+  }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint {
+    position: absolute; bottom: calc(16px + env(safe-area-inset-bottom));
+    left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em;
+  }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* ============ 屏2 · 两种答法 ============ */
+  .two-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .ans {
+    flex: 1; border-radius: 14px; padding: 13px;
+    background: var(--card); border: 1px solid var(--line);
+  }
+  .ans.fast { border-color: rgba(251,191,36,.4); }
+  .ans.deep { border-color: rgba(167,139,250,.55); box-shadow: 0 0 22px rgba(167,139,250,.12); }
+  .ans h4 { font-size: 12.5px; margin-bottom: 9px; display: flex; align-items: center; gap: 6px; }
+  .ans.fast h4 { color: #fde68a; }
+  .ans.deep h4 { color: #c4b5fd; }
+  .path-line {
+    font-family: var(--mono); font-size: 10px; color: var(--dim); line-height: 1.7;
+    background: rgba(0,0,0,.25); border-radius: 9px; padding: 8px 10px; margin-bottom: 8px;
+  }
+  .path-line .hot { color: #c4b5fd; }
+  .path-line .dir { color: #fde68a; }
+  .ans p { font-size: 10.6px; color: var(--dim); line-height: 1.6; }
+  .tl-line {
+    width: 100%; max-width: 560px; font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7;
+  }
+  .tl-line b { color: #c3cde2; }
+  .tl-line .yr { font-family: var(--mono); color: var(--cyan); }
+
+  /* ============ 屏3 · 思考链内部 ============ */
+  .think-term {
+    width: 100%; max-width: 560px;
+    border-radius: 13px; overflow: hidden;
+    border: 1px solid rgba(167,139,250,.45);
+    background: rgba(10,15,28,.9);
+  }
+  .tt-head {
+    display: flex; align-items: center; gap: 7px;
+    padding: 8px 13px; font-size: 10.5px; color: var(--dim);
+    border-bottom: 1px solid var(--line); background: rgba(255,255,255,.03);
+  }
+  .tt-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--purple); box-shadow: 0 0 8px var(--purple); }
+  .tt-body { padding: 11px 14px; font-family: var(--mono); font-size: 10.8px; line-height: 1.85; color: #c4b5fd; }
+  .tt-body .ln { display: block; opacity: 0; }
+  .tt-body .ln.bad { color: #ffb9c4; }
+  .tt-body .ln.ok { color: #6ee7b7; }
+  .tt-body .ln.dim { color: var(--dim); }
+  .s-chain.active .ln { animation: lineIn .4s ease both; }
+  .s-chain.active .ln:nth-child(1) { animation-delay: .5s; }
+  .s-chain.active .ln:nth-child(2) { animation-delay: 1.1s; }
+  .s-chain.active .ln:nth-child(3) { animation-delay: 1.8s; }
+  .s-chain.active .ln:nth-child(4) { animation-delay: 2.5s; }
+  .s-chain.active .ln:nth-child(5) { animation-delay: 3.1s; }
+  @keyframes lineIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+  .answer-bubble {
+    max-width: 560px; width: 100%; text-align: center;
+    font-size: 12px; color: #a7f3d0;
+    background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.4);
+    border-radius: 12px; padding: 8px 13px;
+  }
+  .chain-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.65; }
+
+  /* ============ 屏4 · 思考预算 ============ */
+  .axes-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .axis {
+    flex: 1; border-radius: 13px; padding: 11px 13px;
+    background: var(--card); border: 1px solid var(--line);
+  }
+  .axis h4 { font-size: 11.5px; margin-bottom: 7px; }
+  .axis.train h4 { color: #67e8f9; }
+  .axis.test h4 { color: #c4b5fd; }
+  .axis p { font-size: 10.5px; color: var(--dim); line-height: 1.6; margin-bottom: 7px; }
+  .axis .ax-vis { height: 7px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .axis .ax-vis i { display: block; height: 100%; width: 0; border-radius: 99px; }
+  .axis.train .ax-vis i { background: var(--cyan); }
+  .axis.test .ax-vis i { background: var(--purple); }
+  .s-budget.active .axis.train .ax-vis i { animation: grow1 .9s ease .5s forwards; }
+  .s-budget.active .axis.test .ax-vis i { animation: grow2 .9s ease 1s forwards; }
+  @keyframes grow1 { to { width: 82%; } }
+  @keyframes grow2 { to { width: 64%; } }
+  .budget-bar { width: 100%; max-width: 560px; }
+  .bb-lab { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--dim); margin-bottom: 5px; font-family: var(--mono); }
+  .bb-track { height: 12px; border-radius: 99px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .bb-track i { display: block; height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, #34d399, #fbbf24); }
+  .s-budget.active .bb-track i { animation: bbGrow 1.4s ease 1.4s forwards; }
+  @keyframes bbGrow { to { width: 70%; } }
+  .budget-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.65; }
+  .budget-note b { color: #fde68a; }
+
+  /* ============ 屏5 · effort 档位 ============ */
+  .dial-box { width: 100%; max-width: 560px; }
+  .effort-row { display: flex; gap: 6px; margin-bottom: 10px; }
+  .ef {
+    flex: 1; text-align: center; border-radius: 11px; padding: 9px 4px;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 10.5px; color: var(--dim);
+  }
+  .ef .eico { font-size: 15px; display: block; margin-bottom: 3px; }
+  .ef b { display: block; font-size: 11px; color: #aab6cf; }
+  .ef.on { border-color: rgba(167,139,250,.6); background: rgba(167,139,250,.1); color: #c4b5fd; }
+  .ef.on b { color: #c4b5fd; }
+  .ef-lines { display: flex; flex-direction: column; gap: 6px; }
+  .efl {
+    display: grid; grid-template-columns: 64px 1fr; gap: 9px; align-items: center;
+    font-size: 10px; color: var(--dim); font-family: var(--mono);
+  }
+  .efl .eb { height: 8px; border-radius: 99px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .efl .eb i { display: block; height: 100%; width: 0; border-radius: 99px; }
+  .s-dial.active .eb i { animation: efGrow .9s ease 1s forwards; }
+  @keyframes efGrow { to { width: var(--w); } }
+  .dial-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7; }
+  .dial-note code { color: var(--cyan); background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px; font-size: .92em; }
+
+  /* ============ 屏6 · 怎么用 ============ */
+  .use-cards { display: flex; gap: 9px; width: 100%; max-width: 560px; }
+  .uc {
+    flex: 1; border-radius: 12px; padding: 10px 11px;
+    background: var(--card); border: 1px solid var(--line);
+  }
+  .uc.on-t { border-color: rgba(52,211,153,.45); }
+  .uc.off-t { border-color: rgba(251,113,133,.4); }
+  .uc.mid-t { border-color: rgba(251,191,36,.45); }
+  .uc h4 { font-size: 11.5px; margin-bottom: 5px; }
+  .uc.on-t h4 { color: #6ee7b7; }
+  .uc.off-t h4 { color: #ffb9c4; }
+  .uc.mid-t h4 { color: #fde68a; }
+  .uc p { font-size: 10.3px; color: var(--dim); line-height: 1.6; }
+  .interleave {
+    display: flex; align-items: center; gap: 5px; flex-wrap: wrap; justify-content: center;
+    width: 100%; max-width: 560px;
+    font-family: var(--mono); font-size: 10px;
+  }
+  .interleave .st {
+    border-radius: 999px; padding: 5px 10px; white-space: nowrap;
+    border: 1px solid var(--line); background: rgba(255,255,255,.04); color: #aab6cf;
+  }
+  .interleave .st.th { color: #c4b5fd; border-color: rgba(167,139,250,.5); background: rgba(167,139,250,.09); }
+  .interleave .st.tl { color: #67e8f9; border-color: rgba(34,211,238,.45); background: rgba(34,211,238,.07); }
+  .interleave .st.ans { color: #6ee7b7; border-color: rgba(52,211,153,.5); background: rgba(52,211,153,.08); }
+  .interleave i { color: var(--dim); font-style: normal; }
+  .use-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.65; }
+
+  /* ===== 总结 ===== */
+  .sum-flow {
+    display: flex; gap: 4px; align-items: center; justify-content: center;
+    flex-wrap: wrap; font-size: 10px; color: var(--dim);
+  }
+  .sum-flow span {
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv {
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px 15px;
+  }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote {
+    font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center;
+    line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .replay {
+    font-size: 12.5px; color: #06121c; background: var(--cyan);
+    border: none; padding: 10px 26px; border-radius: 999px;
+    font-weight: 700; cursor: pointer; letter-spacing: .06em;
+  }
+  .replay:active { transform: scale(.96); }
+  .series-badge {
+    position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px;
+    font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em;
+  }
+
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+
+  @media (max-height: 560px) {
+    .screen { overflow-y: auto; justify-content: flex-start; }
+    .stage { flex: 0 0 auto; padding: 14px 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition: none !important; scroll-behavior: auto !important;
+    }
+    .rv, .tt-body .ln { opacity: 1 !important; transform: none !important; }
+    .axis.train .ax-vis i { width: 82% !important; }
+    .axis.test .ax-vis i { width: 64% !important; }
+    .bb-track i { width: 70% !important; }
+    .eb i { width: var(--w) !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面" aria-label="封面"></button>
+  <button title="STEP 1 两种答法" aria-label="两种答法"></button>
+  <button title="STEP 2 思考链内部" aria-label="思考链内部"></button>
+  <button title="STEP 3 思考预算" aria-label="思考预算"></button>
+  <button title="STEP 4 effort 档位" aria-label="effort 档位"></button>
+  <button title="STEP 5 怎么用" aria-label="怎么用"></button>
+  <button title="总结" aria-label="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">AI 运作原理拆解 · 16</div>
+    <h1 class="rv d2">推理模型<br><span class="grad">交卷前先打草稿</span></h1>
+    <p class="hero-sub rv d3">思考链 · test-time compute · 思考预算 · effort 档位</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">⚡ 直接答</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">📝 先打草稿</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">🎚️ 思考预算</span>
+    </div>
+    <p class="hero-quote rv d5">「允许它在开口之前，先自言自语一会儿」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 两种答法 -->
+<section class="screen s-two">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>两种答法</div>
+    <h2 class="rv d1">直接交卷，还是先列草稿</h2>
+    <p class="scr-desc rv d2">普通模型把全部本事用在「第一反应」；推理模型被允许先生成一段用户通常看不到的思考，再作答</p>
+  </header>
+  <div class="stage">
+    <div class="two-row">
+      <div class="ans fast rv d2">
+        <h4>⚡ 普通模型</h4>
+        <div class="path-line">问题 ──▶ <span class="dir">答案</span></div>
+        <p>快、便宜、日常问题够用；遇到多步推导容易一步错步步错</p>
+      </div>
+      <div class="ans deep rv d3">
+        <h4>📝 推理模型</h4>
+        <div class="path-line">问题 ──▶ <span class="hot">思考…（隐藏）</span> ──▶ <span class="dir">答案</span></div>
+        <p>数学、代码、复杂规划显著更强，代价是更慢、更贵、输出更长</p>
+      </div>
+    </div>
+    <div class="tl-line rv d5"><span class="yr">2024-09</span> OpenAI 发布 <b>o1</b>，「思考链」产品化　·　<span class="yr">2025-01</span> <b>DeepSeek-R1</b> 开源引爆全行业<br>此后 Qwen、GLM、Claude、Gemini 全线进入「会思考」时代</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 它不是换了个更大的模型 —— <b>是学会了把推理过程显式写出来，再据此作答</b></footer>
+</section>
+
+<!-- 屏3 · STEP 2 思考链内部 -->
+<section class="screen s-chain">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>思考链内部</div>
+    <h2 class="rv d1">草稿纸上发生了什么</h2>
+    <p class="scr-desc rv d2">没有神来之笔 —— 思考链里是一次次「试一条路 → 发现矛盾 → 回退 → 换法 → 验算」</p>
+  </header>
+  <div class="stage">
+    <div class="think-term rv d2">
+      <div class="tt-head"><span class="tt-dot"></span>thinking（默认不展示给用户）</div>
+      <div class="tt-body">
+        <span class="ln">&gt; 题目要求 x 的范围，先按通常做法设 t = √x …</span>
+        <span class="ln dim">&gt; 代入后得到 t²+t−6=0，解得 t=2 或 t=−3 …</span>
+        <span class="ln bad">&gt; 等等，t 是算术平方根，不可能为负，−3 要舍去</span>
+        <span class="ln">&gt; 换个方法验证：t=2 → x=4，代回原式成立 ✓</span>
+        <span class="ln ok">&gt; 结论：x = 4，负根舍去，准备作答</span>
+      </div>
+    </div>
+    <div class="answer-bubble rv d5">答案：x = 4（舍去 t = −3，因为算术平方根非负）</div>
+    <div class="chain-note rv d6">这段草稿本身也是 12 期采样机制逐 token 生成的 —— <b style="color:#c3cde2">只是它现在拿思考 token 当推理空间</b></div>
+  </div>
+  <footer class="scr-foot rv d6">💡 回退与自我纠错不稀奇，稀奇的是：<b>这些动作是训练后自发长出来的，没人逐条教</b></footer>
+</section>
+
+<!-- 屏4 · STEP 3 思考预算 -->
+<section class="screen s-budget">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>test-time compute</div>
+    <h2 class="rv d1">第二条变强的轴：多想一想</h2>
+    <p class="scr-desc rv d2">过去变强靠训练时堆规模；推理模型打开了第二条轴 —— 在回答时投入更多计算</p>
+  </header>
+  <div class="stage">
+    <div class="axes-row">
+      <div class="axis train rv d2">
+        <h4>🏋️ 训练时投入</h4>
+        <p>更多数据、更大参数 —— 一次投入，所有回答共享</p>
+        <div class="ax-vis"><i></i></div>
+      </div>
+      <div class="axis test rv d3">
+        <h4>🧠 推理时投入</h4>
+        <p>每个难题单独烧 token 多想一会儿 —— 按题计费</p>
+        <div class="ax-vis"><i></i></div>
+      </div>
+    </div>
+    <div class="budget-bar rv d4">
+      <div class="bb-lab"><span>思考 token 预算 ↑</span><span>正确率 ↑ · 延迟与成本 ↑</span></div>
+      <div class="bb-track"><i></i></div>
+    </div>
+    <div class="budget-note rv d5">这就是「思考预算」：<b>思考不是免费的内心戏，是真金白银的输出 token</b> —— 难题值得，简单题浪费</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 新的权衡观：<b>同一道题，可以花一分钱快答，也可以花一块钱深思</b></footer>
+</section>
+
+<!-- 屏5 · STEP 4 effort 档位 -->
+<section class="screen s-dial">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>effort 档位产品化</div>
+    <h2 class="rv d1">一个模型，变成一条光谱</h2>
+    <p class="scr-desc rv d2">2025 年起，旗舰模型不再只有一个「思考开关」，而是按思考深度分档计价</p>
+  </header>
+  <div class="stage">
+    <div class="dial-box">
+      <div class="effort-row rv d2">
+        <div class="ef"><span class="eico">🗯️</span><b>非思考</b>闲聊改写</div>
+        <div class="ef"><span class="eico">🌗</span><b>low</b>简单推理</div>
+        <div class="ef on"><span class="eico">🌓</span><b>medium</b>日常默认</div>
+        <div class="ef"><span class="eico">🌕</span><b>high / max</b>硬题攻坚</div>
+      </div>
+      <div class="ef-lines rv d3">
+        <div class="efl"><span>非思考</span><span class="eb"><i style="--w:12%;background:#34d399"></i></span></div>
+        <div class="efl"><span>low</span><span class="eb"><i style="--w:34%;background:#a78bfa"></i></span></div>
+        <div class="efl"><span>medium</span><span class="eb"><i style="--w:60%;background:#a78bfa"></i></span></div>
+        <div class="efl"><span>high/max</span><span class="eb"><i style="--w:92%;background:#fb7185"></i></span></div>
+      </div>
+    </div>
+    <div class="dial-note rv d5">Qwen3（2025-04）率先做成可切换的思考/非思考双模式；GPT-5（2025-08）给出 <code>minimal→high</code> 四档<br>到 2026 年，每家旗舰都是一组档位 —— 非思考档也回来了：简单任务不烧思考钱</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 调的不是智商，是<b>这道题允许它想多久</b> —— 档位本质是思考预算旋钮</footer>
+</section>
+
+<!-- 屏6 · STEP 5 怎么用 -->
+<section class="screen s-use">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>什么时候该思考</div>
+    <h2 class="rv d1">Agent 时代：思考与动手交替</h2>
+    <p class="scr-desc rv d2">工程共识已经成型 —— 思考能力内置后，架构师的工作变成配置「何时想、想多久、在哪一步停下来想」</p>
+  </header>
+  <div class="stage">
+    <div class="use-cards">
+      <div class="uc on-t rv d2"><h4>✓ 开思考</h4><p>数学证明、代码调试、多约束规划、长链路决策 —— 错一步代价大的题</p></div>
+      <div class="uc off-t rv d3"><h4>✕ 关思考</h4><p>闲聊、格式转换、彼此无依赖的并行小工具调用 —— 实测开了只增成本不增成功率</p></div>
+      <div class="uc mid-t rv d4"><h4>～ 交替思考</h4><p>长工具链：拿一个工具结果，停下来核对规则，再决定下一步 —— 草稿与动作穿插</p></div>
+    </div>
+    <div class="interleave rv d5">
+      <span class="st th">think 规划</span><i>→</i>
+      <span class="st tl">tool 调用</span><i>→</i>
+      <span class="st th">think 核对结果</span><i>→</i>
+      <span class="st tl">tool 再调用</span><i>→</i>
+      <span class="st ans">answer</span>
+    </div>
+    <div class="use-note rv d6">Agent 主循环（05 期 / Hermes 04 期）因此升级：<b style="color:#c3cde2">思考链穿插在 think → act → observe 之间</b> —— 后续工程篇展开</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 思考模型不是处处高档位 —— <b>把预算花在真正的岔路口</b>，才是会用</footer>
+</section>
+
+<!-- 屏7 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">变强的第二条轴</h2>
+    <p class="scr-desc rv d2">思考链是试错回退的可见草稿，思考预算按题计费，effort 档位把它做成产品旋钮</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>普通直答</span><i>→</i><span>思考链草稿</span><i>→</i><span>预算换正确率</span><i>→</i><span>effort 分档</span><i>→</i><span>交替思考</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">📝</div>
+        <div><b>草稿即推理空间</b><p>思考链内部是试错、发现矛盾、回退、验算 —— 训练后自发涌现，逐 token 生成，默认对用户隐藏</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🎚️</div>
+        <div><b>思考是预算不是觉悟</b><p>test-time compute 用输出 token 换正确率；非思考/low/medium/high 档位让同一模型变成一条成本光谱</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">🔀</div>
+        <div><b>在 Agent 里穿插使用</b><p>硬题开、简单关、长工具链交替思考 —— 模型内化了思考，人负责配置在哪一步想</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“训练决定它能想多深，<br>预算决定它这一次想多久。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">AI 运作原理拆解 · 16 / 推理模型篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else {
+    secs.forEach((s) => s.classList.add('active'));
+  }
+
+  dots.forEach((d, i) => d.addEventListener('click', () => {
+    secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+</script>
+</body>
+</html>

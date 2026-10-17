@@ -70,7 +70,10 @@ Frontend (run from `frontend/`):
   created at runtime by `services/model_store.py`; don't commit model files.
 - `docs/` holds a self-contained animated demo series with an index page
   (`index.html` links all of them): HERMES AGENT 对象拆解 ·01–11 (08 跨会话
-  记忆篇 is 前瞻演绎/designed extrapolation), AI 运作原理拆解 ·01–12,
+  记忆篇 is 前瞻演绎/designed extrapolation), AI 运作原理拆解 ·01–20
+  (13–20 cover Transformer anatomy, MoE, KV Cache/inference acceleration,
+  reasoning models & thinking chains, RLVR/GRPO & distillation, LoRA
+  finetuning, embeddings/reranking, and multimodality),
   AGENT 开发避坑指南 ·01–04 (developer-facing pitfalls), and AGENT 实战工坊
   ·01–03 (knowledge-QA RAG build walkthrough). None
   are part of the Vite app — each demo is a single

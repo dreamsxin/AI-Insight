@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#070b14">
-<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-11 + AI 运作原理拆解 01-12 + Agent 开发避坑指南 01-04 + AGENT 实战工坊 01-03，共 30 个自包含逐屏动画">
+<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-11 + AI 运作原理拆解 01-20 + Agent 开发避坑指南 01-04 + AGENT 实战工坊 01-03，共 38 个自包含逐屏动画">
 <title>AI 运作原理 · 动画演示索引</title>
 <style>
   :root {
@@ -115,7 +115,7 @@
 <div class="wrap">
   <span class="kicker">AI-INSIGHT · DOCS</span>
   <h1>运作动画<span class="grad">演示索引</span></h1>
-  <p class="sub">30 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
+  <p class="sub">38 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
 
   <div class="series">
     <div class="series-head"><b>HERMES AGENT 对象拆解</b></div>
@@ -262,6 +262,54 @@
         <div class="card-top"><span class="card-ico">🎲</span><span class="num n-h3">· 12</span></div>
         <b>采样策略</b>
         <p>概率表 → top-k / top-p 过滤 → 温度调形 → 抽签 —— 打分归模型，拍板归采样</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="ai-13-transformer-animation.html">
+        <div class="card-top"><span class="card-ico">🏗️</span><span class="num n-h1">· 13</span></div>
+        <b>Transformer 骨架</b>
+        <p>嵌入 + RoPE 位置 → 注意力 + FFN 叠 N 层 → logits 采样 —— 把 10/11/12 期零件拼成整机</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="ai-14-moe-animation.html">
+        <div class="card-top"><span class="card-ico">🩺</span><span class="num n-h2">· 14</span></div>
+        <b>混合专家 MoE</b>
+        <p>router 逐词分诊、top-k 专家出诊 —— 671B 总参，每个 token 只激活 37B</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="ai-15-kv-cache-animation.html">
+        <div class="card-top"><span class="card-ico">⚡</span><span class="num n-h3">· 15</span></div>
+        <b>KV Cache 与推理加速</b>
+        <p>prefill/decode · GQA 共享 · PagedAttention 分页显存 · 量化与推测解码</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="ai-16-reasoning-animation.html">
+        <div class="card-top"><span class="card-ico">📝</span><span class="num n-h4">· 16</span></div>
+        <b>推理模型与思考链</b>
+        <p>交卷前先打草稿 —— test-time compute、思考预算、effort 档位、思考与工具交替</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="ai-17-rlvr-animation.html">
+        <div class="card-top"><span class="card-ico">🎯</span><span class="num n-h5">· 17</span></div>
+        <b>RLVR 与蒸馏</b>
+        <p>程序自动判对错 · GRPO 组内排名 · R1 思考链自发涌现 · 大师带徒弟</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="ai-18-finetune-animation.html">
+        <div class="card-top"><span class="card-ico">🔌</span><span class="num n-h6">· 18</span></div>
+        <b>微调与 LoRA</b>
+        <p>改知识用 RAG、改行为用微调 —— 冻结底座挂低秩插件，DPO / QLoRA 降门槛</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="ai-19-embedding-animation.html">
+        <div class="card-top"><span class="card-ico">🧭</span><span class="num n-h1">· 19</span></div>
+        <b>Embedding 与向量检索</b>
+        <p>句子变语义坐标 · 对比学习双塔 · 余弦 Top-K · rerank 交叉精排与 ColBERT</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="ai-20-multimodal-animation.html">
+        <div class="card-top"><span class="card-ico">🖼️</span><span class="num n-h2">· 20</span></div>
+        <b>多模态：看图与生成</b>
+        <p>patch 变图像 token 进同一大脑 · 原生多模态 · 扩散去噪 · 时空 patch 生成视频</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
     </div>
