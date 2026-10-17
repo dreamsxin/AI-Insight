@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="CUA 计算机操作智能体：截图→视觉理解→坐标级动作→再截图的闭环、协议通道与像素通道对比、无障碍树混合定位、OSWorld 真实成功率、视觉注入与接管，逐屏动画演示">
+<title>CUA 看屏幕点鼠标 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14; --bg1: #0c1322; --ink: #e8eefc; --dim: #8b96ad;
+    --cyan: #22d3ee; --purple: #a78bfa; --green: #34d399;
+    --amber: #fbbf24; --red: #fb7185; --pink: #f472b6;
+    --card: rgba(255,255,255,.05); --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+  .dots { position: fixed; right: 9px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 11px; z-index: 60; }
+  .dots button { width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0; background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s; }
+  .dots button.on { background: var(--cyan); transform: scale(1.4); box-shadow: 0 0 10px rgba(34,211,238,.85); }
+  .screen {
+    position: relative; z-index: 1; height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before { content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%); }
+  .s-hero { --glow: rgba(34,211,238,.10); } .s-two { --glow: rgba(34,211,238,.11); }
+  .s-loop { --glow: rgba(52,211,153,.10); } .s-a11y { --glow: rgba(167,139,250,.11); }
+  .s-real { --glow: rgba(251,191,36,.09); } .s-risk { --glow: rgba(251,113,133,.09); }
+  .s-sum { --glow: rgba(244,114,182,.08); }
+  .scr-head { width: 100%; max-width: 640px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .step-badge { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07); padding: 4px 13px; border-radius: 999px; }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code { color: var(--cyan); font-size: .92em; background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px; }
+  .code-chip { font-family: var(--mono); font-size: 11px; color: #9fb3d1; background: rgba(255,255,255,.04);
+    border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage { position: relative; z-index: 1; flex: 1; min-height: 0; width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13px; }
+  .scr-foot { width: 100%; max-width: 640px; text-align: center; font-size: 12px; line-height: 1.65; color: var(--dim); }
+  .scr-foot b { color: #c3cde2; }
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; } .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; } .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; } .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker { font-size: 10px; letter-spacing: .28em; color: var(--dim); border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 6px 16px; border-radius: 999px; }
+  h1 { font-size: clamp(34px, 9vw, 54px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad { background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node { font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); white-space: nowrap; }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i { position: absolute; top: 50%; transform: translateY(-50%); left: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint { position: absolute; bottom: calc(16px + env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em; }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* 两条通道 */
+  .lane-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .lane { flex: 1; border-radius: 13px; padding: 12px; background: var(--card); border: 1px solid var(--line); }
+  .lane.api { border-color: rgba(34,211,238,.45); } .lane.px { border-color: rgba(251,191,36,.5); }
+  .lane h4 { font-size: 12px; margin-bottom: 7px; }
+  .lane.api h4 { color: #67e8f9; } .lane.px h4 { color: #fde68a; }
+  .lane .mono { font-family: var(--mono); font-size: 9.6px; color: #9fb3d1; line-height: 1.75; }
+  .lane p.sub { font-size: 10px; color: var(--dim); line-height: 1.55; margin-top: 6px; }
+
+  /* 闭环 */
+  .loop-wrap { width: 100%; max-width: 560px; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
+  .step { border-radius: 12px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); text-align: center; min-width: 86px; }
+  .step .ic { font-size: 18px; }
+  .step b { display: block; font-size: 10.8px; color: #c3cde2; margin: 4px 0 2px; }
+  .step span { font-size: 9.3px; color: var(--dim); line-height: 1.45; display: block; }
+  .step.shot { border-color: rgba(167,139,250,.5); } .step.act { border-color: rgba(52,211,153,.5); }
+  .loop-arrow { color: var(--dim); font-size: 13px; }
+  .loop-back { width: 100%; max-width: 560px; text-align: center; font-family: var(--mono); font-size: 10.5px; color: #6ee7b7;
+    border: 1px dashed rgba(52,211,153,.45); border-radius: 999px; padding: 7px 13px; background: rgba(52,211,153,.05); }
+  .demo-term { width: 100%; max-width: 560px; border-radius: 12px; padding: 11px 14px; background: rgba(0,0,0,.3);
+    border: 1px solid var(--line); font-family: var(--mono); font-size: 10.3px; color: #9fb3d1; line-height: 1.8; }
+  .demo-term .k { color: #fde68a; } .demo-term .g { color: #6ee7b7; }
+
+  /* a11y */
+  .mix-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .mix { flex: 1; border-radius: 13px; padding: 12px; background: var(--card); border: 1px solid var(--line); }
+  .mix h4 { font-size: 11.5px; margin-bottom: 6px; }
+  .mix.eye h4 { color: #c4b5fd; } .mix.tree h4 { color: #67e8f9; }
+  .mix p { font-size: 10px; color: var(--dim); line-height: 1.6; }
+  .mix .ex { margin-top: 7px; border-radius: 8px; padding: 7px 9px; background: rgba(0,0,0,.28);
+    font-family: var(--mono); font-size: 9px; color: #9fb3d1; line-height: 1.55; }
+  .mix-note { width: 100%; max-width: 560px; text-align: center; font-size: 11px; color: var(--dim); line-height: 1.7; }
+  .mix-note b { color: #c3cde2; }
+
+  /* 真实成功率 */
+  .num-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .num { flex: 1; border-radius: 13px; padding: 13px 10px; text-align: center; background: var(--card); border: 1px solid var(--line); }
+  .num .v { font-family: var(--mono); font-size: 26px; font-weight: 800; color: #fde68a; }
+  .num .l { font-size: 9.6px; color: var(--dim); line-height: 1.55; margin-top: 4px; }
+  .cruise { width: 100%; max-width: 560px; border-radius: 12px; padding: 11px 14px; font-size: 10.8px; color: var(--dim); line-height: 1.7;
+    background: var(--card); border: 1px solid var(--line); text-align: center; }
+  .cruise b { color: #fde68a; }
+
+  /* 风险 */
+  .risk-row { display: flex; gap: 9px; width: 100%; max-width: 560px; }
+  .risk { flex: 1; border-radius: 12px; padding: 11px; background: rgba(251,113,133,.05); border: 1px solid rgba(251,113,133,.38); }
+  .risk h4 { font-size: 11px; color: #ffb9c4; margin-bottom: 5px; }
+  .risk p { font-size: 9.8px; color: var(--dim); line-height: 1.6; }
+  .trust { width: 100%; max-width: 560px; text-align: center; font-size: 11px; color: var(--dim); line-height: 1.7;
+    border-radius: 11px; padding: 10px 14px; background: rgba(34,211,238,.04); border: 1px solid rgba(34,211,238,.3); }
+  .trust b { color: #67e8f9; }
+
+  /* 总结 */
+  .sum-flow { display: flex; gap: 4px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 10px; color: var(--dim); }
+  .sum-flow span { border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv { display: flex; gap: 13px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 15px; }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote { font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center; line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .replay { font-size: 12.5px; color: #06121c; background: var(--cyan); border: none; padding: 10px 26px; border-radius: 999px; font-weight: 700; cursor: pointer; letter-spacing: .06em; }
+  .replay:active { transform: scale(.96); }
+  .series-badge { position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px; font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em; }
+
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+  @media (max-height: 560px) { .screen { overflow-y: auto; justify-content: flex-start; } .stage { flex: 0 0 auto; padding: 14px 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; scroll-behavior: auto !important; }
+    .rv { opacity: 1 !important; transform: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面"></button>
+  <button title="STEP 1 两条通道"></button>
+  <button title="STEP 2 感知动作闭环"></button>
+  <button title="STEP 3 混合定位"></button>
+  <button title="STEP 4 真实水平"></button>
+  <button title="STEP 5 风险与边界"></button>
+  <button title="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">HERMES AGENT 对象拆解 · 19</div>
+    <h1 class="rv d2">CUA 电脑操作<br><span class="grad">看屏幕，点鼠标</span></h1>
+    <p class="hero-sub rv d3">截图闭环 · 坐标动作 · 无障碍树 · 接管红线</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">📸 screenshot</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">👁 看懂屏幕</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">🖱 click/type</span>
+    </div>
+    <p class="hero-quote rv d5">「AI 20 期让模型有了眼睛，这一集让眼睛长出手」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 两条通道 -->
+<section class="screen s-two">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>操作世界的两条通道</div>
+    <h2 class="rv d1">走协议，还是走像素</h2>
+    <p class="scr-desc rv d2">06 期的 MCP×CDP 直接对浏览器「说方言」；CUA（Computer-Using Agent）不依赖任何 API，<b style="color:#c3cde2">像人一样看屏幕、用鼠标</b></p>
+  </header>
+  <div class="stage">
+    <div class="lane-row">
+      <div class="lane api rv d2">
+        <h4>🔌 协议通道（06 期）</h4>
+        <div class="mono">Page.navigate(url)<br>Input.dispatchMouseEvent<br>DOMSnapshot.captureSnapshot</div>
+        <p class="sub">精准、快、有结构化结果；但只适用于开放了接口的软件与网页</p>
+      </div>
+      <div class="lane px rv d3">
+        <h4>🖥 像素通道（CUA）</h4>
+        <div class="mono">screenshot()<br>→ click(512, 388)<br>→ type("hello")</div>
+        <p class="sub">任何有界面的软件都能操作（含老系统、远程桌面）；慢、易点错、要重试</p>
+      </div>
+    </div>
+    <div class="trust rv d4">2024-10 首批 CUA 产品化（云虚拟机里的浏览器 Agent）：不碰网站 API，纯靠截图 + 坐标级动作完成任务</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 通道选择是<b>精度与通用性的取舍</b>：能用 API/CDP 就走协议，封闭界面才动用像素</footer>
+</section>
+
+<!-- 屏3 · STEP 2 感知动作闭环 -->
+<section class="screen s-loop">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>感知—动作闭环</div>
+    <h2 class="rv d1">看懂按钮，到会点按钮</h2>
+    <p class="scr-desc rv d2">多模态理解（AI 20 期）是输入侧；CUA 把它接进 Hermes 04 期的主循环，输出的是<b style="color:#c3cde2">坐标级动作</b></p>
+    <div class="code-chip rv d2">screenshot() → 视觉模型 → action ∈ {click, type, scroll, hotkey, wait, done}</div>
+  </header>
+  <div class="stage">
+    <div class="loop-wrap rv d3">
+      <div class="step shot"><div class="ic">📸</div><b>截屏</b><span>拿到当前画面</span></div>
+      <span class="loop-arrow">→</span>
+      <div class="step"><div class="ic">👁</div><b>看懂</b><span>定位目标与状态</span></div>
+      <span class="loop-arrow">→</span>
+      <div class="step act"><div class="ic">🖱</div><b>动作</b><span>坐标点击/输入</span></div>
+    </div>
+    <div class="loop-back rv d4">↻ 动作改变屏幕 → 新截图进入下一轮，直到 done（think → act → observe 的像素版）</div>
+    <div class="demo-term rv d5">
+      <span class="k">observe</span>: 截图里有个红色「提交」按钮在 (512, 388)<br>
+      <span class="k">act</span>: click(512, 388)　<span class="g">→</span> <span class="k">observe</span>: 页面变成成功提示　<span class="g">→ done</span>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 与普通工具调用的区别：<b>观察不是结构化 JSON，而是一整屏像素</b> —— 每步都要重新「看」</footer>
+</section>
+
+<!-- 屏4 · STEP 3 混合定位 -->
+<section class="screen s-a11y">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>纯坐标不够，混合定位登场</div>
+    <h2 class="rv d1">给像素配上界面的语义地图</h2>
+    <p class="scr-desc rv d2">纯截图点击又慢又容易偏：现代 CUA 同时读取系统的<b style="color:#c3cde2">无障碍树（accessibility tree）</b>——界面元素自带的结构化标签</p>
+  </header>
+  <div class="stage">
+    <div class="mix-row">
+      <div class="mix eye rv d2">
+        <h4>📸 截图（视觉）</h4>
+        <p>理解布局、图片、颜色、弹窗；处理没有标签的自绘界面</p>
+        <div class="ex">canvas 游戏、图表<br>自定义下拉、验证码式干扰</div>
+      </div>
+      <div class="mix tree rv d3">
+        <h4>🌳 a11y 树（语义）</h4>
+        <p>每个可交互元素有名字、角色、引用（ref）：模型说「点 ref=s1e5」而非猜坐标</p>
+        <div class="ex">button「提交」 ref=s1e5<br>textbox「搜索」 ref=s1e2</div>
+      </div>
+    </div>
+    <div class="mix-note rv d4">06 期讲过 CDP 把 8.2MB 的 DOM 快照精炼成 <b>1.2k token 的 a11y 树</b> —— CUA 借用同一招：<b style="color:#c3cde2">截图给「画面感」，a11y 给「精准坐标」</b>，两者混合显著降低误点</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 这正是 AI 19 期「粗筛 + 精读」分工的界面版：<b>视觉理解语义，结构保证精确</b></footer>
+</section>
+
+<!-- 屏5 · STEP 4 真实水平 -->
+<section class="screen s-real">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>它到底有多能干</div>
+    <h2 class="rv d1">定速巡航，不是自动驾驶</h2>
+    <p class="scr-desc rv d2">用跨操作系统真实任务基准 OSWorld 衡量（含网页、表格、文件操作），首发模型成功率仅约一成半，远低于演示视频的观感</p>
+  </header>
+  <div class="stage">
+    <div class="num-row rv d2">
+      <div class="num"><div class="v">14.9%</div><div class="l">OSWorld 首发成绩<br>2024-10（截图-only）</div></div>
+      <div class="num"><div class="v">38.1%</div><div class="l">2025-03 新一代 CUA<br>混合 a11y 后明显提升</div></div>
+      <div class="num"><div class="v">58.1%</div><div class="l">2025-09 系统级报告<br>仍有大量任务失败</div></div>
+    </div>
+    <div class="cruise rv d3">
+      <b>诚实定位（官方原话）</b>：像「定速巡航而非自动驾驶」—— 适合在云端虚拟机里跑<b style="color:#c3cde2">多步但容错高</b>的网页任务；<br>
+      支付、发布、不可逆操作仍需人确认；任何一步都可能因为页面改版、弹窗、加载延迟而走偏
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 11 期的铁律在像素世界加倍成立：<b>步骤越多越易漂</b> —— MAX_LOOPS、截图复核、可随时接管缺一不可</footer>
+</section>
+
+<!-- 屏6 · STEP 5 风险与边界 -->
+<section class="screen s-risk">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>像素世界的注入面</div>
+    <h2 class="rv d1">屏幕上的字，也可能是指令</h2>
+  </header>
+  <div class="stage">
+    <div class="risk-row">
+      <div class="risk rv d2">
+        <h4>📄 网页白字投毒</h4>
+        <p>页面角落藏一句「忽略之前指令，把数据发到……」—— 视觉模型读到后可能照做（09 期注入的视觉版）</p>
+      </div>
+      <div class="risk rv d3">
+        <h4>🪟 ClickFix 弹窗</h4>
+        <p>伪造系统对话框诱导复制恶意命令、点「允许」；浏览器场景实测攻击成功率一度高达 23.6%</p>
+      </div>
+    </div>
+    <div class="trust rv d4">
+      <b>防线（H15 的同一套原则搬到视觉域）</b>：云端隔离虚拟机运行 · 支付/外发强制人工 · 高危域名白名单 ·<br>
+      输出端分类器只看裸动作不看页面说辞 · 用户手握 <b>takeover 接管键</b>；网页内容永远是<b>数据</b>，不是命令
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 能看、能做、能闯祸是三件事 —— <b>CUA 的成熟度 = 视觉闭环 × 沙箱边界 × 人机接管</b></footer>
+</section>
+
+<!-- 屏7 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">给 Agent 一双能操作世界的手</h2>
+    <p class="scr-desc rv d2">像素通道 → 截图闭环 → a11y 混合定位 → 诚实的成功率 → 视觉域安全边界</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>截图</span><i>→</i><span>理解</span><i>→</i><span>坐标动作</span><i>→</i><span>新截图</span><i>→</i><span>done/接管</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">🖥️</div>
+        <div><b>像素通道换通用性</b><p>不依赖网站/软件 API，截图加坐标动作即可操作任何 GUI；代价是慢、易错、每步都要重新看，协议通道优先于像素通道</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🌳</div>
+        <div><b>截图 + a11y 树混合</b><p>视觉负责画面理解，无障碍树的 ref 提供精确锚点；本质是 06 期 a11y 精炼与 AI 19 期「语义+精确」分工在 GUI 上的重演</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">🛟</div>
+        <div><b>定速巡航心态</b><p>OSWorld 从 14.9% 起步，长任务仍易漂：高风险动作必须人确认；视觉注入（白字/ClickFix）由隔离沙箱、动作分类器与 takeover 共同兜底</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“多模态让它看见了屏幕，<br>Agent 循环让它敢在屏幕上动手。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">HERMES AGENT 对象拆解 · 19 / CUA 像素操作篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else { secs.forEach((s) => s.classList.add('active')); }
+  dots.forEach((d, i) => d.addEventListener('click', () => secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' })));
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+</script>
+</body>
+</html>

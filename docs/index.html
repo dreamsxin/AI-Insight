@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#070b14">
-<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-11 + AI 运作原理拆解 01-20 + Agent 开发避坑指南 01-04 + AGENT 实战工坊 01-03，共 38 个自包含逐屏动画">
+<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-19 + AI 运作原理拆解 01-20 + Agent 开发避坑指南 01-04 + AGENT 实战工坊 01-03，共 46 个自包含逐屏动画">
 <title>AI 运作原理 · 动画演示索引</title>
 <style>
   :root {
@@ -115,7 +115,7 @@
 <div class="wrap">
   <span class="kicker">AI-INSIGHT · DOCS</span>
   <h1>运作动画<span class="grad">演示索引</span></h1>
-  <p class="sub">38 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
+  <p class="sub">46 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
 
   <div class="series">
     <div class="series-head"><b>HERMES AGENT 对象拆解</b></div>
@@ -183,7 +183,55 @@
       <a class="card" href="hermes-11-recovery-animation.html">
         <div class="card-top"><span class="card-ico">🧯</span><span class="num n-h5">· 11</span></div>
         <b>错误恢复</b>
-        <p>报错回填 → 退避重试 → 熔断上报 —— 错误不是崩溃，是塞回循环的观察</p>
+        <p>报错回填 → 指数退避 + 抖动 · 熔断/降级上报 · 报错即观察，禁止谎报成功</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="hermes-12-thinking-animation.html">
+        <div class="card-top"><span class="card-ico">🧠</span><span class="num n-h6">· 12</span></div>
+        <b>思考预算接入主循环</b>
+        <p>thinking 与 tool_use 同条消息 · 岔路口交替思考 · 思考 token 进预算闸门</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="hermes-13-skills-animation.html">
+        <div class="card-top"><span class="card-ico">📚</span><span class="num n-h1">· 13</span></div>
+        <b>Skills 渐进式披露</b>
+        <p>启动只看名录 → 命中读 SKILL.md → 按需取脚本，上百技能不占常驻上下文</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="hermes-14-hooks-animation.html">
+        <div class="card-top"><span class="card-ico">🪝</span><span class="num n-h2">· 14</span></div>
+        <b>Hooks 生命周期挂点</b>
+        <p>PreToolUse/PostToolUse 拦截 · allow/deny/ask/改参 · fail-safe 审计</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="hermes-15-sandbox-animation.html">
+        <div class="card-top"><span class="card-ico">🛡️</span><span class="num n-h3">· 15</span></div>
+        <b>沙箱与 Auto 模式</b>
+        <p>文件/网络双边界 · 凭证代理 · 输入输出双分类器 · 93% 审批疲劳与接管</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="hermes-16-mcp2026-animation.html">
+        <div class="card-top"><span class="card-ico">🔌</span><span class="num n-h4">· 16</span></div>
+        <b>MCP 的 2026 演进</b>
+        <p>Streamable HTTP · OAuth 2.1 · Tasks 长任务 · 2026-07 无状态化（口径标注）</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="hermes-17-a2a-animation.html">
+        <div class="card-top"><span class="card-ico">🤝</span><span class="num n-h5">· 17</span></div>
+        <b>A2A 与多 Agent 反思</b>
+        <p>上下文丢失与决策冲突 · 单 Agent 默认 · 15× token 成本 · A2A 横向协议</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="hermes-18-harness-animation.html">
+        <div class="card-top"><span class="card-ico">🎛️</span><span class="num n-h6">· 18</span></div>
+        <b>Harness 与检查点</b>
+        <p>大脑/手脚解耦 · 会话即事件日志 · 崩溃重放 · 后台 Agent 与长任务经济</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="hermes-19-cua-animation.html">
+        <div class="card-top"><span class="card-ico">🖱️</span><span class="num n-h1">· 19</span></div>
+        <b>CUA 看屏幕点鼠标</b>
+        <p>截图→坐标动作闭环 · a11y 树混合定位 · OSWorld 真实成功率 · 视觉注入防线</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
     </div>

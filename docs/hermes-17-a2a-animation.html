@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="A2A 与多 Agent 反思：上下文丢失与隐式决策冲突、单 Agent 默认原则、何时该拆何时不该拆、A2A 横向协议 Agent Card/Task/Artifact，逐屏动画演示">
+<title>A2A 与多 Agent 反思 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14; --bg1: #0c1322; --ink: #e8eefc; --dim: #8b96ad;
+    --cyan: #22d3ee; --purple: #a78bfa; --green: #34d399;
+    --amber: #fbbf24; --red: #fb7185;
+    --card: rgba(255,255,255,.05); --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+  .dots { position: fixed; right: 9px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 11px; z-index: 60; }
+  .dots button { width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0; background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s; }
+  .dots button.on { background: var(--cyan); transform: scale(1.4); box-shadow: 0 0 10px rgba(34,211,238,.85); }
+  .screen {
+    position: relative; z-index: 1; height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before { content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%); }
+  .s-hero { --glow: rgba(34,211,238,.10); } .s-recap { --glow: rgba(34,211,238,.11); }
+  .s-warn { --glow: rgba(251,113,133,.09); } .s-when { --glow: rgba(52,211,153,.10); }
+  .s-proto { --glow: rgba(167,139,250,.12); } .s-stack { --glow: rgba(251,191,36,.09); }
+  .s-sum { --glow: rgba(244,114,182,.08); }
+  .scr-head { width: 100%; max-width: 640px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .step-badge { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07); padding: 4px 13px; border-radius: 999px; }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code { color: var(--cyan); font-size: .92em; background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px; }
+  .code-chip { font-family: var(--mono); font-size: 11px; color: #9fb3d1; background: rgba(255,255,255,.04);
+    border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage { position: relative; z-index: 1; flex: 1; min-height: 0; width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13px; }
+  .scr-foot { width: 100%; max-width: 640px; text-align: center; font-size: 12px; line-height: 1.65; color: var(--dim); }
+  .scr-foot b { color: #c3cde2; }
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; } .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; } .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; } .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker { font-size: 10px; letter-spacing: .28em; color: var(--dim); border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 6px 16px; border-radius: 999px; }
+  h1 { font-size: clamp(34px, 9vw, 54px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad { background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node { font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); white-space: nowrap; }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i { position: absolute; top: 50%; transform: translateY(-50%); left: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint { position: absolute; bottom: calc(16px + env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em; }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* 屏2 回顾正确用法 */
+  .good-card { width: 100%; max-width: 560px; border-radius: 13px; padding: 13px 15px;
+    background: rgba(52,211,153,.05); border: 1px solid rgba(52,211,153,.4); }
+  .good-card h4 { font-size: 12.5px; color: #6ee7b7; margin-bottom: 7px; }
+  .good-card p { font-size: 10.8px; color: var(--dim); line-height: 1.7; }
+  .good-card .trio { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .good-card .trio span { font-family: var(--mono); font-size: 9.5px; padding: 4px 9px; border-radius: 999px;
+    border: 1px solid rgba(52,211,153,.35); background: rgba(52,211,153,.07); color: #6ee7b7; }
+
+  /* 屏3 两宗罪 */
+  .sin-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .sin { flex: 1; border-radius: 13px; padding: 12px; background: var(--card); border: 1px solid rgba(251,113,133,.4); }
+  .sin h4 { font-size: 12px; color: #ffb9c4; margin-bottom: 7px; }
+  .sin p { font-size: 10.3px; color: var(--dim); line-height: 1.65; }
+  .sin .ex { margin-top: 7px; border-radius: 8px; padding: 7px 9px; font-family: var(--mono); font-size: 9.2px;
+    color: #fecdd3; background: rgba(0,0,0,.28); line-height: 1.6; }
+  .quote-strip { width: 100%; max-width: 560px; text-align: center; border-radius: 999px; padding: 9px 15px;
+    font-size: 11px; color: var(--dim); line-height: 1.6; border: 1px dashed rgba(251,113,133,.4); background: rgba(251,113,133,.05); }
+  .quote-strip b { color: #ffb9c4; }
+
+  /* 屏4 成本账 */
+  .cost-bars { width: 100%; max-width: 560px; }
+  .cb-row { display: grid; grid-template-columns: 92px 1fr 64px; gap: 10px; align-items: center; margin-bottom: 10px; }
+  .cb-row .lab { font-size: 10.5px; color: #c3cde2; }
+  .cb-track { height: 12px; border-radius: 99px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .cb-track i { display: block; height: 100%; width: 0; border-radius: 99px; }
+  .cb-row .val { font-family: var(--mono); font-size: 10px; color: var(--dim); text-align: right; }
+  .s-when.active .cb-track i { animation: cbg .9s cubic-bezier(.25,1,.4,1) .6s forwards; }
+  @keyframes cbg { to { width: var(--w); } }
+  .v-rule { width: 100%; max-width: 560px; border-radius: 11px; padding: 10px 14px; text-align: center;
+    font-size: 10.8px; color: var(--dim); line-height: 1.7; background: var(--card); border: 1px solid var(--line); }
+  .v-rule b { color: #6ee7b7; }
+
+  /* 屏5 何时拆 */
+  .yes-grid { width: 100%; max-width: 560px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .yg { border-radius: 12px; padding: 11px 10px; background: var(--card); border: 1px solid rgba(52,211,153,.4); text-align: center; }
+  .yg .ic { font-size: 20px; }
+  .yg b { display: block; font-size: 11px; color: #6ee7b7; margin: 5px 0 3px; }
+  .yg p { font-size: 9.6px; color: var(--dim); line-height: 1.55; }
+  .metric-strip { width: 100%; max-width: 560px; display: flex; gap: 9px; }
+  .ms { flex: 1; border-radius: 11px; padding: 10px; text-align: center; background: var(--card); border: 1px solid var(--line); }
+  .ms .n { font-family: var(--mono); font-size: 18px; font-weight: 800; color: #c4b5fd; }
+  .ms .l { font-size: 9.3px; color: var(--dim); line-height: 1.5; margin-top: 3px; }
+
+  /* 屏6 协议 */
+  .axis-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .axis { flex: 1; border-radius: 13px; padding: 12px; background: var(--card); border: 1px solid var(--line); }
+  .axis.mcp { border-color: rgba(34,211,238,.45); } .axis.a2a { border-color: rgba(167,139,250,.5); }
+  .axis h4 { font-size: 12px; margin-bottom: 6px; }
+  .axis.mcp h4 { color: #67e8f9; } .axis.a2a h4 { color: #c4b5fd; }
+  .axis p { font-size: 10.2px; color: var(--dim); line-height: 1.65; }
+  .a2a-parts { width: 100%; max-width: 560px; display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  .ap { font-family: var(--mono); font-size: 9.6px; padding: 6px 11px; border-radius: 999px;
+    border: 1px solid rgba(167,139,250,.45); background: rgba(167,139,250,.08); color: #c4b5fd; }
+  .ap.dim { border-color: var(--line); background: var(--card); color: var(--dim); }
+  .proto-note { width: 100%; max-width: 560px; text-align: center; font-size: 10.8px; color: var(--dim); line-height: 1.7; }
+  .proto-note code { color: #c4b5fd; background: rgba(167,139,250,.09); padding: 1px 5px; border-radius: 5px; font-size: .92em; }
+
+  /* 总结 */
+  .sum-flow { display: flex; gap: 4px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 10px; color: var(--dim); }
+  .sum-flow span { border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv { display: flex; gap: 13px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 15px; }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote { font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center; line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .replay { font-size: 12.5px; color: #06121c; background: var(--cyan); border: none; padding: 10px 26px; border-radius: 999px; font-weight: 700; cursor: pointer; letter-spacing: .06em; }
+  .replay:active { transform: scale(.96); }
+  .series-badge { position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px; font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em; }
+
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+  @media (max-height: 560px) { .screen { overflow-y: auto; justify-content: flex-start; } .stage { flex: 0 0 auto; padding: 14px 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; scroll-behavior: auto !important; }
+    .rv { opacity: 1 !important; transform: none !important; }
+    .cb-track i { width: var(--w) !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面"></button>
+  <button title="STEP 1 正确的用法"></button>
+  <button title="STEP 2 两宗罪"></button>
+  <button title="STEP 3 成本账"></button>
+  <button title="STEP 4 何时该拆"></button>
+  <button title="STEP 5 A2A 协议"></button>
+  <button title="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">HERMES AGENT 对象拆解 · 17</div>
+    <h1 class="rv d2">多 Agent 反思<br><span class="grad">默认别建一群智能体</span></h1>
+    <p class="hero-sub rv d3">上下文丢失 · 决策冲突 · 单 Agent 默认 · A2A 横向协议</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">🧠 一个主智能体</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">👷 子代理隔离脏活</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">🤝 横向 A2A</span>
+    </div>
+    <p class="hero-quote rv d5">「09 期多 Agent 协作播下的种子，2025 年迎来一次冷静的复盘」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 正确的用法 -->
+<section class="screen s-recap">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>先回忆：它本来解决什么</div>
+    <h2 class="rv d1">多 Agent 的红利是上下文隔离</h2>
+    <p class="scr-desc rv d2">AI 09 期 / Hermes 09 期的正确姿势：主智能体写计划、子智能体并行探索，<b style="color:#c3cde2">每个子代理有干净窗口，只回摘要</b></p>
+  </header>
+  <div class="stage">
+    <div class="good-card rv d3">
+      <h4>✓ 这套设计什么时候成立</h4>
+      <p>子任务边界清晰、彼此独立、产出是<b style="color:#c3cde2">可压缩成结论</b>的研究或检查结果 —— 主上下文因此保持干净（65k 原始 → 2.4k 摘要，正是 AI 09 期的账）</p>
+      <div class="trio"><span>独立窗口</span><span>只回摘要</span><span>并行省墙钟时间</span><span>噪声留在子窗口</span></div>
+    </div>
+    <div class="good-card rv d4" style="border-color:rgba(34,211,238,.35);background:rgba(34,211,238,.04)">
+      <h4 style="color:#67e8f9">2025 年的新问题</h4>
+      <p>多 Agent 被当成万能架构：编排、评审、返工都拆成角色互相对话 —— 红利之外的代价开始集中爆发</p>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 多 Agent 从来不是「更聪明」的开关，它是一种<b>用隔离换质量、用并行换时间的取舍</b></footer>
+</section>
+
+<!-- 屏3 · STEP 2 两宗罪 -->
+<section class="screen s-warn">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>行业降温：两宗罪</div>
+    <h2 class="rv d1">一群智能体，为什么反而更差</h2>
+    <p class="scr-desc rv d2">2025-06《Don't Build Multi-Agents》引发广泛共鸣：把高度依赖的任务拆给多个代理，两类问题无法回避</p>
+  </header>
+  <div class="stage">
+    <div class="sin-row">
+      <div class="sin rv d2">
+        <h4>① 上下文丢失</h4>
+        <p>子代理只拿到摘要，决策所需的细节在压缩中消失；信息每过一手就薄一层</p>
+        <div class="ex">研究代理看到的用户原话<br>→ 到规划代理只剩一行结论<br>→ 关键约束被悄悄丢掉</div>
+      </div>
+      <div class="sin rv d3">
+        <h4>② 隐式决策冲突</h4>
+        <p>各代理在不可见的地方做了互相矛盾的选择，主代理没有完整轨迹来仲裁</p>
+        <div class="ex">A 选了方案甲、B 按方案乙准备数据<br>汇总时才发现对不上<br>返工比单做一遍还贵</div>
+      </div>
+    </div>
+    <div class="quote-strip rv d4">行业结论：<b>需要紧密协调、共同决策的工作，线性的单智能体往往做得又快又稳</b> —— 拆分只在子任务真正独立时才划算</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 对照避坑 02 期：<b>主智能体必须持有完整决策上下文</b> —— 子代理可以干脏活，不能替主智能体做取舍</footer>
+</section>
+
+<!-- 屏4 · STEP 3 成本账 -->
+<section class="screen s-when">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>被忽略的成本账</div>
+    <h2 class="rv d1">并行省下的是墙钟，不是 token</h2>
+    <p class="scr-desc rv d2">每个子代理各自重发一份上下文、各自跑完整循环 —— 多 Agent 的资源账单可能高出一个数量级</p>
+  </header>
+  <div class="stage">
+    <div class="cost-bars rv d2">
+      <div class="cb-row">
+        <span class="lab">单 Agent</span>
+        <span class="cb-track"><i style="--w:9%;background:var(--green)"></i></span>
+        <span class="val">≈1× token</span>
+      </div>
+      <div class="cb-row">
+        <span class="lab">3 个子代理</span>
+        <span class="cb-track"><i style="--w:42%;background:var(--amber)"></i></span>
+        <span class="val">≈4.5×</span>
+      </div>
+      <div class="cb-row">
+        <span class="lab">多 Agent 研究</span>
+        <span class="cb-track"><i style="--w:95%;background:var(--red)"></i></span>
+        <span class="val">≈15×（实测）</span>
+      </div>
+    </div>
+    <div class="v-rule rv d3">时间账与金钱账要分开看：<b>并行让墙钟更短，但总 token 随代理数成倍上涨</b> —— 简单任务上，这笔钱买不到正确率</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 和 16 期的思考预算同理：<b>多出来的计算要花在真正独立、信息超窗的子任务上</b></footer>
+</section>
+
+<!-- 屏5 · STEP 4 何时该拆 -->
+<section class="screen s-when" style="--glow:rgba(52,211,153,.10)">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>那什么时候还该拆</div>
+    <h2 class="rv d1">三个成立条件</h2>
+    <p class="scr-desc rv d2">多 Agent 仍被一线团队保留，但适用面比 2024 年的狂热叙事窄得多</p>
+  </header>
+  <div class="stage">
+    <div class="yes-grid rv d2">
+      <div class="yg"><div class="ic">🔭</div><b>广度研究</b><p>多方向同时搜网页/文档，结果天然可并列汇总</p></div>
+      <div class="yg"><div class="ic">💾</div><b>信息超窗</b><p>每份材料数万 token，读完只回结论，保护主窗口</p></div>
+      <div class="yg"><div class="ic">🧱</div><b>边界清晰</b><p>子任务输入输出明确、互不依赖、可独立验收</p></div>
+    </div>
+    <div class="metric-strip rv d3">
+      <div class="ms"><div class="n">90.2%</div><div class="l">多智能体研究系统在难题上的相对胜率<br>（代价是 ≈15× token）</div></div>
+      <div class="ms"><div class="n">3 次</div><div class="l">连续升级或失败即收敛回主线<br>不让子代理无限自我繁殖</div></div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 新共识一句话：<b>单 Agent + 子代理（窄用）是默认形态，多 Agent 编排只在证据充分时才上</b></footer>
+</section>
+
+<!-- 屏6 · STEP 5 A2A 协议 -->
+<section class="screen s-proto">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>当代理分属不同组织</div>
+    <h2 class="rv d1">A2A：代理之间的横向协议</h2>
+    <p class="scr-desc rv d2">MCP 解决「Agent ↔ 工具」的<b style="color:#c3cde2">纵向</b>接入；Google 2025-04 提出的 A2A 解决「Agent ↔ Agent」的<b style="color:#c3cde2">横向</b>协作，后移交 Linux 基金会</p>
+  </header>
+  <div class="stage">
+    <div class="axis-row">
+      <div class="axis mcp rv d2"><h4>🔌 MCP（纵向）</h4><p>Agent 连工具/数据：tools、resources、prompts —— 不窥探对方内部状态，「作为工具被调用」</p></div>
+      <div class="axis a2a rv d3"><h4>🤝 A2A（横向）</h4><p>两个自治 Agent 对等协商任务：能力发现、委派工作、交接产出，各自保留内部黑盒</p></div>
+    </div>
+    <div class="a2a-parts rv d4">
+      <span class="ap">Agent Card · .well-known/agent.json</span>
+      <span class="ap">Task 长任务</span>
+      <span class="ap">Message 消息</span>
+      <span class="ap">Artifact 产出物</span>
+      <span class="ap dim">SSE / 异步推送</span>
+    </div>
+    <div class="proto-note rv d5">名片式发现（<code>Agent Card</code> 声明能力）与 H16 的 MCP Tasks 状态机呼应：<b style="color:#c3cde2">跨组织协作仍走任务句柄，不共享大脑</b></div>
+  </div>
+  <footer class="scr-foot rv d6">💡 协议只提供「礼貌交接」的信封 —— <b>决定要不要拆、拆给谁的，仍是架构师</b></footer>
+</section>
+
+<!-- 屏7 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">从多智能体狂热，回到单智能体默认</h2>
+    <p class="scr-desc rv d2">隔离是真红利，冲突是真代价；窄用子代理，横向交给 A2A 协议</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>单 Agent 默认</span><i>→</i><span>子代理隔离探索</span><i>→</i><span>只回摘要</span><i>→</i><span>A2A 跨组织</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">🧠</div>
+        <div><b>默认一个主智能体</b><p>高度依赖的任务线性做更稳：避免上下文丢失与隐式决策冲突；主智能体必须持有完整决策轨迹，子代理只干边界清晰的脏活</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">💰</div>
+        <div><b>并行省墙钟，不省 token</b><p>多 Agent 总账单可达约 15 倍；只为广度研究、信息超窗、可独立验收的子任务买单，连续失败即收敛回主线</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">🤝</div>
+        <div><b>横向协作走 A2A</b><p>Agent Card 发现 + Task/Message/Artifact 对等交接，与 MCP 形成纵横分工；自治代理之间交换信封，不交换大脑</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“先证明一个智能体做不完，<br>再谈拆成几个。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">HERMES AGENT 对象拆解 · 17 / 多 Agent 反思篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else { secs.forEach((s) => s.classList.add('active')); }
+  dots.forEach((d, i) => d.addEventListener('click', () => secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' })));
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+</script>
+</body>
+</html>

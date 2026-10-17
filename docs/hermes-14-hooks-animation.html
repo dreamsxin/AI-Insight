@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="Agent Hooks 生命周期挂点：PreToolUse/PostToolUse 等事件、allow/deny/ask/改参数决策协议、自动格式化与强制策略、fail-safe 审计，逐屏动画演示">
+<title>Hooks 生命周期挂点 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14; --bg1: #0c1322; --ink: #e8eefc; --dim: #8b96ad;
+    --cyan: #22d3ee; --purple: #a78bfa; --green: #34d399;
+    --amber: #fbbf24; --red: #fb7185;
+    --card: rgba(255,255,255,.05); --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+  .dots { position: fixed; right: 9px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 11px; z-index: 60; }
+  .dots button { width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0; background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s; }
+  .dots button.on { background: var(--cyan); transform: scale(1.4); box-shadow: 0 0 10px rgba(34,211,238,.85); }
+  .screen {
+    position: relative; z-index: 1; height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before { content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%); }
+  .s-hero { --glow: rgba(34,211,238,.10); } .s-hard { --glow: rgba(34,211,238,.11); }
+  .s-events { --glow: rgba(167,139,250,.12); } .s-decide { --glow: rgba(52,211,153,.10); }
+  .s-usage { --glow: rgba(251,191,36,.09); } .s-rule { --glow: rgba(251,113,133,.09); }
+  .s-sum { --glow: rgba(244,114,182,.08); }
+  .scr-head { width: 100%; max-width: 640px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .step-badge { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07); padding: 4px 13px; border-radius: 999px; }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code { color: var(--cyan); font-size: .92em; background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px; }
+  .code-chip { font-family: var(--mono); font-size: 11px; color: #9fb3d1; background: rgba(255,255,255,.04);
+    border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage { position: relative; z-index: 1; flex: 1; min-height: 0; width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13px; }
+  .scr-foot { width: 100%; max-width: 640px; text-align: center; font-size: 12px; line-height: 1.65; color: var(--dim); }
+  .scr-foot b { color: #c3cde2; }
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; } .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; } .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; } .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker { font-size: 10px; letter-spacing: .28em; color: var(--dim); border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 6px 16px; border-radius: 999px; }
+  h1 { font-size: clamp(34px, 9vw, 54px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad { background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node { font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); white-space: nowrap; }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i { position: absolute; top: 50%; transform: translateY(-50%); left: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint { position: absolute; bottom: calc(16px + env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em; }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* 屏2 硬编码对比 */
+  .cmp { width: 100%; max-width: 560px; border-radius: 13px; padding: 13px 15px; background: var(--card); border: 1px solid var(--line); }
+  .cmp h4 { font-size: 12.5px; margin-bottom: 8px; }
+  .cmp.old { border-color: rgba(251,113,133,.4); } .cmp.old h4 { color: #ffb9c4; }
+  .cmp.new { border-color: rgba(34,211,238,.5); } .cmp.new h4 { color: #67e8f9; }
+  .cmp p { font-size: 10.8px; color: var(--dim); line-height: 1.7; }
+  .cmp code { color: #c3cde2; font-size: .95em; }
+
+  /* 屏3 事件时间轴 */
+  .tl { width: 100%; max-width: 560px; position: relative; padding-left: 24px; display: flex; flex-direction: column; gap: 0; }
+  .tl::before { content: ""; position: absolute; left: 7px; top: 8px; bottom: 8px; width: 2px; background: var(--line); }
+  .ev { position: relative; padding: 7px 0 7px 14px; }
+  .ev::before { content: ""; position: absolute; left: -21px; top: 13px; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--bg0); border: 2px solid var(--cyan); }
+  .ev.hot::before { border-color: var(--amber); background: rgba(251,191,36,.25); }
+  .ev b { font-family: var(--mono); font-size: 11px; color: #67e8f9; }
+  .ev.hot b { color: #fde68a; }
+  .ev p { font-size: 10.2px; color: var(--dim); line-height: 1.5; margin-top: 1px; }
+
+  /* 屏4 决策分叉 */
+  .flow-card { width: 100%; max-width: 560px; border-radius: 13px; padding: 13px 15px;
+    background: rgba(0,0,0,.28); border: 1px solid var(--line); }
+  .flow-card .hook-line { font-family: var(--mono); font-size: 10.5px; color: #9fb3d1; margin-bottom: 10px; }
+  .flow-card .hook-line b { color: #fde68a; }
+  .forks { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  .fork { border-radius: 10px; padding: 8px 10px; font-size: 10.2px; line-height: 1.5; border: 1px solid var(--line); background: var(--card); }
+  .fork b { display: block; font-family: var(--mono); font-size: 10.8px; margin-bottom: 2px; }
+  .fork.allow b { color: #6ee7b7; } .fork.deny b { color: #ffb9c4; }
+  .fork.ask b { color: #fde68a; } .fork.mod b { color: #67e8f9; }
+
+  /* 屏5 典型用法 */
+  .use-grid { width: 100%; max-width: 560px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .uc { border-radius: 12px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); }
+  .uc h4 { font-size: 11px; color: #c3cde2; margin-bottom: 4px; }
+  .uc p { font-size: 10px; color: var(--dim); line-height: 1.55; }
+  .uc code { color: var(--cyan); font-size: .92em; }
+
+  /* 屏6 红线 */
+  .rule-card { width: 100%; max-width: 560px; border-radius: 13px; padding: 12px 15px;
+    background: rgba(251,113,133,.05); border: 1px solid rgba(251,113,133,.38); font-size: 11px; color: #aab6cf; line-height: 1.75; }
+  .rule-card b { color: #ffb9c4; }
+  .rule-card code { color: #fde68a; font-size: .95em; }
+  .boundary { width: 100%; max-width: 560px; display: flex; gap: 9px; }
+  .bd { flex: 1; border-radius: 11px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); font-size: 10.3px; color: var(--dim); line-height: 1.6; text-align: center; }
+  .bd b { display: block; font-size: 11.5px; margin-bottom: 2px; }
+  .bd.host b { color: #fde68a; } .bd.model b { color: #67e8f9; }
+
+  /* 总结 */
+  .sum-flow { display: flex; gap: 4px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 10px; color: var(--dim); }
+  .sum-flow span { border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv { display: flex; gap: 13px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 15px; }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote { font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center; line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .replay { font-size: 12.5px; color: #06121c; background: var(--cyan); border: none; padding: 10px 26px; border-radius: 999px; font-weight: 700; cursor: pointer; letter-spacing: .06em; }
+  .replay:active { transform: scale(.96); }
+  .series-badge { position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px; font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em; }
+
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+  @media (max-height: 560px) { .screen { overflow-y: auto; justify-content: flex-start; } .stage { flex: 0 0 auto; padding: 14px 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; scroll-behavior: auto !important; }
+    .rv { opacity: 1 !important; transform: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面"></button>
+  <button title="STEP 1 从硬编码到外挂"></button>
+  <button title="STEP 2 生命周期事件"></button>
+  <button title="STEP 3 决策协议"></button>
+  <button title="STEP 4 典型用法"></button>
+  <button title="STEP 5 边界与红线"></button>
+  <button title="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">HERMES AGENT 对象拆解 · 14</div>
+    <h1 class="rv d2">Hooks 挂点<br><span class="grad">不改大脑，也能立规矩</span></h1>
+    <p class="hero-sub rv d3">生命周期事件 · 拦截决策 · fail-safe 审计</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">🎬 事件触发</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">🪝 宿主脚本</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">🚦 放行/拦截</span>
+    </div>
+    <p class="hero-quote rv d5">「09 期的权限闸，第一次可以由团队自己插拔」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 从硬编码到外挂 -->
+<section class="screen s-hard">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>从硬编码到外挂</div>
+    <h2 class="rv d1">策略不该焊死在主循环里</h2>
+    <p class="scr-desc rv d2">Hermes 09 期的三级权限闸写死在运行时代码中：换团队、换红线，就得改 Agent 本身 —— Hooks 把这些检查点开放出来</p>
+  </header>
+  <div class="stage">
+    <div class="cmp old rv d2">
+      <h4>✕ 老做法：改策略 = 改 Agent 代码</h4>
+      <p>「禁止 rm -rf」「写文件后自动格式化」全部硬编码；多套环境共用一份运行时，策略分叉只能维护多个分支，升级时互相踩脚</p>
+    </div>
+    <div class="cmp new rv d3">
+      <h4>✓ Hooks：在生命周期上挂自己的脚本</h4>
+      <p>宿主在固定事件点执行团队提供的 shell/HTTP 脚本：<code>退出码决定放行还是拦截</code>。Agent 主程序一行不改，策略随配置走</p>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 类比 Web 框架：<b>中间件</b> —— 请求进、响应出的固定切面，业务代码与横切策略各管各的</footer>
+</section>
+
+<!-- 屏3 · STEP 2 生命周期事件 -->
+<section class="screen s-events">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>事件全景</div>
+    <h2 class="rv d1">一次会话里，有哪些挂点</h2>
+    <p class="scr-desc rv d2">Hooks 挂在会话与工具调用的关键时刻，<code>Pre/Post</code> 是最常用的一对</p>
+  </header>
+  <div class="stage">
+    <div class="tl rv d3">
+      <div class="ev"><b>SessionStart</b><p>会话开始：注入项目上下文、加载环境信息</p></div>
+      <div class="ev"><b>UserPromptSubmit</b><p>用户消息提交前：补充规范、追加必须遵守的规则</p></div>
+      <div class="ev hot"><b>PreToolUse</b><p>工具执行前：拦截命令、校验参数（最核心的安全闸）</p></div>
+      <div class="ev hot"><b>PostToolUse</b><p>工具执行后：自动格式化、扫描输出、写审计日志</p></div>
+      <div class="ev"><b>Stop / SubagentStop</b><p>本轮（或子代理）结束：检查是否真的完工、收尾通知</p></div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 这就是 Hermes 01 期「适配层 + 主循环」之外的<b>第二条横切线</b>：横切策略有了统一插桩点</footer>
+</section>
+
+<!-- 屏4 · STEP 3 决策协议 -->
+<section class="screen s-decide">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>PreToolUse 的四种决定</div>
+    <h2 class="rv d1">一个退出码，四种去向</h2>
+    <p class="scr-desc rv d2">钩子脚本跑完，用退出码与结构化输出告诉宿主怎么处理这次工具调用</p>
+    <div class="code-chip rv d2">hook(tool, args) → exit code + JSON → 宿主执行决策</div>
+  </header>
+  <div class="stage">
+    <div class="flow-card rv d3">
+      <div class="hook-line">PreToolUse: bash({ cmd: "<b>rm -rf ./build</b>" })</div>
+      <div class="forks">
+        <div class="fork allow"><b>allow · 0</b>直接放行，用户无感</div>
+        <div class="fork deny"><b>deny · 2</b>阻断并返回原因，模型看到「被拒」后改路（09 期：模型只有提案权）</div>
+        <div class="fork ask"><b>ask</b>转人工确认，走三级权限的黄灯</div>
+        <div class="fork mod"><b>modify</b>改写参数：自动补超时、规范路径，再放行</div>
+      </div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 决策由<b>宿主代码</b>执行，模型无法绕过 —— 比「在 system prompt 里恳求它别做」可靠一个数量级</footer>
+</section>
+
+<!-- 屏5 · STEP 4 典型用法 -->
+<section class="screen s-usage">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>钩子都在干什么</div>
+    <h2 class="rv d1">把团队规矩变成确定性动作</h2>
+  </header>
+  <div class="stage">
+    <div class="use-grid">
+      <div class="uc rv d2"><h4>🧹 自动善后</h4><p>PostToolUse：编辑文件后自动跑 <code>prettier</code>、测试后收集结果</p></div>
+      <div class="uc rv d2"><h4>🚫 强制策略</h4><p>PreToolUse：危险命令、外网域名、删除操作一律拦或升级</p></div>
+      <div class="uc rv d3"><h4>📥 注入上下文</h4><p>提交提示时带上分支名、规范文件、当天环境差异</p></div>
+      <div class="uc rv d3"><h4>📜 审计留痕</h4><p>每次工具调用落盘（谁、参数、结果）—— 与避坑 04 的 trace 合流</p></div>
+      <div class="uc rv d4"><h4>🔁 完成校验</h4><p>Stop 前跑测试门禁：不绿不算完，自动打回</p></div>
+      <div class="uc rv d4"><h4>🚨 异常上报</h4><p>命中敏感模式（私钥、~/.ssh）立即阻断并通知（09 期红线清单的工程化）</p></div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 凡是<b>「无论模型怎么想都必须成立」</b>的规矩，都适合下沉为 hook，而不是写进提示词</footer>
+</section>
+
+<!-- 屏6 · STEP 5 边界与红线 -->
+<section class="screen s-rule">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>钩子的边界</div>
+    <h2 class="rv d1">它不是第二个模型</h2>
+  </header>
+  <div class="stage">
+    <div class="boundary">
+      <div class="bd host rv d2"><b>宿主侧（hook）</b>确定性脚本：快、可复现、可审计；失败默认拒绝</div>
+      <div class="bd model rv d3"><b>模型侧</b>只看到 hook 返回的结果文本，看不见脚本内部，也无法关闭它</div>
+    </div>
+    <div class="rule-card rv d4">
+      <b>三条工程红线</b><br>
+      ① <b>fail-safe</b>：hook 超时或报错，默认 <code>deny/ask</code>，绝不静默放行；<br>
+      ② <b>幂等可重入</b>：重试与事件重复触发时不能产生副作用叠加（参考 11 期幂等原则）；<br>
+      ③ <b>返回可行动错误</b>：拦截原因写清楚，模型才能据此改路（避坑 01）。
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 权限防的是<b>模型乱来</b>，hook 防的是<b>规矩被遗忘</b> —— 一个是闸门，一个是让闸门可插拔的插槽</footer>
+</section>
+
+<!-- 屏7 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">生命周期上的确定性插槽</h2>
+    <p class="scr-desc rv d2">事件挂点 → 宿主脚本 → allow/deny/ask/modify → 善后与审计，策略随配置走</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>事件</span><i>→</i><span>hook 脚本</span><i>→</i><span>退出码决策</span><i>→</i><span>执行/反馈</span><i>→</i><span>审计</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">🎬</div>
+        <div><b>在固定时刻插桩</b><p>SessionStart / UserPromptSubmit / PreToolUse / PostToolUse / Stop —— 不改主循环即可挂入团队策略</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🚦</div>
+        <div><b>退出码即闸门</b><p>allow/deny/ask/modify 四种决策由宿主强制执行，模型只有提案权；拦截原因反馈成下一轮观察</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">🛡️</div>
+        <div><b>确定性 + fail-safe</b><p>自动善后、强制策略、审计留痕全部可复现；hook 是宿主脚本不是模型，超时出错默认拒绝</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“提示词是恳求模型守规矩，<br>钩子是让坏动作根本发不出去。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">HERMES AGENT 对象拆解 · 14 / Hooks 生命周期篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else { secs.forEach((s) => s.classList.add('active')); }
+  dots.forEach((d, i) => d.addEventListener('click', () => secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' })));
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+</script>
+</body>
+</html>

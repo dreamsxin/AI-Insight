@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="Agent harness 脚手架：大脑与手脚解耦、会话作为追加事件日志、检查点从事件重放、后台 Agent 独立 worktree、长任务经济与编排价值递减，逐屏动画演示">
+<title>Harness、检查点与后台任务 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14; --bg1: #0c1322; --ink: #e8eefc; --dim: #8b96ad;
+    --cyan: #22d3ee; --purple: #a78bfa; --green: #34d399;
+    --amber: #fbbf24; --red: #fb7185;
+    --card: rgba(255,255,255,.05); --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+  .dots { position: fixed; right: 9px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 11px; z-index: 60; }
+  .dots button { width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0; background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s; }
+  .dots button.on { background: var(--cyan); transform: scale(1.4); box-shadow: 0 0 10px rgba(34,211,238,.85); }
+  .screen {
+    position: relative; z-index: 1; height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before { content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%); }
+  .s-hero { --glow: rgba(34,211,238,.10); } .s-brain { --glow: rgba(167,139,250,.12); }
+  .s-log { --glow: rgba(34,211,238,.11); } .s-bg { --glow: rgba(52,211,153,.10); }
+  .s-eco { --glow: rgba(251,191,36,.09); } .s-durable { --glow: rgba(244,114,182,.08); }
+  .s-sum { --glow: rgba(244,114,182,.08); }
+  .scr-head { width: 100%; max-width: 640px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .step-badge { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07); padding: 4px 13px; border-radius: 999px; }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code { color: var(--cyan); font-size: .92em; background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px; }
+  .code-chip { font-family: var(--mono); font-size: 11px; color: #9fb3d1; background: rgba(255,255,255,.04);
+    border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage { position: relative; z-index: 1; flex: 1; min-height: 0; width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13px; }
+  .scr-foot { width: 100%; max-width: 640px; text-align: center; font-size: 12px; line-height: 1.65; color: var(--dim); }
+  .scr-foot b { color: #c3cde2; }
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; } .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; } .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; } .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker { font-size: 10px; letter-spacing: .28em; color: var(--dim); border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 6px 16px; border-radius: 999px; }
+  h1 { font-size: clamp(34px, 9vw, 54px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad { background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node { font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); white-space: nowrap; }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i { position: absolute; top: 50%; transform: translateY(-50%); left: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint { position: absolute; bottom: calc(16px + env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em; }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* 大脑/手脚 */
+  .split-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .part { flex: 1; border-radius: 13px; padding: 13px; background: var(--card); border: 1px solid var(--line); }
+  .part.brain { border-color: rgba(167,139,250,.5); } .part.hands { border-color: rgba(34,211,238,.45); }
+  .part h4 { font-size: 12.5px; margin-bottom: 7px; }
+  .part.brain h4 { color: #c4b5fd; } .part.hands h4 { color: #67e8f9; }
+  .part ul { list-style: none; font-size: 10.3px; color: var(--dim); line-height: 1.85; }
+  .part ul li::before { content: "· "; }
+  .part-note { width: 100%; max-width: 560px; text-align: center; font-size: 11px; color: var(--dim); line-height: 1.7; }
+  .part-note b { color: #c3cde2; }
+
+  /* 事件日志 */
+  .log-term {
+    width: 100%; max-width: 560px; border-radius: 13px; padding: 13px 15px;
+    background: rgba(0,0,0,.32); border: 1px solid var(--line);
+    font-family: var(--mono); font-size: 10.5px; line-height: 1.85; color: #9fb3d1;
+  }
+  .log-term .app { color: #67e8f9; } .log-term .tool { color: #c4b5fd; } .log-term .dim { color: var(--dim); }
+  .replay-flow { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 560px; justify-content: center; }
+  .rp { font-size: 10.5px; padding: 8px 12px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); color: #c3cde2; text-align: center; }
+  .rp.hot { border-color: rgba(52,211,153,.5); color: #6ee7b7; }
+
+  /* 后台 */
+  .bg-row { display: flex; gap: 9px; width: 100%; max-width: 560px; }
+  .bg { flex: 1; border-radius: 12px; padding: 11px; background: var(--card); border: 1px solid var(--line); font-size: 10.3px; color: var(--dim); line-height: 1.6; }
+  .bg b { display: block; font-size: 11.5px; color: #c3cde2; margin-bottom: 3px; }
+  .bg .term { font-family: var(--mono); font-size: 9.5px; color: #67e8f9; }
+  .jobs-row { width: 100%; max-width: 560px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .job { font-family: var(--mono); font-size: 9.8px; padding: 6px 11px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--card); color: #aab6cf; }
+  .job.run { border-color: rgba(34,211,238,.5); color: #67e8f9; } .job.done { border-color: rgba(52,211,153,.5); color: #6ee7b7; }
+  .job.sleep { border-color: rgba(148,163,184,.4); color: var(--dim); }
+
+  /* 经济账 */
+  .eco-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .eco { flex: 1; border-radius: 13px; padding: 12px; background: var(--card); border: 1px solid var(--line); text-align: center; }
+  .eco .n { font-family: var(--mono); font-size: 19px; font-weight: 800; }
+  .eco.a .n { color: #6ee7b7; } .eco.b .n { color: #c4b5fd; }
+  .eco .l { font-size: 9.6px; color: var(--dim); line-height: 1.55; margin-top: 4px; }
+  .diminish { width: 100%; max-width: 560px; border-radius: 11px; padding: 10px 14px; text-align: center;
+    font-size: 10.8px; color: var(--dim); line-height: 1.7; background: rgba(251,191,36,.06); border: 1px solid rgba(251,191,36,.35); }
+  .diminish b { color: #fde68a; }
+
+  /* durable */
+  .dur-flow { display: flex; align-items: center; gap: 7px; width: 100%; max-width: 560px; justify-content: center; flex-wrap: wrap; }
+  .df { font-size: 10px; font-family: var(--mono); padding: 7px 11px; border-radius: 999px; white-space: nowrap;
+    border: 1px solid var(--line); background: var(--card); color: #aab6cf; }
+  .df.hot { color: #f9a8d4; border-color: rgba(244,114,182,.5); background: rgba(244,114,182,.08); }
+  .dur-note { width: 100%; max-width: 560px; display: flex; gap: 8px; }
+  .dn { flex: 1; border-radius: 11px; padding: 9px 11px; font-size: 10.2px; color: var(--dim); line-height: 1.6;
+    background: var(--card); border: 1px solid var(--line); text-align: center; }
+  .dn b { display: block; font-size: 11px; color: #c3cde2; margin-bottom: 2px; }
+
+  /* 总结 */
+  .sum-flow { display: flex; gap: 4px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 10px; color: var(--dim); }
+  .sum-flow span { border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv { display: flex; gap: 13px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 15px; }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote { font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center; line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .replay { font-size: 12.5px; color: #06121c; background: var(--cyan); border: none; padding: 10px 26px; border-radius: 999px; font-weight: 700; cursor: pointer; letter-spacing: .06em; }
+  .replay:active { transform: scale(.96); }
+  .series-badge { position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px; font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em; }
+
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+  @media (max-height: 560px) { .screen { overflow-y: auto; justify-content: flex-start; } .stage { flex: 0 0 auto; padding: 14px 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; scroll-behavior: auto !important; }
+    .rv { opacity: 1 !important; transform: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面"></button>
+  <button title="STEP 1 大脑与手脚"></button>
+  <button title="STEP 2 事件日志"></button>
+  <button title="STEP 3 后台 Agent"></button>
+  <button title="STEP 4 长任务经济"></button>
+  <button title="STEP 5 持久执行"></button>
+  <button title="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">HERMES AGENT 对象拆解 · 18</div>
+    <h1 class="rv d2">Harness 脚手架<br><span class="grad">模型之外，全是工程</span></h1>
+    <p class="hero-sub rv d3">大脑/手脚解耦 · 事件日志 · 检查点 · 后台任务</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">🧠 模型（大脑）</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">🎛️ harness（手脚）</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">📼 检查点</span>
+    </div>
+    <p class="hero-quote rv d5">「同一个模型，换副脚手架，能力上限完全不同」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 大脑与手脚 -->
+<section class="screen s-brain">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>brain / hands 解耦</div>
+    <h2 class="rv d1">决定成败的，常常不是模型</h2>
+    <p class="scr-desc rv d2">2026 年 Agent 平台开始把架构明确拆成两层：<b style="color:#c3cde2">大脑</b>只负责推理与决策，其余全部是可替换的脚手架</p>
+  </header>
+  <div class="stage">
+    <div class="split-row">
+      <div class="part brain rv d3">
+        <h4>🧠 大脑（模型）</h4>
+        <ul>
+          <li>无状态：每次只看到 messages</li>
+          <li>只有提案权，不能真执行</li>
+          <li>不记得上一个会话</li>
+        </ul>
+      </div>
+      <div class="part hands rv d4">
+        <h4>🎛️ harness（脚手架）</h4>
+        <ul>
+          <li>主循环、工具注册与执行</li>
+          <li>上下文管理、预算/步数闸门</li>
+          <li>权限、沙箱、hooks、重试与审计</li>
+        </ul>
+      </div>
+    </div>
+    <div class="part-note rv d5">Hermes 01–17 期讲的每一个机制 —— 适配层、权限闸、瘦身、Skills、思考预算 —— <b>全部属于 harness，不属于模型</b><br>同一模型配上不同脚手架，表现差距可以大过换一个模型</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 选型只看模型分数是旧观念：<b>模型决定下限，harness 决定它在真实环境的上限</b></footer>
+</section>
+
+<!-- 屏3 · STEP 2 事件日志与检查点 -->
+<section class="screen s-log">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>会话即事件日志</div>
+    <h2 class="rv d1">崩溃了，就让日志倒带</h2>
+    <p class="scr-desc rv d2">把 harness 做成<b style="color:#c3cde2">无状态</b>的关键：会话不是内存里的对象，而是一条只追加（append-only）的事件流</p>
+    <div class="code-chip rv d2">user_msg → assistant_msg → tool_call → tool_result → …（只追加，不改写）</div>
+  </header>
+  <div class="stage">
+    <div class="log-term rv d3">
+      <span class="dim">[09:01]</span> <span class="app">user</span> 把周报整理成待办<br>
+      <span class="dim">[09:01]</span> <span class="app">assistant</span> tool_call: read_file<br>
+      <span class="dim">[09:02]</span> <span class="tool">tool_result</span> …1.2k tokens…<br>
+      <span class="dim">[09:03]</span> <span class="app">assistant</span> tool_call: edit_file　<span class="dim">⚠ 进程在此崩溃</span>
+    </div>
+    <div class="replay-flow rv d4">
+      <span class="rp">事件日志落盘</span><span style="color:var(--dim)">→</span>
+      <span class="rp hot">新 harness 重放事件</span><span style="color:var(--dim)">→</span>
+      <span class="rp hot">从断点继续</span>
+    </div>
+    <div class="part-note rv d5">这正是 15 期 PagedAttention「无状态、可重放」思想在 Agent 侧的对应：<b>状态外置到事件，进程随时可以死、可以换</b></div>
+  </div>
+  <footer class="scr-foot rv d6">💡 检查点不是「保存内存快照」，而是 <b>保存事件 + 能从事件重建状态</b>（durable execution 的核心）</footer>
+</section>
+
+<!-- 屏4 · STEP 3 后台 Agent -->
+<section class="screen s-bg">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>后台 Agent</div>
+    <h2 class="rv d1">任务不必盯着跑完</h2>
+    <p class="scr-desc rv d2">2025 下半年起，编码 Agent 可以脱离当前会话在后台工作：独立工作区、可随时 attach、空闲时挂起</p>
+  </header>
+  <div class="stage">
+    <div class="jobs-row rv d2">
+      <span class="job run">● bg/修登录 · running</span>
+      <span class="job done">● bg/写测试 · completed</span>
+      <span class="job sleep">● bg/调研框架 · suspended</span>
+    </div>
+    <div class="bg-row">
+      <div class="bg rv d3"><b>📁 独立 worktree</b><span class="term">git worktree add</span><br>每个后台任务一份隔离工作区与分支，互不踩脚（呼应 09 期隔离原则）</div>
+      <div class="bg rv d4"><b>🔌 可 attach / 可挂起</b>空闲时挂起到磁盘、释放算力；用户随时连回去看进度、插话纠偏，重启后接着跑</div>
+    </div>
+    <div class="bg-row">
+      <div class="bg rv d5"><b>📨 事件驱动</b>新消息、工具结果、定时器都能唤醒任务 —— 与 H16 的 MCP Tasks、H07 的三态回传是同一套语义</div>
+      <div class="bg rv d5"><b>👥 多任务看板</b>多个 Agent 并行 + 人工在关键节点审阅 —— 但按 H17 的结论：默认仍是单 Agent，后台只是「异步化」</div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 后台化的本质：<b>把「人盯着 Agent」变成「Agent 完成或卡住时来找人」</b></footer>
+</section>
+
+<!-- 屏5 · STEP 4 长任务经济 -->
+<section class="screen s-eco">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>长任务的经济账</div>
+    <h2 class="rv d1">编排复杂度，要花得值</h2>
+    <p class="scr-desc rv d2">Agent 任务从几分钟走向几小时，成本结构也变了：钱主要花在<b style="color:#c3cde2">多轮重复的上下文</b>，而不是模型调用费</p>
+  </header>
+  <div class="stage">
+    <div class="eco-row">
+      <div class="eco a rv d2"><div class="n">20min / $9</div><div class="l">单个长任务 Agent 自主跑<br>典型中等复杂度</div></div>
+      <div class="eco b rv d3"><div class="n">6h / $200</div><div class="l">复杂多步任务全程<br>编排 + 多轮重发上下文</div></div>
+    </div>
+    <div class="diminish rv d4">
+      <b>编排价值随模型代际递减</b>：模型越强，越少需要复杂的规划器/评审器/多角色分工（H17）<br>
+      早期靠 harness 补的能力，正在被模型内化 —— 每一代模型都值得重新审视：这层脚手架还要不要
+    </div>
+    <div class="part-note rv d5">省钱的仍是老三件：<b>上下文压缩</b>（02/05 期）、<b>子代理隔离</b>（AI 09）、<b>工具结果瘦身</b>（Hermes 05）—— 任务越长，复利越狠</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 评估长任务别只看「跑没跑完」：要看 <b>token/美元/墙钟时间</b>三个口径一起算</footer>
+</section>
+
+<!-- 屏6 · STEP 5 持久执行与人 -->
+<section class="screen s-durable">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>durable execution</div>
+    <h2 class="rv d1">会等人的任务，才像员工</h2>
+    <p class="scr-desc rv d2">生产级 Agent 平台（2026 年成型）把会话本身做成持久事件日志：harness 无状态、崩溃从事件恢复、人在任意节点接入</p>
+  </header>
+  <div class="stage">
+    <div class="dur-flow rv d2">
+      <span class="df">任务启动</span><i>→</i>
+      <span class="df">工具调用</span><i>→</i>
+      <span class="df hot">input_required：等人审批/补料</span><i>→</i>
+      <span class="df">事件落盘，进程可退</span><i>→</i>
+      <span class="df hot">人回来 → 重放续跑</span>
+    </div>
+    <div class="dur-note">
+      <div class="dn rv d3"><b>🧯 崩溃恢复</b>事件重放保证「调用过的工具不重复、已完成的步骤不丢失」</div>
+      <div class="dn rv d4"><b>🧑 HITL 一等化</b>等待人不是异常分支，而是任务状态机里的正常一站（H16 Tasks 同款）</div>
+      <div class="dn rv d5"><b>🪪 凭证不入库</b>重放时经代理重新取凭证（H15），日志里不留密钥</div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 Hermes 11 期说「会自救，才配被托付」—— <b>会等人、会断点续传，才配进生产</b></footer>
+</section>
+
+<!-- 屏7 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">模型之外的工程操作系统</h2>
+    <p class="scr-desc rv d2">大脑/手脚解耦 → 会话即日志 → 后台与检查点 → 长任务经济 → 持久执行</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>模型无状态</span><i>→</i><span>harness 持状态</span><i>→</i><span>事件日志</span><i>→</i><span>重放恢复</span><i>→</i><span>后台/等人</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">🎛️</div>
+        <div><b>harness 决定上限</b><p>循环、工具、上下文、权限、预算、沙箱、hooks 全在脚手架层；同一模型配不同 harness，差距大过换模型</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">📼</div>
+        <div><b>状态外置，进程可死</b><p>会话是 append-only 事件日志，检查点从事件重放；后台 Agent 用独立 worktree 异步跑，可挂起、可 attach、事件唤醒</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">🧑‍💼</div>
+        <div><b>长任务按经济账设计</b><p>钱花在重复上下文而非调用费；编排价值随模型代际递减，input_required 作为正常状态让人成为流程一环</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“模型是请来的专家，<br>harness 才是让它能上班的整套组织。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">HERMES AGENT 对象拆解 · 18 / Harness 与检查点篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else { secs.forEach((s) => s.classList.add('active')); }
+  dots.forEach((d, i) => d.addEventListener('click', () => secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' })));
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+</script>
+</body>
+</html>

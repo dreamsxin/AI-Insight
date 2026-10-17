@@ -69,8 +69,11 @@ Frontend (run from `frontend/`):
   `backend/app/data/saved_models/` (no database). The directory is git-ignored and
   created at runtime by `services/model_store.py`; don't commit model files.
 - `docs/` holds a self-contained animated demo series with an index page
-  (`index.html` links all of them): HERMES AGENT 对象拆解 ·01–11 (08 跨会话
-  记忆篇 is 前瞻演绎/designed extrapolation), AI 运作原理拆解 ·01–20
+  (`index.html` links all of them): HERMES AGENT 对象拆解 ·01–19 (08 跨会话
+  记忆篇 is 前瞻演绎/designed extrapolation; 12–19 cover thinking-budget
+  loop integration, Skills progressive disclosure, hooks, sandbox/Auto
+  mode, the 2025–2026 MCP evolution, the A2A/multi-agent retrenchment,
+  harness/checkpoints, and CUA), AI 运作原理拆解 ·01–20
   (13–20 cover Transformer anatomy, MoE, KV Cache/inference acceleration,
   reasoning models & thinking chains, RLVR/GRPO & distillation, LoRA
   finetuning, embeddings/reranking, and multimodality),

@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="MCP 协议 2025–2026 演进：Streamable HTTP 单端点、OAuth 2.1 授权、Tasks 长任务状态机、2026-07 无状态化改造，协议是活的，逐屏动画演示（规范口径截至 2026-07）">
+<title>MCP 的 2026 演进 · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14; --bg1: #0c1322; --ink: #e8eefc; --dim: #8b96ad;
+    --cyan: #22d3ee; --purple: #a78bfa; --green: #34d399;
+    --amber: #fbbf24; --red: #fb7185;
+    --card: rgba(255,255,255,.05); --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+  .dots { position: fixed; right: 9px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 11px; z-index: 60; }
+  .dots button { width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0; background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s; }
+  .dots button.on { background: var(--cyan); transform: scale(1.4); box-shadow: 0 0 10px rgba(34,211,238,.85); }
+  .screen {
+    position: relative; z-index: 1; height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before { content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%); }
+  .s-hero { --glow: rgba(34,211,238,.10); } .s-old { --glow: rgba(34,211,238,.11); }
+  .s-http { --glow: rgba(52,211,153,.10); } .s-oauth { --glow: rgba(167,139,250,.11); }
+  .s-task { --glow: rgba(251,191,36,.09); } .s-stateless { --glow: rgba(244,114,182,.08); }
+  .s-sum { --glow: rgba(244,114,182,.08); }
+  .scr-head { width: 100%; max-width: 640px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .step-badge { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07); padding: 4px 13px; border-radius: 999px; }
+  .step-badge b { color: #fff; font-weight: 800; }
+  .step-badge .cal { color: var(--amber); font-weight: 600; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code { color: var(--cyan); font-size: .92em; background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px; }
+  .code-chip { font-family: var(--mono); font-size: 11px; color: #9fb3d1; background: rgba(255,255,255,.04);
+    border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage { position: relative; z-index: 1; flex: 1; min-height: 0; width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13px; }
+  .scr-foot { width: 100%; max-width: 640px; text-align: center; font-size: 12px; line-height: 1.65; color: var(--dim); }
+  .scr-foot b { color: #c3cde2; }
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; } .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; } .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; } .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker { font-size: 10px; letter-spacing: .28em; color: var(--dim); border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 6px 16px; border-radius: 999px; }
+  .cal-note { margin-top: 10px; font-size: 10px; color: var(--amber); letter-spacing: .05em; }
+  h1 { font-size: clamp(34px, 9vw, 54px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad { background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node { font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); white-space: nowrap; }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i { position: absolute; top: 50%; transform: translateY(-50%); left: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint { position: absolute; bottom: calc(16px + env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em; }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* 版本卡 */
+  .ver-card { width: 100%; max-width: 560px; border-radius: 13px; padding: 13px 15px; background: var(--card); border: 1px solid var(--line); }
+  .ver-card .date { font-family: var(--mono); font-size: 9.5px; color: var(--dim); letter-spacing: .1em; }
+  .ver-card h4 { font-size: 12.5px; margin: 4px 0 7px; color: #c3cde2; }
+  .ver-card .row { display: flex; flex-wrap: wrap; gap: 5px; }
+  .ver-card .row span { font-family: var(--mono); font-size: 9px; padding: 3px 8px; border-radius: 999px;
+    border: 1px solid var(--line); background: rgba(255,255,255,.03); color: #aab6cf; }
+  .ver-card.old { border-color: rgba(148,163,184,.4); }
+  .ver-arrow { text-align: center; font-size: 11px; color: var(--dim); }
+
+  /* 端点对比 */
+  .ep-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .ep { flex: 1; border-radius: 13px; padding: 12px; background: var(--card); border: 1px solid var(--line); }
+  .ep.old { border-color: rgba(251,113,133,.4); } .ep.new { border-color: rgba(52,211,153,.5); }
+  .ep h4 { font-size: 11.5px; margin-bottom: 8px; }
+  .ep.old h4 { color: #ffb9c4; } .ep.new h4 { color: #6ee7b7; }
+  .ep .lines { font-family: var(--mono); font-size: 9.3px; color: #9fb3d1; line-height: 1.85; }
+  .ep .lines .strike { color: var(--dim); text-decoration: line-through; }
+  .ep .lines .ok { color: #6ee7b7; }
+
+  /* OAuth */
+  .oauth-flow { display: flex; align-items: center; gap: 6px; width: 100%; max-width: 560px; justify-content: center; flex-wrap: wrap; }
+  .of { font-size: 9.8px; font-family: var(--mono); padding: 7px 10px; border-radius: 999px; white-space: nowrap;
+    border: 1px solid var(--line); background: var(--card); color: #aab6cf; }
+  .of.hot { color: #c4b5fd; border-color: rgba(167,139,250,.5); background: rgba(167,139,250,.09); }
+  .oauth-note { width: 100%; max-width: 560px; font-size: 11px; color: var(--dim); line-height: 1.7; text-align: center; }
+  .oauth-note code { color: #c4b5fd; background: rgba(167,139,250,.09); padding: 1px 5px; border-radius: 5px; font-size: .92em; }
+
+  /* Tasks 状态机 */
+  .states { display: flex; align-items: center; gap: 5px; width: 100%; max-width: 560px; justify-content: center; flex-wrap: wrap; }
+  .stt { font-family: var(--mono); font-size: 9.5px; padding: 7px 10px; border-radius: 10px; text-align: center; line-height: 1.4;
+    border: 1px solid var(--line); background: var(--card); color: #aab6cf; }
+  .stt b { display: block; font-size: 10.5px; }
+  .stt.run b { color: #67e8f9; } .stt.wait b { color: #fde68a; } .stt.done b { color: #6ee7b7; } .stt.fail b { color: #ffb9c4; }
+  .stt small { font-size: 8.5px; color: var(--dim); }
+  .states i { color: var(--dim); font-style: normal; }
+  .task-note { width: 100%; max-width: 560px; display: flex; gap: 8px; }
+  .tn { flex: 1; border-radius: 11px; padding: 9px 11px; font-size: 10.3px; color: var(--dim); line-height: 1.6;
+    background: var(--card); border: 1px solid var(--line); }
+  .tn b { display: block; font-size: 11px; color: #c3cde2; margin-bottom: 2px; }
+
+  /* 无状态 */
+  .before-after { width: 100%; max-width: 560px; border-radius: 13px; padding: 13px 15px;
+    background: rgba(167,139,250,.05); border: 1px solid rgba(167,139,250,.4); }
+  .ba-line { font-family: var(--mono); font-size: 10.3px; line-height: 1.9; color: #9fb3d1; }
+  .ba-line .rm { color: #ffb9c4; } .ba-line .add { color: #6ee7b7; }
+  .cache-note { width: 100%; max-width: 560px; display: flex; gap: 8px; }
+  .cn { flex: 1; border-radius: 11px; padding: 9px 11px; font-size: 10.3px; color: var(--dim); line-height: 1.6;
+    background: var(--card); border: 1px solid var(--line); text-align: center; }
+  .cn b { display: block; color: #c3cde2; font-size: 11px; margin-bottom: 2px; }
+
+  /* 总结 */
+  .sum-flow { display: flex; gap: 4px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 10px; color: var(--dim); }
+  .sum-flow span { border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv { display: flex; gap: 13px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 15px; }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote { font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center; line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .replay { font-size: 12.5px; color: #06121c; background: var(--cyan); border: none; padding: 10px 26px; border-radius: 999px; font-weight: 700; cursor: pointer; letter-spacing: .06em; }
+  .replay:active { transform: scale(.96); }
+  .series-badge { position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px; font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em; }
+
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+  @media (max-height: 560px) { .screen { overflow-y: auto; justify-content: flex-start; } .stage { flex: 0 0 auto; padding: 14px 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; scroll-behavior: auto !important; }
+    .rv { opacity: 1 !important; transform: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面"></button>
+  <button title="STEP 1 2024 原版"></button>
+  <button title="STEP 2 Streamable HTTP"></button>
+  <button title="STEP 3 授权"></button>
+  <button title="STEP 4 Tasks"></button>
+  <button title="STEP 5 无状态化"></button>
+  <button title="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">HERMES AGENT 对象拆解 · 16</div>
+    <h1 class="rv d2">MCP 进化史<br><span class="grad">协议不是焊死的</span></h1>
+    <p class="hero-sub rv d3">Streamable HTTP · OAuth 2.1 · Tasks · 无状态化</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">🤝 2024-11 首版</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">🔧 2025 补传输/授权</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">📇 2026 无状态</span>
+    </div>
+    <p class="hero-quote rv d5">「03 期的自动引导机制，一年半后长这样」</p>
+    <div class="cal-note rv d6">规范口径截至 2026-07 · 本集对照 Hermes 03 期阅读</div>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 2024 原版 -->
+<section class="screen s-old">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>回到 2024 年的首版</div>
+    <h2 class="rv d1">先握手，再开两条通道</h2>
+    <p class="scr-desc rv d2">03 期讲的形态：客户端先 <code>initialize</code> 交换能力，Server 把使用指南放进 <code>instructions</code>，传输只有 stdio 与 HTTP+SSE</p>
+  </header>
+  <div class="stage">
+    <div class="ver-card old rv d2">
+      <div class="date">2024-11 · 首版</div>
+      <h4>有状态会话 + 双传输</h4>
+      <div class="row">
+        <span>initialize 握手</span><span>capabilities 协商</span><span>instructions 注入</span><span>stdio（本地）</span><span>HTTP + 独立 SSE 通道</span>
+      </div>
+    </div>
+    <div class="ver-arrow rv d3">↓ 真实部署暴露问题 ↓</div>
+    <div class="task-note rv d4">
+      <div class="tn"><b>🌐 远程化困难</b>SSE 要维持一条独立长连接，负载均衡与无状态云服务不友好</div>
+      <div class="tn"><b>🔐 没有授权故事</b>第三方远程 Server 如何登录、如何限制令牌范围，首版未规定</div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 协议的第一批迭代，全是被<b>「从本地走向云端」</b>逼出来的</footer>
+</section>
+
+<!-- 屏3 · STEP 2 Streamable HTTP -->
+<section class="screen s-http">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>2025-03 · Streamable HTTP</div>
+    <h2 class="rv d1">一条通道，能推也能问</h2>
+    <p class="scr-desc rv d2">传输层合并为<b style="color:#c3cde2">单一 HTTP 端点</b>：同一个 POST 地址，普通响应返回 JSON，需要流式时在响应里开 SSE</p>
+  </header>
+  <div class="stage">
+    <div class="ep-row">
+      <div class="ep old rv d2">
+        <h4>旧：HTTP + SSE</h4>
+        <div class="lines">
+          POST /messages　<span class="strike">发请求</span><br>
+          GET /events　<span class="strike">另开长连接</span><br>
+          两条通道要自己关联<br>断线重连复杂
+        </div>
+      </div>
+      <div class="ep new rv d3">
+        <h4>新：单端点 ✓</h4>
+        <div class="lines">
+          <span class="ok">POST /mcp</span>（唯一地址）<br>
+          普通回复 → JSON<br>
+          需要流式 → <span class="ok">响应内 SSE</span><br>
+          可无状态部署、好做负载均衡
+        </div>
+      </div>
+    </div>
+    <div class="oauth-note rv d4">旧的独立 SSE 传输随后被正式标记弃用（Deprecated）；stdio 保留给本地进程 —— <code>一套语义，两种部署形态</code></div>
+  </div>
+  <footer class="scr-foot rv d6">💡 和 15 期的思路同源：<b>少维护一条长连接，就少一份状态与故障面</b></footer>
+</section>
+
+<!-- 屏4 · STEP 3 授权 -->
+<section class="screen s-oauth">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>授权：令牌要能被管住</div>
+    <h2 class="rv d1">远程工具，先解决「你是谁」</h2>
+    <p class="scr-desc rv d2">MCP 授权基于 <code>OAuth 2.1 + PKCE</code>：桌面/CLI 也能安全完成登录，且令牌与目标服务绑定</p>
+  </header>
+  <div class="stage">
+    <div class="oauth-flow rv d2">
+      <span class="of">Client 发现授权端点</span><i>→</i>
+      <span class="of hot">PKCE 免密跳转</span><i>→</i>
+      <span class="of hot">用户同意 scope</span><i>→</i>
+      <span class="of">拿到 access token</span><i>→</i>
+      <span class="of hot">audience 绑定</span>
+    </div>
+    <div class="task-note rv d3">
+      <div class="tn"><b>🎯 audience / 资源指示</b>令牌只能用于声明的 Server，防止「拿着 A 的令牌去调 B」—— 令牌挪用（confused deputy）被从协议层堵住</div>
+      <div class="tn"><b>🔄 增量授权</b>需要新权限时再弹一次同意；支持设备流与令牌刷新，CLI 不必让用户手抄密钥</div>
+    </div>
+    <div class="oauth-note rv d4">与 15 期的凭证代理呼应：<b style="color:#c3cde2">授权标准化之后，「哪个工具能动哪份数据」才可以审计</b></div>
+  </div>
+  <footer class="scr-foot rv d6">💡 stdio 本地进程可继续免授权 —— 协议<b>按信任边界分级</b>，不搞一刀切</footer>
+</section>
+
+<!-- 屏5 · STEP 4 Tasks -->
+<section class="screen s-task">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>Tasks · 长任务一等公民</div>
+    <h2 class="rv d1">慢任务：先给句柄，再慢慢跑</h2>
+    <p class="scr-desc rv d2">2025-11 加入 Tasks 扩展：Server 可以把长任务做成持久对象 —— 这正是 Hermes 07 期自建的三态回传</p>
+  </header>
+  <div class="stage">
+    <div class="states rv d2">
+      <span class="stt run"><b>working</b><small>进行中</small></span><i>→</i>
+      <span class="stt wait"><b>input_required</b><small>等人补料</small></span><i>→</i>
+      <span class="stt done"><b>completed</b><small>产出 artifact</small></span>
+      <span style="font-size:10px;color:var(--dim)">/</span>
+      <span class="stt fail"><b>failed</b><small>失败有原因</small></span><span class="stt"><b>cancelled</b><small>可取消</small></span>
+    </div>
+    <div class="task-note">
+      <div class="tn rv d3"><b>📮 两种拿结果方式</b>轮询 task 状态，或接受 Server 的进度/完成推送；断连后凭 task id 接着查</div>
+      <div class="tn rv d4"><b>🙋 input_required</b>任务中途缺信息可正式「挂起等人」—— 与人在回路（HITL）的通用协议，不再各自发明</div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 Hermes 07 的 <code>working/input_required/completed</code> 与官方状态机几乎一一对应 —— <b>好模式被协议收编</b></footer>
+</section>
+
+<!-- 屏6 · STEP 5 无状态化 -->
+<section class="screen s-stateless">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>2026-07 · 无状态化大改</div>
+    <h2 class="rv d1">取消握手：每请求自带身份证</h2>
+    <p class="scr-desc rv d2">最新版删除 <code>initialize</code> 会话握手 —— 协议版本与能力改由每个请求的 <code>_meta</code> 自带，Server 可纯无状态水平扩展</p>
+  </header>
+  <div class="stage">
+    <div class="before-after rv d2">
+      <div class="ba-line">
+        <span class="rm">− POST initialize（建会话、协商能力）</span><br>
+        <span class="rm">− 服务端保存 session 状态</span><br>
+        <span class="add">+ 每请求 _meta：protocolVersion / capabilities</span><br>
+        <span class="add">+ MRTR：服务端用 input_required 反向要补充</span>
+      </div>
+    </div>
+    <div class="cache-note">
+      <div class="cn rv d3"><b>📇 能力即名片</b>没有握手，就没有「会话开始」的专门注入点 —— 工具说明改为按需发现（呼应 13 期 Skills 名录）</div>
+      <div class="cn rv d4"><b>⚡ 顺序也值钱</b>规范建议工具列表保持确定顺序，以提高<b style="color:#c3cde2">前缀缓存</b>命中率（15 期 prompt caching）</div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 方向一以贯之：<b>协议越来越像 HTTP —— 无状态、可缓存、可水平扩展</b>（具体字段以最新规范为准）</footer>
+</section>
+
+<!-- 屏7 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">一个协议的云端进化</h2>
+    <p class="scr-desc rv d2">单端点传输 → OAuth 授权 → Tasks 长任务 → 无状态化，每一步都在减少状态与信任的摩擦</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>stdio/双SSE</span><i>→</i><span>Streamable HTTP</span><i>→</i><span>OAuth+audience</span><i>→</i><span>Tasks</span><i>→</i><span>无状态 _meta</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">🌐</div>
+        <div><b>传输先上云</b><p>2025-03 单端点 Streamable HTTP 合并请求与流式通道，旧 SSE 弃用，远程 MCP 能正常做负载均衡</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🪪</div>
+        <div><b>授权与长任务标准化</b><p>OAuth 2.1+PKCE+audience 管住令牌；Tasks 把 working/input_required/completed 状态机变成协议一等公民</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">📇</div>
+        <div><b>无状态是终点方向</b><p>2026-07 取消 initialize，能力随请求携带、工具按需发现、顺序保缓存 —— 与 Skills、prompt caching 形成同一套工程观</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“协议的进化方向，<br>是让每一次调用都自包含、可重试、可扩展。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">HERMES AGENT 对象拆解 · 16 / MCP 演进篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else { secs.forEach((s) => s.classList.add('active')); }
+  dots.forEach((d, i) => d.addEventListener('click', () => secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' })));
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+</script>
+</body>
+</html>
