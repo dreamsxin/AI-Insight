@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="推理原理 09 · 先猜再验：DSpark 变长验证、置信度调度、固定 5 的浪费与实测吞吐增益">
+<title>推理原理 09 · 先猜，再验</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--amber);transform:scale(1.4);box-shadow:0 0 10px rgba(251,191,36,.85)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,rgba(251,191,36,.09)),transparent 70%)}
+  .s1{--glow:rgba(251,191,36,.12)}.s2{--glow:rgba(34,211,238,.08)}.s3{--glow:rgba(251,113,133,.08)}
+  .s4{--glow:rgba(52,211,153,.09)}.s5{--glow:rgba(167,139,250,.09)}.s6{--glow:rgba(34,211,238,.09)}
+  .s7{--glow:rgba(251,191,36,.09)}.s8{--glow:rgba(251,113,133,.08)}.s9{--glow:rgba(52,211,153,.10)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--amber);
+    border:1px solid rgba(251,191,36,.35);background:rgba(251,191,36,.07);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(28px,7.4vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,#fbbf24 5%,#f472b6 55%,#a78bfa 95%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .draft{display:flex;gap:6px;justify-content:center;margin-top:26px}
+  .draft i{width:34px;height:34px;border-radius:8px;border:1px solid rgba(251,191,36,.4);
+    background:rgba(251,191,36,.12);display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:11px;color:#fde68a}
+  .screen.active .draft i{animation:pop .45s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .draft i:nth-child(2){animation-delay:.12s}
+  .screen.active .draft i:nth-child(3){animation-delay:.24s}
+  .screen.active .draft i:nth-child(4){animation-delay:.36s}
+  .screen.active .draft i:nth-child(5){animation-delay:.48s}
+  @keyframes pop{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:scale(1)}}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 三格回顾 */
+  .three{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:100%;max-width:520px}
+  .th{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 10px;text-align:center}
+  .th .n{font-family:var(--mono);font-size:9px;color:var(--dim);margin-bottom:7px}
+  .th b{font-size:11.5px;display:block;margin-bottom:4px}
+  .th p{font-size:9.5px;color:var(--dim);line-height:1.55}
+
+  /* 接受率柱 */
+  .accept{width:100%;max-width:460px}
+  .bars{display:flex;align-items:flex-end;gap:8px;height:150px;padding:0 4px;border-bottom:1px solid rgba(255,255,255,.12)}
+  .br{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
+  .br .col{width:100%;border-radius:5px 5px 0 0;background:linear-gradient(180deg,rgba(251,191,36,.85),rgba(251,191,36,.3));height:0}
+  .screen.active .br .col{animation:grow 1s cubic-bezier(.22,1,.36,1) .4s forwards}
+  @keyframes grow{to{height:var(--h)}}
+  .br .pct{font-family:var(--mono);font-size:9px;color:#fde68a;margin-bottom:4px}
+  .bars-axis{display:flex;gap:8px;padding:6px 4px 0}
+  .bars-axis span{flex:1;text-align:center;font-family:var(--mono);font-size:8.5px;color:var(--dim)}
+  .accept .note{font-size:10.5px;color:var(--dim);text-align:center;margin-top:10px;line-height:1.7}
+  .accept .note b{color:var(--amber)}
+
+  /* 打分排序 */
+  .score{width:100%;max-width:480px;display:flex;flex-direction:column;gap:6px}
+  .sc-row{display:flex;align-items:center;gap:8px}
+  .sc-row .d{width:30px;flex:0 0 30px;height:26px;border-radius:6px;border:1px solid rgba(251,191,36,.35);
+    background:rgba(251,191,36,.1);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:10px;color:#fde68a}
+  .sc-row .barw{flex:1;height:16px;border-radius:4px;background:rgba(255,255,255,.05);overflow:hidden}
+  .sc-row .barw i{display:block;height:100%;border-radius:4px;width:0;
+    background:linear-gradient(90deg,rgba(52,211,153,.8),rgba(52,211,153,.35))}
+  .screen.active .sc-row .barw i{animation:fillw 1s cubic-bezier(.22,1,.36,1) .4s forwards}
+  @keyframes fillw{to{width:var(--w)}}
+  .sc-row .v{width:40px;flex:0 0 40px;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .sc-row.cut{opacity:.35}
+  .sc-row.cut .d{border-style:dashed}
+
+  /* 对比数字 */
+  .kv{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:480px}
+  .kvb{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:13px;text-align:center}
+  .kvb .h{font-family:var(--mono);font-size:8.5px;color:var(--dim);margin-bottom:7px}
+  .kvb .v{font-family:var(--mono);font-size:clamp(19px,5vw,24px);font-weight:800}
+  .kvb.old .v{color:#fda4af}
+  .kvb.new .v{color:#6ee7b7}
+  .kvb .s{font-size:9px;color:var(--dim);margin-top:4px}
+
+  /* 折线 */
+  .chartbox{width:100%;max-width:500px}
+  .chartbox canvas{width:100%;height:clamp(140px,30vh,180px);display:block}
+  .chartnote{font-size:10px;color:var(--dim);text-align:center;margin-top:6px;line-height:1.7}
+  .chartnote b{color:var(--amber)}
+
+  /* 收尾 */
+  .facts{display:flex;flex-direction:column;gap:8px;width:100%;max-width:500px}
+  .fact{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:11.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10px;color:var(--dim);line-height:1.55}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1 active">
+  <div class="hero-kicker rv d1">推理原理 · 09</div>
+  <h1 class="rv d2"><span class="grad">先猜</span>，再验</h1>
+  <p class="hero-sub rv d3">小模型一口气写五个字，<br>大模型一次全验 —— 收下对的，从第一个错处重来。</p>
+  <div class="draft rv d5"><i>今</i><i>天</i><i>晴</i><i>，</i><i>2</i></div>
+  <div class="next-hint rv d6">向下滚动<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>01</b>回顾</div>
+    <h2 class="rv d2">三步走，先对齐一下</h2>
+    <p class="scr-desc rv d3">如果你看过推理加速那集，这三格就是快速回忆。</p>
+  </div>
+  <div class="stage">
+    <div class="three">
+      <div class="th rv d3"><div class="n">STEP 1</div><b>草稿</b><p>小模型连续写出 5 个字</p></div>
+      <div class="th rv d4"><div class="n">STEP 2</div><b>并行验证</b><p>大模型一次前向验 5 个位置</p></div>
+      <div class="th rv d5"><div class="n">STEP 3</div><b>接受前缀</b><p>从第一处不对的地方截断</p></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">一次前向换回多个 token —— 这是整件事的收益来源。</div>
+</section>
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>02</b>盲区</div>
+    <h2 class="rv d2">越往后，猜得越不准</h2>
+    <p class="scr-desc rv d3">可是固定长度验证，对这五个位置一视同仁。</p>
+  </div>
+  <div class="stage">
+    <div class="accept">
+      <div class="bars">
+        <div class="br rv d3"><div class="pct">0.82</div><div class="col" style="--h:82%"></div></div>
+        <div class="br rv d3"><div class="pct">0.71</div><div class="col" style="--h:71%;animation-delay:.5s"></div></div>
+        <div class="br rv d4"><div class="pct">0.58</div><div class="col" style="--h:58%;animation-delay:.6s"></div></div>
+        <div class="br rv d4"><div class="pct">0.41</div><div class="col" style="--h:41%;animation-delay:.7s"></div></div>
+        <div class="br rv d5"><div class="pct">0.27</div><div class="col" style="--h:27%;animation-delay:.8s"></div></div>
+      </div>
+      <div class="bars-axis"><span>第 1 个</span><span>第 2 个</span><span>第 3 个</span><span>第 4 个</span><span>第 5 个</span></div>
+      <p class="note">第 4、5 个草稿的接受概率已经很低。<br>验它们，<b>大概率是白验</b>。</p>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">固定 5 意味着：不管这段是简单还是难，都按同样的预算验。</div>
+</section>
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>03</b>打分</div>
+    <h2 class="rv d2">先让模型自己说"有几分把握"</h2>
+    <p class="scr-desc rv d3">给每个草稿 token 加一个接受率预测，再排序。</p>
+  </div>
+  <div class="stage">
+    <div class="score">
+      <div class="sc-row rv d3"><span class="d">1</span><div class="barw"><i style="--w:82%"></i></div><span class="v">0.82</span></div>
+      <div class="sc-row rv d3"><span class="d">2</span><div class="barw"><i style="--w:71%"></i></div><span class="v">0.71</span></div>
+      <div class="sc-row rv d4"><span class="d">3</span><div class="barw"><i style="--w:58%"></i></div><span class="v">0.58</span></div>
+      <div class="sc-row cut rv d5"><span class="d">4</span><div class="barw"><i style="--w:41%"></i></div><span class="v">0.41</span></div>
+      <div class="sc-row cut rv d5"><span class="d">5</span><div class="barw"><i style="--w:27%"></i></div><span class="v">0.27</span></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">划线的那两个不是不许验，而是<b>验它们不划算</b> —— 边际收益不够付算力。</div>
+</section>
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>04</b>取舍</div>
+    <h2 class="rv d2">验多少，看这一批有多难</h2>
+    <p class="scr-desc rv d3">按接受率排序，挑出让有效吞吐最大的那个前缀。</p>
+  </div>
+  <div class="stage">
+    <div class="kv">
+      <div class="kvb old rv d3"><div class="h">固定长度</div><div class="v">5.00</div><div class="s">每步验证的草稿数</div></div>
+      <div class="kvb new rv d4"><div class="h">变长验证</div><div class="v">3.2–4.4</div><div class="s">每步实际验证数</div></div>
+    </div>
+    <div class="kv" style="margin-top:9px">
+      <div class="kvb rv d5"><div class="h">接受长度 · 固定</div><div class="v" style="color:#e8eefc">3.29</div><div class="s">收下的 token 数</div></div>
+      <div class="kvb rv d5"><div class="h">接受长度 · 变长</div><div class="v" style="color:#e8eefc">3.20</div><div class="s">几乎没变</div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">验证量少了约 <b>30%</b>，收到的 token 几乎没少 —— 省下的全是纯利润。</div>
+</section>
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>05</b>收益</div>
+    <h2 class="rv d2">并发越高，省得越多</h2>
+    <p class="scr-desc rv d3">因为省下来的验证算力，可以立刻拿去服务别的请求。</p>
+  </div>
+  <div class="stage">
+    <div class="chartbox">
+      <canvas id="gain"></canvas>
+      <div class="chartnote rv d5">横轴：每卡并发序列数　纵轴：相对固定 5 的吞吐增益<br>生产工作点在 <b>60 并发</b>附近，约 <b>+4%–7%</b></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">这张图也解释了为什么这招在小流量下不划算。</div>
+</section>
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>06</b>反例</div>
+    <h2 class="rv d2">16 并发时，它反而更慢</h2>
+    <p class="scr-desc rv d3">因为这时候算力本来就是富余的。</p>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">📉</span><div><b>−1.5%</b><p>低并发下，少验几个并不能换来更多吞吐，反而增加了调度开销。</p></div></div>
+      <div class="fact rv d4"><span class="i">📈</span><div><b>+11%</b><p>96 并发时，省下的验证算力严重稀缺，每一份都变成了吞吐。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">任何"自适应"的优化，都有它<b>不该开</b>的区间。</div>
+</section>
+
+<section class="screen s8">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>07</b>耦合</div>
+    <h2 class="rv d2">它和异步调度还打架</h2>
+    <p class="scr-desc rv d3">排第 N+1 步时，第 N 步的置信度还没回到 CPU。</p>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">🧠</span><div><b>CPU 只定总预算</b><p>既然拿不到每个请求的分数，就不在 CPU 上决定长度。</p></div></div>
+      <div class="fact rv d4"><span class="i">⚙️</span><div><b>长度在 GPU 上现算</b><p>累积乘积 → 全局排序取 top-k → 融合重映射写回固定内存。</p></div></div>
+      <div class="fact rv d5"><span class="i">🔁</span><div><b>调度器不再"全知"</b><p>它从"知道每个请求要多少"退化成"给一个总盘子"。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">这是零开销调度带来的<b>连锁设计债</b>：省下的是时间，付出的是调度器的确定性。</div>
+</section>
+
+<section class="screen s9">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>08</b>小结</div>
+    <h2 class="rv d2">猜得快，还得保证写对</h2>
+    <p class="scr-desc rv d3">下一集换个方向：不再省计算，而是省"浪费的计算"。</p>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">🎯</span><div><b>接受率会衰减</b><p>固定验证长度对后排 token 是浪费。</p></div></div>
+      <div class="fact rv d4"><span class="i">📊</span><div><b>按收益裁剪</b><p>置信度打分 + 排序，选出边际收益最高的前缀。</p></div></div>
+      <div class="fact rv d5"><span class="i">⚖️</span><div><b>收益看并发</b><p>低并发会亏，高并发能到两位数百分比。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">下一集：MoE 的专家分布不均，有的卡忙死，有的卡闲死。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (i === 5) drawGain();
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+
+  var drawn = false;
+  function drawGain() {
+    if (drawn) return; drawn = true;
+    var cv = document.getElementById('gain');
+    if (!cv) return;
+    var ctx = cv.getContext('2d');
+    var dpr = Math.min(devicePixelRatio || 1, 2);
+
+    var data = [
+      { x: 16, y: -1.5 }, { x: 32, y: 1.6 }, { x: 48, y: 3.6 },
+      { x: 60, y: 5.4 }, { x: 72, y: 6.7 }, { x: 96, y: 11.0 }
+    ];
+    var ymin = -3, ymax = 12;
+
+    function paint(p) {
+      var w = cv.clientWidth, h = cv.clientHeight;
+      if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+
+      var pl = 38, pr = 18, pt = 16, pb = 26;
+      var iw = w - pl - pr, ih = h - pt - pb;
+      function X(v) { return pl + iw * (v - 10) / 90; }
+      function Y(v) { return pt + ih - ih * (v - ymin) / (ymax - ymin); }
+
+      // 网格 + 零线
+      ctx.strokeStyle = 'rgba(255,255,255,.07)';
+      [-3, 0, 3, 6, 9, 12].forEach(function (v) {
+        var y = Y(v);
+        ctx.beginPath(); ctx.moveTo(pl, y); ctx.lineTo(pl + iw, y); ctx.stroke();
+      });
+      ctx.strokeStyle = 'rgba(255,255,255,.22)';
+      ctx.beginPath(); ctx.moveTo(pl, Y(0)); ctx.lineTo(pl + iw, Y(0)); ctx.stroke();
+
+      ctx.fillStyle = 'rgba(139,150,173,.9)';
+      ctx.font = '8.5px ui-monospace,monospace';
+      ctx.textAlign = 'right';
+      [-3, 0, 6, 12].forEach(function (v) { ctx.fillText(v + '%', pl - 4, Y(v) + 3); });
+      ctx.textAlign = 'center';
+      [16, 32, 48, 60, 72, 96].forEach(function (v) { ctx.fillText(v, X(v), h - 8); });
+      ctx.textAlign = 'left';
+      ctx.fillText('并发', pl + iw - 16, h - 8);
+
+      // 折线
+      var n = Math.min(data.length, Math.ceil(p * data.length));
+      ctx.beginPath();
+      for (var i = 0; i < n; i++) {
+        var d = data[i];
+        i ? ctx.lineTo(X(d.x), Y(d.y)) : ctx.moveTo(X(d.x), Y(d.y));
+      }
+      ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 2.2;
+      ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 9; ctx.stroke(); ctx.shadowBlur = 0;
+
+      // 点
+      for (var k = 0; k < n; k++) {
+        ctx.beginPath();
+        ctx.arc(X(data[k].x), Y(data[k].y), 3.2, 0, 7);
+        ctx.fillStyle = data[k].y < 0 ? '#fb7185' : '#fbbf24';
+        ctx.fill();
+      }
+
+      // 生产点标注
+      if (p > 0.8) {
+        var px = X(60), py = Y(5.4);
+        ctx.setLineDash([3, 4]);
+        ctx.strokeStyle = 'rgba(52,211,153,.6)';
+        ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px, Y(0)); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#6ee7b7';
+        ctx.font = '9px -apple-system,sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('生产点', px, Y(0) - 6);
+      }
+    }
+
+    var t0 = performance.now();
+    (function anim(now) {
+      var p = Math.min(1, (now - t0) / 1500);
+      paint(1 - Math.pow(1 - p, 2));
+      if (p < 1) requestAnimationFrame(anim);
+    })(t0);
+
+    var rz;
+    addEventListener('resize', function () {
+      clearTimeout(rz); rz = setTimeout(function () { paint(1); }, 160);
+    });
+  }
+})();
+</script>
+</body>
+</html>

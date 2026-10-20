@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="推理原理 08 · 只重算 128 个 token：滑动窗口注意力、128 对齐落盘、有界重放与命中回退策略">
+<title>推理原理 08 · 只重算 128 个 token</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--pink);transform:scale(1.4);box-shadow:0 0 10px rgba(244,114,182,.85)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,rgba(244,114,182,.08)),transparent 70%)}
+  .s1{--glow:rgba(244,114,182,.12)}.s2{--glow:rgba(34,211,238,.08)}.s3{--glow:rgba(251,113,133,.08)}
+  .s4{--glow:rgba(52,211,153,.09)}.s5{--glow:rgba(251,191,36,.08)}.s6{--glow:rgba(34,211,238,.09)}
+  .s7{--glow:rgba(167,139,250,.09)}.s8{--glow:rgba(244,114,182,.09)}.s9{--glow:rgba(52,211,153,.10)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--pink);
+    border:1px solid rgba(244,114,182,.35);background:rgba(244,114,182,.07);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(28px,7.4vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,#f472b6 5%,#fbbf24 55%,#34d399 95%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .bigcmp{display:flex;align-items:center;gap:16px;margin-top:26px;justify-content:center}
+  .bignum{text-align:center}
+  .bignum .v{font-family:var(--mono);font-size:clamp(24px,6.4vw,34px);font-weight:800;line-height:1}
+  .bignum .k{font-size:9.5px;color:var(--dim);margin-top:6px}
+  .bignum.old .v{color:#fda4af;text-decoration:line-through;text-decoration-thickness:1px;opacity:.75}
+  .bignum.new .v{color:#6ee7b7}
+  .bigcmp .ar{font-size:18px;color:var(--dim)}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 窗口滑动 */
+  .slider{width:100%;max-width:540px}
+  .cells{display:flex;gap:2px;height:34px;align-items:stretch}
+  .cells i{flex:1;border-radius:2px;background:rgba(34,211,238,.28)}
+  .cells i.out{background:rgba(255,255,255,.05)}
+  .cells i.win{background:linear-gradient(180deg,rgba(52,211,153,.8),rgba(52,211,153,.4))}
+  .winframe{position:relative;height:6px;margin-top:6px}
+  .winframe .wf{position:absolute;top:0;height:4px;border-radius:2px;background:rgba(52,211,153,.85);
+    box-shadow:0 0 10px rgba(52,211,153,.6);width:46%;left:0}
+  .screen.active .winframe .wf{animation:slidewin 4.2s cubic-bezier(.4,0,.3,1) .5s infinite}
+  @keyframes slidewin{0%{left:0}50%{left:54%}100%{left:0}}
+  .slider .ax{display:flex;justify-content:space-between;font-family:var(--mono);font-size:8.5px;color:var(--dim);margin-top:8px}
+  .slider .note{font-size:10.5px;color:var(--dim);text-align:center;margin-top:10px;line-height:1.7}
+  .slider .note b{color:#a7f3d0}
+
+  /* 视野三角形 */
+  .tri{width:100%;max-width:460px}
+  .tri svg{width:100%;height:auto;display:block}
+
+  /* 成本曲线 */
+  .chartbox{width:100%;max-width:500px}
+  .chartbox canvas{width:100%;height:clamp(140px,30vh,180px);display:block}
+  .chartnote{font-size:10px;color:var(--dim);text-align:center;margin-top:6px;line-height:1.7}
+  .chartnote b{color:var(--amber)}
+
+  /* 两处使用 */
+  .uses{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .use{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 13px}
+  .use .hd{font-family:var(--mono);font-size:9px;color:var(--cyan);margin-bottom:5px}
+  .use b{font-size:12px;display:block;margin-bottom:4px}
+  .use p{font-size:10px;color:var(--dim);line-height:1.65}
+  .use .gain{font-family:var(--mono);font-size:9px;color:#6ee7b7;margin-top:6px;display:inline-block;
+    background:rgba(52,211,153,.1);padding:2px 7px;border-radius:5px}
+
+  /* 决策树 */
+  .tree{width:100%;max-width:500px;display:flex;flex-direction:column;gap:7px}
+  .node{display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card)}
+  .node .q{font-family:var(--mono);font-size:8.5px;color:var(--dim);flex:0 0 44px}
+  .node .t{font-size:10.5px;line-height:1.5}
+  .node.y{border-color:rgba(52,211,153,.3)}
+  .node.y .t{color:#a7f3d0}
+  .node.n{border-color:rgba(251,113,133,.3)}
+  .node.n .t{color:#fecdd3}
+  .tree .ind{margin-left:16px}
+
+  /* 收尾 */
+  .facts{display:flex;flex-direction:column;gap:8px;width:100%;max-width:500px}
+  .fact{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:11.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10px;color:var(--dim);line-height:1.55}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1 active">
+  <div class="hero-kicker rv d1">推理原理 · 08</div>
+  <h1 class="rv d2">只重算<span class="grad">128 个</span><br>token</h1>
+  <p class="hero-sub rv d3">滑动窗口的缓存不好复用。<br>那就别复用，<b>重算一小段</b>补上。</p>
+  <div class="bigcmp rv d5">
+    <div class="bignum old"><div class="v">2560</div><div class="k">逐层精确重建</div></div>
+    <div class="ar">→</div>
+    <div class="bignum new"><div class="v">128</div><div class="k">有界重放</div></div>
+  </div>
+  <div class="next-hint rv d6">向下滚动<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>01</b>窗口</div>
+    <h2 class="rv d2">每个字，只看最近一小段</h2>
+    <p class="scr-desc rv d3">滑动窗口注意力：窗口之外的历史，直接不看了。</p>
+  </div>
+  <div class="stage">
+    <div class="slider">
+      <div class="cells" id="cells"></div>
+      <div class="winframe"><div class="wf"></div></div>
+      <div class="ax"><span>很早以前</span><span>刚说过</span><span>正在写</span></div>
+      <p class="note">窗口外的位置<b>不存 KV</b>，因为存了也用不上。<br>代价是：换一台机器、换一次请求，这段窗口就没了。</p>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">块缓存能按"前缀"复用，滑动窗口只能按"位置"复用 —— 这是麻烦的根源。</div>
+</section>
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>02</b>麻烦</div>
+    <h2 class="rv d2">窗口是跟着位置走的</h2>
+    <p class="scr-desc rv d3">命中前缀之后，窗口里的内容已经和缓存对不上了。</p>
+  </div>
+  <div class="stage">
+    <div class="uses">
+      <div class="use rv d3">
+        <div class="hd">缓存里的窗口</div>
+        <b>落在位置 2432–2560</b>
+        <p>上一次请求结束时的样子。</p>
+      </div>
+      <div class="use rv d4" style="border-color:rgba(251,113,133,.28);background:rgba(251,113,133,.04)">
+        <div class="hd" style="color:#fda4af">这次需要的窗口</div>
+        <b>落在位置 2690–2818</b>
+        <p>中间差了 130 个位置，缓存里那一段用不上了。</p>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">要精确重建，就得把 2560 个 token 重新过 20 层 —— <b>和从头算一遍差不多</b>。</div>
+</section>
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>03</b>办法</div>
+    <h2 class="rv d2">只往回看 128 步，够用</h2>
+    <p class="scr-desc rv d3">从第 s 个位置开始重放，但每个 query 只看自己前面一小段。</p>
+  </div>
+  <div class="stage">
+    <div class="tri">
+      <svg viewBox="0 0 460 176" aria-hidden="true">
+        <defs>
+          <linearGradient id="wg" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#34d399" stop-opacity=".12"/>
+            <stop offset="1" stop-color="#34d399" stop-opacity=".55"/>
+          </linearGradient>
+        </defs>
+        <!-- 时间轴 -->
+        <line x1="26" y1="150" x2="434" y2="150" stroke="rgba(255,255,255,.14)" stroke-width="1"/>
+        <text x="26" y="168" fill="#8b96ad" font-size="9" font-family="monospace">s</text>
+        <text x="424" y="168" fill="#8b96ad" font-size="9" font-family="monospace">i</text>
+        <text x="230" y="168" fill="#5b6884" font-size="8.5" font-family="monospace" text-anchor="middle">重放段 · 128 个位置</text>
+
+        <!-- 滑动的窗口：每个 query 只看前 128 个 -->
+        <g>
+          <rect x="128" y="126" width="118" height="9" rx="4" fill="url(#wg)" stroke="#34d399" stroke-opacity=".35"/>
+          <rect x="166" y="105" width="118" height="9" rx="4" fill="url(#wg)" stroke="#34d399" stroke-opacity=".35"/>
+          <rect x="204" y="84" width="118" height="9" rx="4" fill="url(#wg)" stroke="#34d399" stroke-opacity=".35"/>
+          <rect x="242" y="63" width="118" height="9" rx="4" fill="url(#wg)" stroke="#34d399" stroke-opacity=".35"/>
+          <rect x="280" y="42" width="118" height="9" rx="4" fill="url(#wg)" stroke="#34d399" stroke-opacity=".45"/>
+        </g>
+        <!-- 当前 query -->
+        <circle cx="406" cy="30" r="4.5" fill="#34d399"/>
+        <text x="406" y="20" fill="#a7f3d0" font-size="8.5" font-family="monospace" text-anchor="middle">当前 query</text>
+        <!-- 窗口宽度标注 -->
+        <line x1="280" y1="34" x2="398" y2="34" stroke="#fbbf24" stroke-width="1"/>
+        <line x1="280" y1="30" x2="280" y2="38" stroke="#fbbf24"/>
+        <line x1="398" y1="30" x2="398" y2="38" stroke="#fbbf24"/>
+        <text x="339" y="28" fill="#fbbf24" font-size="8" font-family="monospace" text-anchor="middle">128</text>
+      </svg>
+      <p class="chartnote rv d5" style="margin-top:2px">每往右挪一个位置，视野也跟着挪一格 —— 但<b>永远只有 128 宽</b>。<br>所以最前面的位置，看到的是 s 之后的开头，而不是更早的历史。</p>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">关键结论：重算成本从"跟上下文长度成正比"，变成<b>跟窗口大小成正比</b>。</div>
+</section>
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>04</b>成本</div>
+    <h2 class="rv d2">一条陡线，一条平线</h2>
+    <p class="scr-desc rv d3">这就是"有界"两个字的全部含义。</p>
+  </div>
+  <div class="stage">
+    <div class="chartbox">
+      <canvas id="cost"></canvas>
+      <div class="chartnote rv d5">横轴：上下文长度　纵轴：重算耗时<br>红色是精确重建，<b>绿色是有界重放</b></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">上下文越长，这个差距越夸张 —— 长文档场景才真正吃得到这只红利。</div>
+</section>
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>05</b>落盘</div>
+    <h2 class="rv d2">不是想存就存，只在 128 的倍数存</h2>
+    <p class="scr-desc rv d3">对齐之后，位置才对得上，复用才谈得上。</p>
+  </div>
+  <div class="stage">
+    <div class="uses">
+      <div class="use rv d3">
+        <div class="hd">落盘规则</div>
+        <b>预留最后一个 token，向下取整到 128</b>
+        <p>不足一整个 128 单位，这一轮就不存。分片 prefill 中途也不存，<b>只存最后一片</b>。</p>
+      </div>
+      <div class="use rv d4">
+        <div class="hd">解码期间</div>
+        <b>显存里单开一块"副本区"</b>
+        <p>每跨过 128 边界拷一份进去；请求结束时取最近一份。最多超 5 个 token，靠环形缓冲多出的 6 个位吸收。</p>
+        <span class="gain">20 层 × 134 token × 528 B ≈ 1.35 MB / 序列</span>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">一个序列的滑动窗口缓存只有 1.35 MB —— 所以它敢放在主机内存，而不是共享存储。</div>
+</section>
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>06</b>两个用法</div>
+    <h2 class="rv d2">同一招，用在两处</h2>
+    <p class="scr-desc rv d3">一个是补窗口，一个是省掉整段 prefill。</p>
+  </div>
+  <div class="stage">
+    <div class="uses">
+      <div class="use rv d3">
+        <div class="hd">编码器侧</div>
+        <b>块缓存照用，只补窗口</b>
+        <p>块缓存命中多少就用多少，不重算也不覆盖；只把命中前缀的最后 128 个 token 重跑一遍，专门重建窗口缓存。</p>
+      </div>
+      <div class="use rv d4">
+        <div class="hd">解码器侧</div>
+        <b>把 2560 缩成 128</b>
+        <p>解码层的块缓存由最后一层编码层投影而来，只有窗口缓存要逐层算。精确重建要跑 2560 个 token × 20 层；重放只跑 128 个。</p>
+        <span class="gain">prefill 计算量近乎减半</span>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">重放出来的缓存<b>只用于本次 decode</b>，不进前缀缓存 —— 近似结果不该被传播。</div>
+</section>
+
+<section class="screen s8">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>07</b>策略</div>
+    <h2 class="rv d2">命中多长，由两块缓存共同决定</h2>
+    <p class="scr-desc rv d3">块缓存说了算长度，窗口缓存说了算要不要退一格。</p>
+  </div>
+  <div class="stage">
+    <div class="tree">
+      <div class="node rv d3"><span class="q">上限</span><span class="t">命中长度 ≤ <b>L − 134</b>（128 窗口 + 6 个投机回溯位）</span></div>
+      <div class="node rv d4"><span class="q">第一步</span><span class="t">查块缓存，得到 L1（128 的倍数）</span></div>
+      <div class="node y rv d5 ind"><span class="q">有窗口</span><span class="t">[L1−128, L1] 区间里有窗口缓存 → 命中 L1</span></div>
+      <div class="node n rv d5 ind"><span class="q">没窗口</span><span class="t">回退到 L1−128，重算最后 128 个</span></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">退一格只损失 128 个 token 的重算，换来的是<b>近似缓存的正确性</b>。</div>
+</section>
+
+<section class="screen s9">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>08</b>小结</div>
+    <h2 class="rv d2">少算的尽头，是"猜"</h2>
+    <p class="scr-desc rv d3">缓存让它不重复算，接下来是让它一次多算几个。</p>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">🪟</span><div><b>窗口不按前缀走</b><p>它跟着位置移动，所以块缓存那套直接复用的办法失效。</p></div></div>
+      <div class="fact rv d4"><span class="i">✂️</span><div><b>有界重放</b><p>只回放 128 个 token，且把视野截断在窗口内，成本变常数。</p></div></div>
+      <div class="fact rv d5"><span class="i">🎯</span><div><b>回退一格</b><p>窗口缺失时宁可少命中 128 个，也不传播不准确的缓存。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">下一集：既然每次只出一个字太亏，那就一次猜五个。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (i === 4) drawCost();
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+
+  /* 窗口格子 */
+  var cells = document.getElementById('cells');
+  if (cells) {
+    for (var i = 0; i < 40; i++) {
+      var c = document.createElement('i');
+      if (i < 12) c.className = 'out';
+      if (i >= 12 && i < 30) c.className = 'win';
+      cells.appendChild(c);
+    }
+  }
+
+  /* 成本对比曲线 */
+  var drawn = false;
+  function drawCost() {
+    if (drawn) return; drawn = true;
+    var cv = document.getElementById('cost');
+    if (!cv) return;
+    var ctx = cv.getContext('2d');
+    var dpr = Math.min(devicePixelRatio || 1, 2);
+
+    function paint(p) {
+      var w = cv.clientWidth, h = cv.clientHeight;
+      if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      var pl = 34, pr = 16, pt = 16, pb = 24;
+      var iw = w - pl - pr, ih = h - pt - pb;
+
+      ctx.strokeStyle = 'rgba(255,255,255,.07)';
+      for (var g = 0; g <= 4; g++) {
+        var y = pt + ih * g / 4;
+        ctx.beginPath(); ctx.moveTo(pl, y); ctx.lineTo(pl + iw, y); ctx.stroke();
+      }
+
+      var N = 80;
+      // 精确重建：线性增长到满格
+      ctx.beginPath();
+      for (var i2 = 0; i2 <= N * p; i2++) {
+        var t = i2 / N;
+        var x = pl + iw * t, y = pt + ih - ih * Math.min(1, t * 0.98);
+        i2 ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+      ctx.strokeStyle = '#fb7185'; ctx.lineWidth = 2.2;
+      ctx.shadowColor = '#fb7185'; ctx.shadowBlur = 9; ctx.stroke(); ctx.shadowBlur = 0;
+
+      // 有界重放：几乎水平
+      ctx.beginPath();
+      for (var i3 = 0; i3 <= N * p; i3++) {
+        var t3 = i3 / N;
+        var x3 = pl + iw * t3, y3 = pt + ih - ih * 0.09;
+        i3 ? ctx.lineTo(x3, y3) : ctx.moveTo(x3, y3);
+      }
+      ctx.strokeStyle = '#34d399'; ctx.lineWidth = 2.4;
+      ctx.shadowColor = '#34d399'; ctx.shadowBlur = 10; ctx.stroke(); ctx.shadowBlur = 0;
+
+      ctx.fillStyle = '#fda4af';
+      ctx.font = '9.5px -apple-system,sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('精确重建', pl + iw * 0.56, pt + ih * 0.36);
+      ctx.fillStyle = '#6ee7b7';
+      ctx.fillText('有界重放', pl + iw * 0.62, pt + ih * 0.82);
+
+      ctx.fillStyle = 'rgba(139,150,173,.9)';
+      ctx.font = '9px ui-monospace,monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText('耗时', pl - 4, pt + 8);
+      ctx.textAlign = 'center';
+      ctx.fillText('上下文长度 →', pl + iw / 2, h - 5);
+    }
+
+    var t0 = performance.now();
+    (function anim(now) {
+      var p = Math.min(1, (now - t0) / 1300);
+      paint(1 - Math.pow(1 - p, 3));
+      if (p < 1) requestAnimationFrame(anim);
+    })(t0);
+
+    var rz;
+    addEventListener('resize', function () {
+      clearTimeout(rz); rz = setTimeout(function () { paint(1); }, 160);
+    });
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="推理原理 12 · 字符会被切成两半：跨 chunk 的 UTF-8 拼接、增量 KMP 匹配、思考结束标记与工具参数边生成边转义">
+<title>推理原理 12 · 切成两半的字符</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--pink);transform:scale(1.4);box-shadow:0 0 10px rgba(244,114,182,.85)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,rgba(244,114,182,.08)),transparent 70%)}
+  .s1{--glow:rgba(244,114,182,.12)}.s2{--glow:rgba(34,211,238,.08)}.s3{--glow:rgba(251,191,36,.08)}
+  .s4{--glow:rgba(167,139,250,.09)}.s5{--glow:rgba(52,211,153,.09)}.s6{--glow:rgba(244,114,182,.09)}
+  .s7{--glow:rgba(251,113,133,.08)}.s8{--glow:rgba(34,211,238,.09)}.s9{--glow:rgba(167,139,250,.10)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--pink);
+    border:1px solid rgba(244,114,182,.35);background:rgba(244,114,182,.07);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(26px,7vw,42px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,#f472b6 5%,#a78bfa 55%,#22d3ee 95%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .bytessplit{display:flex;gap:10px;justify-content:center;margin-top:26px;align-items:center}
+  .bpart{font-family:var(--mono);font-size:19px;font-weight:700;padding:11px 15px;border-radius:9px;letter-spacing:.05em}
+  .bpart.a{color:#a5f3fc;background:rgba(34,211,238,.12);border:1px solid rgba(34,211,238,.3)}
+  .bpart.b{color:#fde68a;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.3)}
+  .bpart.c{color:#fbcfe8;background:rgba(244,114,182,.12);border:1px solid rgba(244,114,182,.3)}
+  .bytessplit .ar{color:var(--dim);font-size:15px}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 粒度 */
+  .grain{width:100%;max-width:500px;display:flex;flex-direction:column;gap:10px}
+  .gr{border:1px solid var(--line);border-radius:11px;background:var(--card);padding:11px 12px}
+  .gr .hd{font-family:var(--mono);font-size:8.5px;color:var(--dim);margin-bottom:7px}
+  .chips{display:flex;gap:4px;flex-wrap:wrap}
+  .chips i{font-family:var(--mono);font-size:9px;padding:3px 7px;border-radius:4px;font-style:normal}
+  .chips.tok i{background:rgba(244,114,182,.14);color:#fbcfe8;border:1px solid rgba(244,114,182,.28)}
+  .chips.chr i{background:rgba(34,211,238,.12);color:#a5f3fc;border:1px solid rgba(34,211,238,.24)}
+  .gr p{font-size:9.5px;color:var(--dim);margin-top:7px;line-height:1.6}
+
+  /* 半个字符 */
+  .halfchar{width:100%;max-width:500px;display:flex;flex-direction:column;gap:8px}
+  .hrow{display:flex;align-items:center;gap:8px}
+  .hrow .lb{width:52px;flex:0 0 52px;font-family:var(--mono);font-size:8.5px;color:var(--dim);text-align:right}
+  .hbox{flex:1;display:flex;gap:5px;align-items:center;min-height:34px;padding:6px 8px;border:1px solid var(--line);
+    border-radius:8px;background:rgba(255,255,255,.03);flex-wrap:wrap}
+  .by{font-family:var(--mono);font-size:10px;padding:3px 7px;border-radius:4px;
+    background:rgba(34,211,238,.14);color:#a5f3fc;border:1px solid rgba(34,211,238,.25)}
+  .by.wait{background:rgba(251,191,36,.14);color:#fde68a;border:1px dashed rgba(251,191,36,.45)}
+  .res{font-size:20px;line-height:1;padding:0 5px}
+  .hnote{font-size:10.5px;color:var(--dim);text-align:center;line-height:1.7;margin-top:4px}
+  .hnote b{color:var(--amber)}
+
+  /* 状态机 */
+  .fsm{width:100%;max-width:500px}
+  .fsm svg{width:100%;height:auto;display:block}
+
+  /* KMP */
+  .kmp{width:100%;max-width:500px}
+  .kchunks{display:flex;gap:4px;margin-bottom:12px}
+  .kchunk{flex:1;padding:8px 4px;border-radius:7px;border:1px solid var(--line);background:var(--card);
+    text-align:center;font-family:var(--mono);font-size:9px;color:#c3cde2;position:relative}
+  .kchunk.on{border-color:rgba(244,114,182,.5);background:rgba(244,114,182,.1);color:#fbcfe8}
+  .kchunk .idx{display:block;font-size:7.5px;color:var(--dim);margin-bottom:3px}
+  .kprog{height:5px;border-radius:3px;background:rgba(255,255,255,.07);overflow:hidden;margin-bottom:4px}
+  .kprog i{display:block;height:100%;width:0;border-radius:3px;background:linear-gradient(90deg,#f472b6,#a78bfa)}
+  .screen.active .kprog i{animation:kp 3.6s cubic-bezier(.4,0,.3,1) .5s forwards}
+  @keyframes kp{to{width:100%}}
+  .kmp .cap{display:flex;justify-content:space-between;font-family:var(--mono);font-size:8px;color:var(--dim)}
+  .kmp .note{text-align:center;font-size:10.5px;color:var(--dim);margin-top:12px;line-height:1.7}
+  .kmp .note b{color:#fbcfe8}
+
+  /* 真假标记 */
+  .twocase{width:100%;max-width:500px;display:flex;flex-direction:column;gap:8px}
+  .case{display:flex;gap:10px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card)}
+  .case .i{font-size:14px}
+  .case b{font-size:11px;display:block;margin-bottom:2px}
+  .case p{font-size:9.5px;color:var(--dim);line-height:1.6}
+  .case.t{border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.05)}
+  .case.t b{color:#6ee7b7}
+  .case.f{border-color:rgba(251,113,133,.3);background:rgba(251,113,133,.05)}
+  .case.f b{color:#fda4af}
+
+  /* 工具参数 */
+  .dsml{width:100%;max-width:500px;border:1px solid var(--line);border-radius:11px;background:rgba(12,19,34,.75);padding:12px}
+  .dline{font-family:var(--mono);font-size:10px;line-height:1.95;color:#c3cde2;word-break:break-all}
+  .dline .tag{color:#c4b5fd}
+  .dline .str{color:#a7f3d0}
+  .dline .num{color:#fde68a}
+  .dline .dim{color:#5b6884}
+  .dmeta{display:flex;gap:12px;margin-top:9px;padding-top:8px;border-top:1px dashed rgba(255,255,255,.12);
+    font-family:var(--mono);font-size:8.5px;color:var(--dim);flex-wrap:wrap}
+  .dmeta b{color:var(--cyan)}
+
+  /* 收尾 */
+  .facts{display:flex;flex-direction:column;gap:8px;width:100%;max-width:500px}
+  .fact{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:11.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10px;color:var(--dim);line-height:1.55}
+  .loopback{margin-top:4px;padding:11px 13px;border:1px dashed rgba(167,139,250,.3);border-radius:10px;
+    background:rgba(167,139,250,.04);font-size:10.5px;color:#c4b5fd;line-height:1.7;text-align:center;width:100%;max-width:500px}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1 active">
+  <div class="hero-kicker rv d1">推理原理 · 12</div>
+  <h1 class="rv d2"><span class="grad">字符</span>会被<br>切成两半</h1>
+  <p class="hero-sub rv d3">后端按 token 发货，<br>前端按 UTF-8 字符收货。</p>
+  <div class="bytessplit rv d5">
+    <span class="bpart a">E5</span>
+    <span class="ar">+</span>
+    <span class="bpart b">A4</span>
+    <span class="ar">+</span>
+    <span class="bpart c">A9</span>
+    <span class="ar">=</span>
+    <span class="bpart" style="color:#e8eefc">天</span>
+  </div>
+  <div class="next-hint rv d6">向下滚动<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>01</b>错位</div>
+    <h2 class="rv d2">两套不同的切法</h2>
+    <p class="scr-desc rv d3">token 是模型的单位，字符是人的单位。它们不重合。</p>
+  </div>
+  <div class="stage">
+    <div class="grain">
+      <div class="gr rv d3">
+        <div class="hd">后端发出的 chunk（token 粒度）</div>
+        <div class="chips tok"><i>今天</i><i>天气</i><i>很</i><i>好</i><i>，</i><i>适合</i></div>
+        <p>一个 chunk 可能只有半个汉字、半个 emoji、半个标签。</p>
+      </div>
+      <div class="gr rv d4">
+        <div class="hd">前端要的字（UTF-8 字符）</div>
+        <div class="chips chr"><i>今</i><i>天</i><i>天</i><i>气</i><i>很</i><i>好</i><i>，</i><i>适</i><i>合</i></div>
+        <p>用户看到的是完整字符，中间不能出现乱码方块。</p>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">所以流式解析的第一个动作不是"找关键字"，而是<b>“把字节补齐”</b>。</div>
+</section>
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>02</b>补齐</div>
+    <h2 class="rv d2">差一个字节，就先扣着</h2>
+    <p class="scr-desc rv d3">不完整就缓冲，等下一个 chunk 凑齐再交出去。</p>
+  </div>
+  <div class="stage">
+    <div class="halfchar">
+      <div class="hrow rv d3">
+        <span class="lb">chunk 1</span>
+        <div class="hbox"><span class="res">今</span><span class="by">E4</span><span class="by">BB</span><span class="by">8A</span><span class="by wait">E5</span><span style="font-family:var(--mono);font-size:9px;color:#fde68a">← 只有 1 个字节</span></div>
+      </div>
+      <div class="hrow rv d4">
+        <span class="lb">chunk 2</span>
+        <div class="hbox"><span class="by">A4</span><span class="by">A9</span><span class="res">天</span></div>
+      </div>
+      <p class="hnote rv d5">buffered 的 <b>E5</b> 等到 <b>A4 A9</b> 到齐，才拼成一个完整的"天"。<br>宁可晚 20ms，也不吐半截乱码。</p>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">这一步很不起眼，但它是所有流式体验的地基。</div>
+</section>
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>03</b>状态机</div>
+    <h2 class="rv d2">一条流，三个区段</h2>
+    <p class="scr-desc rv d3">解析器要一直记得"我现在在哪一段"。</p>
+  </div>
+  <div class="stage">
+    <div class="fsm">
+      <svg viewBox="0 0 500 132" aria-hidden="true">
+        <defs>
+          <marker id="a2" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#5b6884"/>
+          </marker>
+        </defs>
+        <rect x="18" y="46" width="118" height="42" rx="9" fill="rgba(167,139,250,.1)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="77" y="64" fill="#c4b5fd" font-size="10" font-family="monospace" text-anchor="middle">reasoning</text>
+        <text x="77" y="78" fill="#5b6884" font-size="8" font-family="monospace" text-anchor="middle">思考内容</text>
+
+        <rect x="192" y="46" width="118" height="42" rx="9" fill="rgba(52,211,153,.1)" stroke="#34d399" stroke-width="1"/>
+        <text x="251" y="64" fill="#6ee7b7" font-size="10" font-family="monospace" text-anchor="middle">body</text>
+        <text x="251" y="78" fill="#5b6884" font-size="8" font-family="monospace" text-anchor="middle">正文</text>
+
+        <rect x="366" y="46" width="118" height="42" rx="9" fill="rgba(34,211,238,.1)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="425" y="64" fill="#7ee7f7" font-size="10" font-family="monospace" text-anchor="middle">tool_args</text>
+        <text x="425" y="78" fill="#5b6884" font-size="8" font-family="monospace" text-anchor="middle">工具参数</text>
+
+        <line x1="136" y1="67" x2="186" y2="67" stroke="#5b6884" marker-end="url(#a2)"/>
+        <line x1="310" y1="67" x2="360" y2="67" stroke="#5b6884" marker-end="url(#a2)"/>
+        <text x="161" y="58" fill="#8b96ad" font-size="7.5" font-family="monospace" text-anchor="middle">结束标记</text>
+        <text x="335" y="58" fill="#8b96ad" font-size="7.5" font-family="monospace" text-anchor="middle">工具标记</text>
+      </svg>
+      <p style="font-size:10.5px;color:var(--dim);text-align:center;line-height:1.7">
+        每遇到一个分隔标记，就换一个状态；<b>换了状态，后面的内容归属就变了</b>。
+      </p>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">状态必须跨 chunk 保存 —— 因为标记本身也可能被切开。</div>
+</section>
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>04</b>增量</div>
+    <h2 class="rv d2">标记被切开，进度留在原地</h2>
+    <p class="scr-desc rv d3">不用回头重扫，只保留"匹配到第几个字符"。</p>
+  </div>
+  <div class="stage">
+    <div class="kmp">
+      <div class="kchunks">
+        <div class="kchunk rv d3"><span class="idx">chunk 1</span>&lt;/th</div>
+        <div class="kchunk on rv d4"><span class="idx">chunk 2</span>ink&gt;</div>
+        <div class="kchunk rv d4"><span class="idx">chunk 3</span>今天…</div>
+      </div>
+      <div class="kprog"><i></i></div>
+      <div class="cap rv d6"><span>匹配进度：6 / 8 个字符</span><span>不回头，不重扫</span></div>
+      <p class="note rv d6">如果每个 chunk 都把已收到的文本从头找一遍，<br><b>长回答会越跑越慢</b>（平方级）。</p>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">增量匹配让解析成本变成<b>线性</b>：每个字符只看一次。</div>
+</section>
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>05</b>身份</div>
+    <h2 class="rv d2">还是那个"身份证"问题</h2>
+    <p class="scr-desc rv d3">模型自己拼出来的结束标记，不算结束。</p>
+  </div>
+  <div class="stage">
+    <div class="twocase">
+      <div class="case t rv d3"><span class="i">✅</span><div><b>特殊 token ID 命中</b><p>解析器切换状态，后面的内容归到"正文"。</p></div></div>
+      <div class="case f rv d4"><span class="i">🚫</span><div><b>普通 token 拼出的字面量</b><p>原样保留为正文。模型可以"谈论"这个标记，但不能"使用"它。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">这一条和 03 集是同一个机制的两端：<b>进来时防注入，出去时防误判</b>。</div>
+</section>
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>06</b>工具</div>
+    <h2 class="rv d2">参数边生成，边变成 JSON</h2>
+    <p class="scr-desc rv d3">不必等整个参数拼完，再序列化一遍。</p>
+  </div>
+  <div class="stage">
+    <div class="dsml">
+      <div class="dline"><span class="dim">&lt;|DSML|tool_calls&gt;</span> <span class="tag">get_weather</span>
+{"city": <span class="str">"北京"</span>, "days": <span class="num">3</span></div>
+      <div class="dmeta"><span>工具名已发出</span><span>参数片段 <b>2</b> 个</span><span>未构造完整对象</span></div>
+    </div>
+    <p class="hnote" style="margin-top:12px">字符串逐段转义；数组和对象<b>原样输出</b>。<br>用户能更早看到第一个参数片段。</p>
+  </div>
+  <div class="scr-foot rv d6">"边生成边返回"是流式的本质：<b>不要在最后一刻才交付</b>。</div>
+</section>
+
+<section class="screen s8">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>07</b>闭环</div>
+    <h2 class="rv d2">一次请求，到这里就走完了</h2>
+    <p class="scr-desc rv d3">回头看，它穿过了五层。</p>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">🚪</span><div><b>入口</b><p>三种协议归一成一段对话。</p></div></div>
+      <div class="fact rv d4"><span class="i">🧩</span><div><b>编码</b><p>模板渲染、特殊 token 验身份、并行分词。</p></div></div>
+      <div class="fact rv d5"><span class="i">⚡</span><div><b>计算</b><p>prefill 读题、decode 写字，三段机器各司其职。</p></div></div>
+    </div>
+    <div class="loopback rv d6">💾 中间算过的 KV 被三层缓存记住 → 🎲 猜着算、只算合法的 → 最后在这里变回文字</div>
+  </div>
+  <div class="scr-foot rv d6">整条链上没有一个环节在"思考"，但每个环节都在决定<b>你多久能看到下一个字</b>。</div>
+</section>
+
+<section class="screen s9">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>08</b>尾声</div>
+    <h2 class="rv d2">这一季讲的是"怎么送到"</h2>
+    <p class="scr-desc rv d3">模型的能力是上限，推理系统决定这个上限能触达多少人。</p>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">📐</span><div><b>能省则省</b><p>缓存、重放、掩码、变长验证 —— 都在减少无效计算。</p></div></div>
+      <div class="fact rv d4"><span class="i">🧩</span><div><b>能拆则拆</b><p>E/P/D 分离、Wide-EP、分层缓存 —— 都在把瓶颈摊开。</p></div></div>
+      <div class="fact rv d5"><span class="i">⏱️</span><div><b>能叠则叠</b><p>异步调度、GDR 换入、边生成边解析 —— 都在填满等待。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">下一季：当推理本身开始"想很久"，系统要怎么陪它一起等。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+</body>
+</html>

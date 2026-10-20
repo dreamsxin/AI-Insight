@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="推理原理 06 · 别让 GPU 等 CPU：零开销批调度、连续批处理、chunked prefill 与时间预算求解">
+<title>推理原理 06 · 别让 GPU 等 CPU</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--amber);transform:scale(1.4);box-shadow:0 0 10px rgba(251,191,36,.85)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,rgba(251,191,36,.09)),transparent 70%)}
+  .s1{--glow:rgba(251,191,36,.12)}.s2{--glow:rgba(34,211,238,.08)}.s3{--glow:rgba(251,113,133,.08)}
+  .s4{--glow:rgba(251,113,133,.09)}.s5{--glow:rgba(34,211,238,.09)}.s6{--glow:rgba(52,211,153,.09)}
+  .s7{--glow:rgba(167,139,250,.08)}.s8{--glow:rgba(251,191,36,.10)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--amber);
+    border:1px solid rgba(251,191,36,.35);background:rgba(251,191,36,.07);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(28px,7.4vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,#fbbf24 5%,#fb7185 55%,#a78bfa 95%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-strip{margin-top:26px;width:100%;max-width:420px}
+  .strip{display:flex;height:26px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+  .strip i{flex:1;background:linear-gradient(90deg,rgba(34,211,238,.75),rgba(34,211,238,.4));
+    border-right:1px solid rgba(7,11,20,.55)}
+  .strip i.gap{background:repeating-linear-gradient(45deg,rgba(255,255,255,.07) 0 5px,transparent 5px 10px)}
+  .screen.active .strip i:not(.gap){animation:pulse 1.6s ease-in-out infinite alternate}
+  .screen.active .strip i:nth-child(2){animation-delay:.2s}
+  .screen.active .strip i:nth-child(3){animation-delay:.4s}
+  @keyframes pulse{from{opacity:.55}to{opacity:1}}
+  .strip-cap{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--dim);margin-top:6px}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 一段四步 */
+  .four{display:flex;gap:6px;width:100%;max-width:520px;align-items:stretch}
+  .step4{flex:1;border:1px solid var(--line);border-radius:11px;background:var(--card);padding:10px 7px;text-align:center}
+  .step4 .k{font-family:var(--mono);font-size:8.5px;color:var(--dim);margin-bottom:5px}
+  .step4 b{font-size:10.5px;display:block;line-height:1.4}
+  .step4 .tag{font-family:var(--mono);font-size:8px;margin-top:5px;display:inline-block;padding:1px 5px;border-radius:4px}
+  .step4.cpu .tag{background:rgba(251,191,36,.14);color:#fcd34d}
+  .step4.gpu .tag{background:rgba(34,211,238,.14);color:#67e8f9}
+  .step4.gpu{border-color:rgba(34,211,238,.25)}
+  .step4.cpu{border-color:rgba(251,191,36,.22)}
+  .sync{display:flex;align-items:center;justify-content:center;gap:7px;margin-top:10px;
+    font-family:var(--mono);font-size:9.5px;color:var(--red)}
+  .sync .ln{width:42px;height:1px;background:linear-gradient(90deg,transparent,var(--red),transparent)}
+
+  /* 泳道 */
+  .swim{width:100%;max-width:560px;border:1px solid rgba(255,255,255,.07);border-radius:15px;
+    background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012));padding:16px 14px 14px}
+  .swimrow{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+  .swimrow .who{width:36px;flex:0 0 36px;font-family:var(--mono);font-size:8.5px;color:var(--dim);text-align:right}
+  .lane2{flex:1;height:26px;border:1px solid var(--line);border-radius:6px;display:flex;overflow:hidden;background:rgba(255,255,255,.02)}
+  .blk{display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:8px;
+    border-right:1px solid rgba(7,11,20,.6);white-space:nowrap;overflow:hidden}
+  .blk.g{background:linear-gradient(180deg,rgba(34,211,238,.7),rgba(34,211,238,.4));color:#062a33}
+  .blk.c{background:linear-gradient(180deg,rgba(251,191,36,.62),rgba(251,191,36,.34));color:#332405}
+  .blk.gap{background:repeating-linear-gradient(45deg,rgba(251,113,133,.18) 0 5px,transparent 5px 10px);
+    border:1px dashed rgba(251,113,133,.4);color:#fda4af}
+  .blk.idle{background:rgba(255,255,255,.03);color:#5b6884}
+  .screen.active .blk{animation:fadeIn .5s both}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  .swimnote{font-size:10px;color:var(--dim);text-align:center;line-height:1.7;margin-top:8px}
+  .swimnote b{color:#c3cde2}
+
+  /* 预算曲线 */
+  .chartbox{width:100%;max-width:500px;position:relative}
+  .chartbox canvas{width:100%;height:clamp(150px,32vh,195px);display:block}
+  .chartnote{display:flex;gap:14px;justify-content:center;font-size:10px;color:var(--dim);margin-top:6px;flex-wrap:wrap}
+  .chartnote code{color:var(--cyan);font-size:9.5px}
+
+  /* 连续批处理 */
+  .queue{width:100%;max-width:520px;display:flex;flex-direction:column;gap:5px}
+  .qrow{display:flex;align-items:center;gap:6px;height:20px}
+  .qrow .qn{width:22px;flex:0 0 22px;font-family:var(--mono);font-size:8px;color:var(--dim);text-align:right}
+  .qcell{flex:1;display:flex;gap:3px}
+  .qcell i{width:17px;height:16px;border-radius:3px;background:rgba(34,211,238,.5)}
+  .qcell i.new{background:rgba(52,211,153,.6)}
+  .qcell i.done{background:rgba(167,139,250,.35)}
+  .qcell i.empty{background:rgba(255,255,255,.04)}
+  .qaxis{display:flex;justify-content:space-between;font-family:var(--mono);font-size:8px;color:var(--dim);margin-top:4px;padding-left:28px;width:100%}
+
+  /* 收尾 */
+  .facts{display:flex;flex-direction:column;gap:8px;width:100%;max-width:500px}
+  .fact{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:11.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10px;color:var(--dim);line-height:1.55}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1 active">
+  <div class="hero-kicker rv d1">推理原理 · 06</div>
+  <h1 class="rv d2"><span class="grad">别让 GPU</span><br>等 CPU</h1>
+  <p class="hero-sub rv d3">最贵的浪费不是算错，<br>是这条流水线上<b>规律出现的空格</b>。</p>
+  <div class="hero-strip rv d4">
+    <div class="strip">
+      <i></i><i></i><i class="gap"></i><i></i><i></i><i class="gap"></i><i></i>
+    </div>
+    <div class="strip-cap"><span>GPU 干活</span><span>灰色：在等 CPU 发下一条命令</span></div>
+  </div>
+  <div class="next-hint rv d6">向下滚动<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>01</b>一步</div>
+    <h2 class="rv d2">每生成一个字，其实是四件事</h2>
+    <p class="scr-desc rv d3">两件在 CPU 上，两件在 GPU 上，交替进行。</p>
+  </div>
+  <div class="stage">
+    <div class="four">
+      <div class="step4 cpu rv d3"><div class="k">1</div><b>排下一批</b><span class="tag">CPU</span></div>
+      <div class="step4 gpu rv d3"><div class="k">2</div><b>跑前向</b><span class="tag">GPU</span></div>
+      <div class="step4 gpu rv d4"><div class="k">3</div><b>采样</b><span class="tag">GPU</span></div>
+      <div class="step4 cpu rv d4"><div class="k">4</div><b>收尾处理</b><span class="tag">CPU</span></div>
+    </div>
+    <div class="sync rv d5"><span class="ln"></span>第 4 步要拿到第 3 步的结果，必须同步一次<span class="ln"></span></div>
+  </div>
+  <div class="scr-foot rv d6">问题就在这次同步：<b>GPU 交完结果就闲着，等 CPU 排下一批</b>。</div>
+</section>
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>02</b>缝隙</div>
+    <h2 class="rv d2">同步之后，显存空转</h2>
+    <p class="scr-desc rv d3">红色斜纹就是这个空洞：GPU 有活可干，却在等人。</p>
+  </div>
+  <div class="stage">
+    <div class="swim">
+      <div class="swimrow rv d3"><span class="who">GPU</span><div class="lane2">
+        <div class="blk g" style="width:26%">前向</div><div class="blk g" style="width:12%">采样</div>
+        <div class="blk gap" style="width:20%">空转</div>
+        <div class="blk g" style="width:26%">前向</div><div class="blk g" style="width:12%">采样</div>
+      </div></div>
+      <div class="swimrow rv d4"><span class="who">CPU</span><div class="lane2">
+        <div class="blk c" style="width:20%">排批</div><div class="blk idle" style="width:38%">等待</div>
+        <div class="blk c" style="width:20%">收尾</div><div class="blk c" style="width:22%">排下批</div>
+      </div></div>
+      <p class="swimnote rv d5">空闲时间不算长，但<b>每个 decode step 都会出现一次</b>。<br>几百步叠起来，就是白白烧掉的卡时。</p>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">这不是代码写得慢，而是流水线的<b>结构性空档</b>。</div>
+</section>
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>03</b>缝合</div>
+    <h2 class="rv d2">把 CPU 的活，挪到 GPU 忙的时候</h2>
+    <p class="scr-desc rv d3">GPU 跑第 N 步时，CPU 已经在准备第 N+1 步。</p>
+  </div>
+  <div class="stage">
+    <div class="swim">
+      <div class="swimrow rv d3"><span class="who">GPU</span><div class="lane2">
+        <div class="blk g" style="width:22%">前向 N</div><div class="blk g" style="width:11%">采样 N</div>
+        <div class="blk g" style="width:22%">前向 N+1</div><div class="blk g" style="width:11%">采样 N+1</div>
+        <div class="blk g" style="width:22%">前向 N+2</div>
+      </div></div>
+      <div class="swimrow rv d4"><span class="who">CPU</span><div class="lane2">
+        <div class="blk c" style="width:22%">排批 N+1</div><div class="blk c" style="width:11%">收尾 N−1</div>
+        <div class="blk c" style="width:22%">排批 N+2</div><div class="blk c" style="width:11%">收尾 N</div>
+        <div class="blk c" style="width:22%">排批 N+3</div>
+      </div></div>
+      <p class="swimnote rv d5">两条泳道错位咬合，GPU 再也没有空隙。<br>这就是常说的<b>零开销批调度</b>。</p>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">代价是：调度器要处理"还没拿到的结果"，逻辑复杂度上去了。</div>
+</section>
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>04</b>切片</div>
+    <h2 class="rv d2">长 prompt 不能一口气霸占 GPU</h2>
+    <p class="scr-desc rv d3">切成小片，和正在解码的请求混在一起跑。</p>
+  </div>
+  <div class="stage">
+    <div class="swim">
+      <div class="swimrow rv d3"><span class="who">整段</span><div class="lane2">
+        <div class="blk g" style="width:100%">一整段 prefill：别人的 decode 全停</div>
+      </div></div>
+      <div class="swimrow rv d4"><span class="who">切片</span><div class="lane2">
+        <div class="blk g" style="width:22%">片 1</div><div class="blk c" style="width:16%">decode</div>
+        <div class="blk g" style="width:22%">片 2</div><div class="blk c" style="width:16%">decode</div>
+        <div class="blk g" style="width:24%">片 3</div>
+      </div></div>
+      <p class="swimnote rv d5">chunked prefill 把"一次长阻塞"换成<b>多次短插入</b>。<br>TBT 的抖动被压平了。</p>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">但切多大？太小浪费启动开销，太大又把别人堵住 —— 需要算。</div>
+</section>
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>05</b>预算</div>
+    <h2 class="rv d2">这一步到底能塞多少 token</h2>
+    <p class="scr-desc rv d3">给一个时间预算，用成本曲线反解出片大小。</p>
+  </div>
+  <div class="stage">
+    <div class="chartbox">
+      <canvas id="budget"></canvas>
+      <div class="chartnote">
+        <span>曲线：<code>cost(q, c)</code> 随 token 数平方增长</span>
+        <span>交点：这一片的最优解</span>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">预算单位是纳秒，上限 32768 token；组内再取一次最小值，避免有人超时。</div>
+</section>
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>06</b>批处理</div>
+    <h2 class="rv d2">有人上车，有人下车，车不停</h2>
+    <p class="scr-desc rv d3">不是等一整批跑完再换人，而是每一步都能换。</p>
+  </div>
+  <div class="stage">
+    <div class="queue" id="queue"></div>
+    <div class="qaxis"><span>第 1 步</span><span>第 8 步</span><span>第 16 步</span></div>
+  </div>
+  <div class="scr-foot rv d6">队列里的空位立刻被新请求填上 —— <b>吞吐来自"位子不空着"，而不是"算得更快"</b>。</div>
+</section>
+
+<section class="screen s8">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>07</b>小结</div>
+    <h2 class="rv d2">排班排满了，显存却堆满了</h2>
+    <p class="scr-desc rv d3">调度解决了"谁来算"，接下来是"算过的东西放哪"。</p>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">🔁</span><div><b>错位重叠</b><p>GPU 算第 N 步时，CPU 准备第 N+1 步，空档被填平。</p></div></div>
+      <div class="fact rv d4"><span class="i">✂️</span><div><b>切片插入</b><p>长 prompt 切成小片，与 decode 混跑，抖动变平滑。</p></div></div>
+      <div class="fact rv d5"><span class="i">📐</span><div><b>按预算求解</b><p>不是固定片大小，而是给定时间反解能放多少 token。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">下一集：那些算过的 KV，究竟被放在哪三层介质上。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (i === 5) drawBudget();
+        if (i === 6) buildQueue();
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+
+  /* 连续批处理 */
+  var qBuilt = false;
+  function buildQueue() {
+    if (qBuilt) return; qBuilt = true;
+    var host = document.getElementById('queue');
+    if (!host) return;
+    var ROWS = 7, COLS = 16;
+    // 每个请求的生命区间
+    var reqs = [
+      { start: 0, len: 6 }, { start: 1, len: 5 }, { start: 2, len: 8 },
+      { start: 4, len: 5 }, { start: 6, len: 7 }, { start: 9, len: 5 }, { start: 11, len: 5 }
+    ];
+    for (var r = 0; r < ROWS; r++) {
+      var row = document.createElement('div');
+      row.className = 'qrow';
+      var n = document.createElement('span');
+      n.className = 'qn'; n.textContent = 'R' + (r + 1);
+      var cell = document.createElement('div');
+      cell.className = 'qcell';
+      var req = reqs[r];
+      for (var c = 0; c < COLS; c++) {
+        var i = document.createElement('i');
+        if (c >= req.start && c < req.start + req.len) {
+          i.className = (c === req.start) ? 'new' : 'done';
+          i.style.animation = 'fadeIn .4s both';
+          i.style.animationDelay = (0.15 + c * 0.05) + 's';
+        } else {
+          i.className = 'empty';
+        }
+        cell.appendChild(i);
+      }
+      row.appendChild(n); row.appendChild(cell);
+      host.appendChild(row);
+    }
+  }
+
+  /* 预算曲线 */
+  var drawnB = false;
+  function drawBudget() {
+    if (drawnB) return; drawnB = true;
+    var cv = document.getElementById('budget');
+    if (!cv) return;
+    var ctx = cv.getContext('2d');
+    var dpr = Math.min(devicePixelRatio || 1, 2);
+
+    function paint(p) {
+      var w = cv.clientWidth, h = cv.clientHeight;
+      if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      var pl = 30, pr = 18, pt = 14, pb = 28;
+      var iw = w - pl - pr, ih = h - pt - pb;
+
+      ctx.strokeStyle = 'rgba(255,255,255,.07)';
+      ctx.lineWidth = 1;
+      for (var g = 0; g <= 4; g++) {
+        var y = pt + ih * g / 4;
+        ctx.beginPath(); ctx.moveTo(pl, y); ctx.lineTo(pl + iw, y); ctx.stroke();
+      }
+
+      // 时间预算水平线
+      var budgetY = pt + ih * 0.32;
+      ctx.setLineDash([4, 5]);
+      ctx.strokeStyle = 'rgba(251,191,36,.7)';
+      ctx.beginPath(); ctx.moveTo(pl, budgetY); ctx.lineTo(pl + iw, budgetY); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#fbbf24';
+      ctx.font = '9px ui-monospace,monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('时间预算', pl + 4, budgetY - 5);
+
+      // 成本曲线
+      ctx.beginPath();
+      var N = 60;
+      for (var i = 0; i <= N * p; i++) {
+        var t = i / N;
+        var x = pl + iw * t;
+        var y = pt + ih - ih * Math.min(0.98, Math.pow(t, 1.9));
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+      ctx.strokeStyle = '#22d3ee'; ctx.lineWidth = 2.2;
+      ctx.shadowColor = '#22d3ee'; ctx.shadowBlur = 9; ctx.stroke(); ctx.shadowBlur = 0;
+
+      // 交点
+      if (p > 0.72) {
+        var ti = Math.pow(0.68, 1 / 1.9);
+        var xi = pl + iw * ti;
+        ctx.beginPath(); ctx.arc(xi, budgetY, 4.5, 0, 7);
+        ctx.fillStyle = '#fbbf24'; ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 12; ctx.fill(); ctx.shadowBlur = 0;
+        ctx.setLineDash([3, 4]);
+        ctx.strokeStyle = 'rgba(251,191,36,.5)';
+        ctx.beginPath(); ctx.moveTo(xi, budgetY); ctx.lineTo(xi, pt + ih); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#e8eefc';
+        ctx.font = '9.5px -apple-system,sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('这一片放 q 个', xi, pt + ih + 12);
+      }
+
+      ctx.fillStyle = 'rgba(139,150,173,.9)';
+      ctx.font = '9px ui-monospace,monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText('耗时', pl - 4, pt + 9);
+      ctx.textAlign = 'left';
+      ctx.fillText('→ q', pl + iw - 12, h - 6);
+    }
+
+    var t0 = performance.now();
+    (function anim(now) {
+      var p = Math.min(1, (now - t0) / 1400);
+      paint(1 - Math.pow(1 - p, 3));
+      if (p < 1) requestAnimationFrame(anim);
+    })(t0);
+
+    var rz;
+    addEventListener('resize', function () {
+      clearTimeout(rz); rz = setTimeout(function () { paint(1); }, 160);
+    });
+  }
+})();
+</script>
+</body>
+</html>

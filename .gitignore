@@ -29,3 +29,10 @@ Thumbs.db
 
 # Saved model files (generated at runtime)
 backend/app/data/saved_models/
+
+# Local agent tooling / scratch
+.workbuddy/
+.playwright-cli/
+.zcode/
+chk*.png
+shot-*.png

@@ -69,20 +69,42 @@ Frontend (run from `frontend/`):
   `backend/app/data/saved_models/` (no database). The directory is git-ignored and
   created at runtime by `services/model_store.py`; don't commit model files.
 - `docs/` holds a self-contained animated demo series with an index page
-  (`index.html` links all of them): HERMES AGENT 对象拆解 ·01–18 (08 跨会话
-  记忆篇 is 前瞻演绎/designed extrapolation), AI 运作原理拆解 ·01–15,
-  LLM 模型算法原理 ·01–05 (embedding/loss/position-encoding/residual
+  (`index.html` links all 82 of them — none are orphaned): HERMES AGENT 对象拆解
+  ·01–18 (08 跨会话记忆篇 is 前瞻演绎/designed extrapolation), HERMES AGENT
+  进阶机制 ·01–07 (thinking budget wired into the main loop, Skills progressive
+  disclosure, Hooks lifecycle slots, MCP 2026 transport evolution, A2A &
+  multi-agent sobering, Harness scaffold/checkpoint/background tasks, CUA), AI
+  运作原理拆解 ·01–15, AI 运作原理 · 深入篇 ·01–08 (Transformer skeleton, MoE
+  gating, KV cache + GQA + paging, embedding & two-stage retrieval,
+  chain-of-thought as an effort spectrum, RLVR & distillation, LoRA
+  fine-tuning, multimodal), LLM 模型算法原理 ·01–05
+  (embedding/loss/position-encoding/residual
   algorithm internals + a worked vector-attention poem example), AGENT
-  开发避坑指南 ·01–04 (developer-facing
-  pitfalls), AGENT 实战工坊
-  ·01–04 (knowledge-QA RAG build walkthrough + project-selection guide), and
+  开发避坑指南 ·01–05 (developer-facing pitfalls, incl. 05 tool-poisoning
+  injection), AGENT 实战工坊
+  ·01–06 (knowledge-QA RAG build walkthrough, project-selection guide, Agentic
+  RAG, GraphRAG), and
   AGENT 模式进阶 ·01–06 (pat- prefix: Plan-and-Execute, Reflection, CoALA
   memory extraction/routing, sliding-window/summarization compression, MCP
-  Host/Client/Server + tools/list discovery, soft-vs-hard guardrails). The
-  `docs/research/` subfolder holds protocol/spec research reports (not demos).
+  Host/Client/Server + tools/list discovery, soft-vs-hard guardrails), and
+  推理原理 ·01–12 (inf- prefix: the serving/system layer — protocol
+  normalisation, special-token identity, prefill/decode, E-P-D disaggregation,
+  async scheduling, three-tier KV cache, SWA bounded replay, speculative
+  decoding, EPLB, constrained decoding, streaming parse). The
+  `docs/research/` subfolder holds protocol/spec research reports and the
+  inference-series plan (`inference-principles-series-plan.md`), not demos.
   None
   are part of the Vite app — each demo is a single
-  file (no build step, no external deps) using full-screen CSS scroll-snap
+  file (no build step) using full-screen CSS scroll-snap
   sections where one animation segment plays per screen. Keep new demos in this
   same self-contained pattern and add them to the index; editing frontend code
   does not affect them.
+- **3D in docs demos**: `docs/vendor/three.global.js` is three.js r160 with its
+  ES-module `export{}` rewritten to `window.THREE` (so it loads from `file://`
+  without a server). The `inf-` series is the only place that uses it — load it
+  with a plain `<script src="vendor/three.global.js">`, build scenes with
+  `MeshBasicMaterial` + `EdgesGeometry` (flat, no lights, matching the dark
+  palette), and gate rendering on an `IntersectionObserver`/visibility check so
+  off-screen canvases don't burn battery. Every 3D screen must degrade to a CSS
+  glow when `window.THREE` or WebGL is unavailable.
+

@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="推理原理 04 · 两种性格的机器：prefill 算力密集、decode 带宽密集，算术强度与 roofline，批处理如何救 decode">
+<title>推理原理 04 · 两种性格的机器</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--cyan);transform:scale(1.4);box-shadow:0 0 10px rgba(34,211,238,.85)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,rgba(167,139,250,.10)),transparent 70%)}
+  .s1{--glow:rgba(34,211,238,.12)}.s2{--glow:rgba(34,211,238,.08)}.s3{--glow:rgba(251,113,133,.09)}
+  .s4{--glow:rgba(251,191,36,.08)}.s5{--glow:rgba(167,139,250,.09)}.s6{--glow:rgba(52,211,153,.08)}
+  .s7{--glow:rgba(251,113,133,.08)}.s8{--glow:rgba(34,211,238,.10)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,30px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--purple);
+    border:1px solid rgba(167,139,250,.35);background:rgba(167,139,250,.07);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(28px,7.4vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,#22d3ee 5%,#a78bfa 50%,#fb7185 95%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .dials{display:flex;gap:16px;margin-top:26px;justify-content:center}
+  .dial{width:132px;border:1px solid var(--line);border-radius:13px;background:var(--card);padding:11px 10px}
+  .dial .t{font-family:var(--mono);font-size:9px;color:var(--dim);margin-bottom:8px}
+  .gauge{height:8px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden;margin-bottom:5px}
+  .gauge i{display:block;height:100%;border-radius:4px}
+  .dial .p{font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .screen.active .g1 i{animation:fillw 1.4s cubic-bezier(.22,1,.36,1) .5s both}
+  .screen.active .g2 i{animation:fillw 1.4s cubic-bezier(.22,1,.36,1) .8s both}
+  @keyframes fillw{from{width:0!important}to{width:var(--w)}}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 流水线示意 */
+  .pipe{width:100%;max-width:520px;border:1px solid rgba(255,255,255,.07);border-radius:15px;
+    background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012));padding:20px 16px 16px}
+  .pipe-row{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .pipe-row .cap{width:60px;flex:0 0 60px;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right;line-height:1.4}
+  .mem{flex:0 0 88px;height:66px;border-radius:8px;border:1px solid rgba(34,211,238,.3);
+    background:linear-gradient(180deg,rgba(34,211,238,.14),rgba(34,211,238,.04));
+    display:flex;flex-direction:column;justify-content:center;align-items:center;gap:3px}
+  .mem span{font-family:var(--mono);font-size:8px;color:#7ee7f7}
+  .mem .cells{display:flex;gap:2px}
+  .mem .cells i{width:6px;height:24px;border-radius:1.5px;background:rgba(34,211,238,.6)}
+  .arrow-mid{position:relative;flex:1;height:2px;background:rgba(255,255,255,.13);border-radius:2px}
+  .arrow-mid::after{content:"";position:absolute;right:-1px;top:50%;transform:translateY(-50%);
+    border-left:6px solid rgba(255,255,255,.3);border-top:4px solid transparent;border-bottom:4px solid transparent}
+  .arrow-mid .pk{position:absolute;top:50%;width:26px;height:8px;border-radius:3px;
+    transform:translateY(-50%);background:linear-gradient(90deg,rgba(34,211,238,.9),rgba(34,211,238,.3));left:0;opacity:0}
+  .screen.active .arrow-mid .pk{animation:travel 1.5s linear infinite;opacity:1}
+  @keyframes travel{from{left:0}to{left:calc(100% - 26px)}}
+  .calc{flex:0 0 100px;height:66px;border-radius:8px;border:1px solid rgba(167,139,250,.32);
+    background:linear-gradient(180deg,rgba(167,139,250,.14),rgba(167,139,250,.04));
+    display:flex;align-items:center;justify-content:center;gap:3px;flex-wrap:wrap;padding:5px}
+  .calc span{font-family:var(--mono);font-size:8px;color:#c4b5fd}
+  .tokgrid{display:flex;gap:2px;flex-wrap:wrap;justify-content:center;max-width:60px}
+  .tokgrid i{width:10px;height:10px;border-radius:2.5px;background:rgba(167,139,250,.75)}
+  .screen.active .tokgrid i{animation:blink .9s ease-in-out infinite alternate}
+  .screen.active .tokgrid i:nth-child(2){animation-delay:.1s}
+  .screen.active .tokgrid i:nth-child(3){animation-delay:.2s}
+  .screen.active .tokgrid i:nth-child(4){animation-delay:.3s}
+  @keyframes blink{from{opacity:.3}to{opacity:1}}
+  .pipe-note{font-size:10.5px;color:var(--dim);text-align:center;line-height:1.65}
+  .pipe-note b{color:#c3cde2}
+
+  /* 对比条 */
+  .cmp{width:100%;max-width:480px}
+  .cmp .r{margin-bottom:14px}
+  .cmp .lab{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9.5px;color:var(--dim);margin-bottom:5px}
+  .cmp .lab b{color:#e8eefc;font-family:-apple-system,sans-serif;font-size:11px}
+  .bar2{height:22px;border-radius:6px;background:rgba(255,255,255,.05);overflow:hidden}
+  .bar2 i{display:block;height:100%;border-radius:6px;width:0}
+  .screen.active .bar2 i{animation:fillw 1.2s cubic-bezier(.22,1,.36,1) .4s forwards}
+  .bar2.a i{background:linear-gradient(90deg,rgba(34,211,238,.85),rgba(34,211,238,.45))}
+  .bar2.b i{background:linear-gradient(90deg,rgba(251,113,133,.85),rgba(251,113,133,.45))}
+  .cmp .hint{font-size:9.5px;color:var(--dim);margin-top:4px}
+
+  /* roofline */
+  .chartbox{width:100%;max-width:520px;position:relative}
+  .chartbox canvas{width:100%;height:clamp(160px,34vh,215px);display:block}
+  .legend{display:flex;gap:16px;justify-content:center;font-size:10px;color:var(--dim);margin-top:4px;flex-wrap:wrap}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:0}
+
+  /* 批处理 */
+  .batch{width:100%;max-width:500px}
+  .streams{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+  .st{display:flex;align-items:center;gap:8px}
+  .st .id{font-family:var(--mono);font-size:8.5px;color:var(--dim);width:26px;flex:0 0 26px;text-align:right}
+  .st .ln{flex:1;height:12px;border-radius:4px;background:rgba(255,255,255,.05);position:relative;overflow:hidden}
+  .st .ln i{position:absolute;left:0;top:0;height:100%;width:0;border-radius:4px;
+    background:linear-gradient(90deg,rgba(52,211,153,.8),rgba(52,211,153,.3))}
+  .screen.active .st .ln i{animation:fillw 1s ease-out both}
+  .merge-line{text-align:center;font-size:11px;color:var(--dim);margin:2px 0 10px}
+  .merged{height:26px;border-radius:7px;background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.35);
+    position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:9px;color:#a7f3d0}
+  .screen.active .merged::after{content:"";position:absolute;inset:0;
+    background:linear-gradient(90deg,transparent,rgba(167,139,250,.35),transparent);
+    transform:translateX(-100%);animation:sweep 1.8s ease-in-out infinite}
+  @keyframes sweep{to{transform:translateX(100%)}}
+
+  /* 混批代价 */
+  .timeline2{width:100%;max-width:520px}
+  .tl2{display:flex;flex-direction:column;gap:7px}
+  .tl2 .row{display:flex;align-items:center;gap:8px}
+  .tl2 .row .k{width:60px;flex:0 0 60px;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .tl2 .track{flex:1;height:22px;border:1px solid var(--line);border-radius:6px;background:rgba(255,255,255,.03);
+    display:flex;overflow:hidden}
+  .seg-p{background:rgba(34,211,238,.55);border-right:1px solid rgba(7,11,20,.6);display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:8px;color:#04222b}
+  .seg-d{background:rgba(167,139,250,.45);display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:8px;color:#1b1330}
+
+  /* 收尾 */
+  .facts{display:flex;flex-direction:column;gap:8px;width:100%;max-width:500px}
+  .fact{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:11.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10px;color:var(--dim);line-height:1.55}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1 active">
+  <div class="hero-kicker rv d1">推理原理 · 04</div>
+  <h1 class="rv d2"><span class="grad">两种性格</span><br>的机器</h1>
+  <p class="hero-sub rv d3">同一张 GPU，跑"读一整段"和"每次写一个字"，<br>瓶颈落在完全不同的地方。</p>
+  <div class="dials">
+    <div class="dial rv d4">
+      <div class="t">算力利用率</div>
+      <div class="gauge g1"><i style="--w:96%;background:linear-gradient(90deg,#22d3ee,#67e8f9)"></i></div>
+      <div class="gauge g1"><i style="--w:96%;background:linear-gradient(90deg,#22d3ee,#67e8f9)"></i></div>
+      <div class="p">prefill</div>
+    </div>
+    <div class="dial rv d5">
+      <div class="t">显存带宽占用</div>
+      <div class="gauge g2"><i style="--w:14%;background:linear-gradient(90deg,#fb7185,#fda4af)"></i></div>
+      <div class="gauge g2"><i style="--w:96%;background:linear-gradient(90deg,#fb7185,#fda4af)"></i></div>
+      <div class="p">decode</div>
+    </div>
+  </div>
+  <div class="next-hint rv d6">向下滚动<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>01</b>prefill</div>
+    <h2 class="rv d2">先把整段话一次读完</h2>
+    <p class="scr-desc rv d3">几百上千个 token 一起过一遍网络。权重只搬一次，算力吃得饱。</p>
+  </div>
+  <div class="stage">
+    <div class="pipe">
+      <div class="pipe-row rv d3">
+        <div class="cap">显存<br>权重</div>
+        <div class="mem"><div class="cells"><i></i><i></i><i></i><i></i><i></i></div><span>HBM</span></div>
+        <div class="arrow-mid"><div class="pk"></div></div>
+        <div class="calc"><div class="tokgrid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+      </div>
+      <p class="pipe-note rv d4">一次前向，同时处理 <b>整段输入</b>。<br>算力打满，搬运只发生一次 —— 这是"便宜"的那一段。</p>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">prefill 的产物是 KV 缓存，不是文字。它决定你多久看到第一个字。</div>
+</section>
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>02</b>decode</div>
+    <h2 class="rv d2">然后每次只写一个字</h2>
+    <p class="scr-desc rv d3">同样的权重，要再搬一遍，却只服务一个 token。</p>
+  </div>
+  <div class="stage">
+    <div class="pipe">
+      <div class="pipe-row rv d3">
+        <div class="cap">显存<br>权重</div>
+        <div class="mem"><div class="cells"><i></i><i></i><i></i><i></i><i></i></div><span>整份权重</span></div>
+        <div class="arrow-mid"><div class="pk"></div></div>
+        <div class="calc"><div class="tokgrid"><i></i></div></div>
+      </div>
+      <p class="pipe-note rv d4">搬运时间 ≈ 不变，计算量 ≈ 1/N。<br><b>引擎大部分时间在等显存，而不是在算。</b></p>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">这一步重复几百次，所以 TBT 的每一毫秒都要抠。</div>
+</section>
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>03</b>算术强度</div>
+    <h2 class="rv d2">每读一字节，能干多少活</h2>
+    <p class="scr-desc rv d3">这个比值，决定了一段计算到底卡在算力还是卡在带宽。</p>
+  </div>
+  <div class="stage">
+    <div class="cmp">
+      <div class="r rv d3">
+        <div class="lab"><b>prefill · 一次算很多 token</b><span>高</span></div>
+        <div class="bar2 a"><i style="width:92%"></i></div>
+        <div class="hint">同一份权重，摊到很多 token 上</div>
+      </div>
+      <div class="r rv d4">
+        <div class="lab"><b>decode · 一次算一个 token</b><span>低</span></div>
+        <div class="bar2 b"><i style="width:9%"></i></div>
+        <div class="hint">同样的搬运，只换回一个 token</div>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">差了一个数量级。所以"把两种任务放同一张卡"注定互相拖累。</div>
+</section>
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>04</b>屋顶线</div>
+    <h2 class="rv d2">芯片的屋顶，只有一条边可用</h2>
+    <p class="scr-desc rv d3">横轴是算术强度，纵轴是实际算力。斜线是带宽给的，平台是算力给的。</p>
+  </div>
+  <div class="stage">
+    <div class="chartbox">
+      <canvas id="roof"></canvas>
+      <div class="legend">
+        <span><i style="background:#22d3ee"></i>prefill 落在平台下</span>
+        <span><i style="background:#fb7185"></i>decode 卡在斜线上</span>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">decode 想变快，要么减少搬运（更大 batch、更小权重），要么换更宽的带宽。</div>
+</section>
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>05</b>解法</div>
+    <h2 class="rv d2">让一份权重，服务更多人</h2>
+    <p class="scr-desc rv d3">把 8 个请求拼成一批，一次搬运摊给 8 个 token。</p>
+  </div>
+  <div class="stage">
+    <div class="batch">
+      <div class="streams">
+        <div class="st rv d2"><span class="id">A</span><div class="ln"><i style="width:100%"></i></div></div>
+        <div class="st rv d2"><span class="id">B</span><div class="ln"><i style="width:100%"></i></div></div>
+        <div class="st rv d2"><span class="id">C</span><div class="ln"><i style="width:100%"></i></div></div>
+        <div class="st rv d3"><span class="id">D</span><div class="ln"><i style="width:100%"></i></div></div>
+        <div class="st rv d3"><span class="id">E</span><div class="ln"><i style="width:100%"></i></div></div>
+        <div class="st rv d3"><span class="id">F</span><div class="ln"><i style="width:100%"></i></div></div>
+        <div class="st rv d4"><span class="id">G</span><div class="ln"><i style="width:100%"></i></div></div>
+        <div class="st rv d4"><span class="id">H</span><div class="ln"><i style="width:100%"></i></div></div>
+      </div>
+      <div class="merge-line rv d4">↓ 合并成一次前向 ↓</div>
+      <div class="merged rv d5">一次搬运 · 8 个 token · 带宽被摊薄</div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">这就是<b>批处理</b>的全部意义：不是为了算得更快，是为了少等几次显存。</div>
+</section>
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>06</b>代价</div>
+    <h2 class="rv d2">那为什么还要拆开</h2>
+    <p class="scr-desc rv d3">如果所有请求都被拼成大批，新来的请求就得排队等。</p>
+  </div>
+  <div class="stage">
+    <div class="timeline2">
+      <div class="tl2">
+        <div class="row rv d3"><span class="k">混在一起</span><div class="track">
+          <div class="seg-p" style="width:42%">prefill</div><div class="seg-d" style="width:58%">decode</div></div></div>
+        <div class="row rv d4"><span class="k">新请求</span><div class="track">
+          <div class="seg-p" style="width:0"></div><div class="seg-d" style="width:38%">等待…</div><div class="seg-p" style="width:34%">才轮到</div></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">长 prompt 的 prefill 一旦插进来，正在解码的请求全部卡住 —— TTFT 与 TBT 互相伤害。</div>
+</section>
+
+<section class="screen s8">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>07</b>小结</div>
+    <h2 class="rv d2">两种饿狼，不该关在一个笼子</h2>
+    <p class="scr-desc rv d3">这一集只需要记住一件事：它们要喂的东西不一样。</p>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">🧮</span><div><b>prefill 饿算力</b><p>成批的 token 一次过，算术强度高，算力是瓶颈。</p></div></div>
+      <div class="fact rv d4"><span class="i">🚚</span><div><b>decode 饿带宽</b><p>每写一个字都要搬一遍权重，算术强度低，显存是瓶颈。</p></div></div>
+      <div class="fact rv d5"><span class="i">🔀</span><div><b>合成批能缓解，不能消解</b><p>批越大越省，但排队也越久，两种需求天然冲突。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">下一集：既然冲突，那就把三段拆到不同的机器上。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (screens[i] === document.querySelectorAll('.screen')[4]) drawRoof();
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+
+  var drawn = false;
+  function drawRoof() {
+    if (drawn) return; drawn = true;
+    var cv = document.getElementById('roof');
+    if (!cv) return;
+    var ctx = cv.getContext('2d');
+    var dpr = Math.min(devicePixelRatio || 1, 2);
+
+    function paint(p) {
+      var w = cv.clientWidth, h = cv.clientHeight;
+      if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      var pl = 40, pr = 16, pt = 14, pb = 26;
+      var iw = w - pl - pr, ih = h - pt - pb;
+
+      ctx.strokeStyle = 'rgba(255,255,255,.08)';
+      ctx.lineWidth = 1;
+      for (var g = 0; g <= 4; g++) {
+        var y = pt + ih * g / 4;
+        ctx.beginPath(); ctx.moveTo(pl, y); ctx.lineTo(pl + iw, y); ctx.stroke();
+        var x = pl + iw * g / 4;
+        ctx.beginPath(); ctx.moveTo(x, pt); ctx.lineTo(x, pt + ih); ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(139,150,173,.9)';
+      ctx.font = '9px ui-monospace,monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText('算力', pl - 5, pt + 9);
+      ctx.textAlign = 'center';
+      ctx.fillText('算术强度 →', pl + iw / 2, h - 6);
+      ctx.textAlign = 'left';
+      ctx.fillText('低', pl - 2, pt + ih + 12);
+
+      // 斜线（带宽限制）
+      var kneeX = 0.34;
+      ctx.beginPath();
+      ctx.moveTo(pl, pt + ih);
+      ctx.lineTo(pl + iw * kneeX, pt + ih * 0.22);
+      ctx.strokeStyle = '#a78bfa';
+      ctx.lineWidth = 2;
+      ctx.shadowColor = '#a78bfa'; ctx.shadowBlur = 8;
+      ctx.stroke();
+      // 平台（算力限制）
+      ctx.beginPath();
+      ctx.moveTo(pl + iw * kneeX, pt + ih * 0.22);
+      ctx.lineTo(pl + iw, pt + ih * 0.22);
+      ctx.strokeStyle = '#22d3ee';
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // 两个工作点
+      function dot(fx, fy, color, label, dx, dy) {
+        var x = pl + iw * fx, y = pt + ih - ih * fy;
+        ctx.beginPath(); ctx.arc(x, y, 5, 0, 7);
+        ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 12; ctx.fill(); ctx.shadowBlur = 0;
+        ctx.fillStyle = '#c3cde2';
+        ctx.font = '9.5px -apple-system,sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(label, x + (dx || 9), y + (dy || 3));
+      }
+      if (p > 0.55) dot(0.16, 0.16, '#fb7185', 'decode', 8, 15);
+      if (p > 0.78) dot(0.62, 0.78, '#22d3ee', 'prefill', 9, 16);
+    }
+
+    var t0 = performance.now();
+    (function anim(now) {
+      var p = Math.min(1, (now - t0) / 1400);
+      paint(1 - Math.pow(1 - p, 3));
+      if (p < 1) requestAnimationFrame(anim);
+    })(t0);
+
+    var rz;
+    addEventListener('resize', function () {
+      clearTimeout(rz); rz = setTimeout(function () { paint(1); }, 160);
+    });
+  }
+})();
+</script>
+</body>
+</html>

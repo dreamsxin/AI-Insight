@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="推理原理 11 · 给它一张只能走对路的网：schema 编译成自动机、每步 mask 非法 token、先掩码再采样">
+<title>推理原理 11 · 只能走对路</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--cyan);transform:scale(1.4);box-shadow:0 0 10px rgba(34,211,238,.85)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,rgba(34,211,238,.09)),transparent 70%)}
+  .s1{--glow:rgba(34,211,238,.12)}.s2{--glow:rgba(167,139,250,.08)}.s3{--glow:rgba(52,211,153,.09)}
+  .s4{--glow:rgba(251,191,36,.08)}.s5{--glow:rgba(34,211,238,.09)}.s6{--glow:rgba(251,113,133,.09)}
+  .s7{--glow:rgba(244,114,182,.08)}.s8{--glow:rgba(52,211,153,.09)}.s9{--glow:rgba(167,139,250,.10)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--cyan);
+    border:1px solid rgba(34,211,238,.35);background:rgba(34,211,238,.07);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-wrap{position:relative;width:100%;max-width:640px;height:100%;display:flex;flex-direction:column;align-items:center}
+  .c3d{position:relative;z-index:0;flex:1 1 auto;width:100%;min-height:0;margin-top:2px}
+  .c3d canvas{display:block;width:100%!important;height:100%!important}
+  .hero-inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;flex:0 0 auto;padding-top:1vh}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.55);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(26px,7vw,42px);line-height:1.16;font-weight:800;margin:16px 0 10px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,#22d3ee 5%,#34d399 55%,#a78bfa 95%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em;z-index:3}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 三类约束 */
+  .kinds{display:flex;flex-direction:column;gap:8px;width:100%;max-width:520px}
+  .kd{border:1px solid var(--line);border-radius:11px;background:var(--card);padding:11px 13px}
+  .kd .nm{font-family:var(--mono);font-size:10px;color:var(--cyan);margin-bottom:4px}
+  .kd b{font-size:11.5px;display:block;margin-bottom:3px}
+  .kd p{font-size:10px;color:var(--dim);line-height:1.6}
+  .kd code{font-size:9.5px;color:#a5f3fc}
+
+  /* 自动机 */
+  .fsm{width:100%;max-width:520px}
+  .fsm svg{width:100%;height:auto;display:block}
+
+  /* 解耦 */
+  .split2{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;max-width:500px}
+  .sp2{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px}
+  .sp2 .hd{font-family:var(--mono);font-size:9px;margin-bottom:6px}
+  .sp2.a .hd{color:var(--amber)}
+  .sp2.b .hd{color:var(--cyan)}
+  .sp2 b{font-size:11.5px;display:block;margin-bottom:4px}
+  .sp2 p{font-size:9.5px;color:var(--dim);line-height:1.6}
+
+  /* 候选集合 */
+  .cands{width:100%;max-width:500px}
+  .cand-row{display:flex;gap:5px;flex-wrap:wrap;justify-content:center;margin-bottom:10px}
+  .cd{font-family:var(--mono);font-size:9.5px;padding:4px 8px;border-radius:5px;
+    border:1px solid var(--line);background:rgba(255,255,255,.04);color:#5b6884;text-decoration:line-through}
+  .cd.ok{color:#a7f3d0;border-color:rgba(52,211,153,.45);background:rgba(52,211,153,.12);text-decoration:none}
+  .cand-note{text-align:center;font-size:10.5px;color:var(--dim);line-height:1.7}
+  .cand-note b{color:var(--green)}
+
+  /* mask */
+  .maskbox{width:100%;max-width:500px}
+  .logits{display:flex;gap:3px;height:80px;align-items:flex-end;margin-bottom:8px}
+  .lg{flex:1;border-radius:2px;background:rgba(34,211,238,.45)}
+  .lg.dead{background:rgba(251,113,133,.18);border:1px dashed rgba(251,113,133,.35);height:3px!important}
+  .maskrow{display:flex;justify-content:space-between;font-family:var(--mono);font-size:8.5px;color:var(--dim)}
+  .mask-note{text-align:center;font-size:10.5px;color:var(--dim);margin-top:10px;line-height:1.7}
+  .mask-note b{color:#fda4af}
+
+  /* 顺序 */
+  .order{width:100%;max-width:460px;display:flex;flex-direction:column;gap:8px}
+  .orow{display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card)}
+  .orow .n{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:9px;flex:0 0 18px}
+  .orow.good .n{background:rgba(52,211,153,.18);color:#6ee7b7}
+  .orow.bad .n{background:rgba(251,113,133,.18);color:#fda4af}
+  .orow .t{font-size:10.5px;line-height:1.55}
+  .orow.bad .t{color:#fecdd3}
+  .orow.good .t{color:#a7f3d0}
+  .orow .tag{margin-left:auto;font-family:var(--mono);font-size:8.5px;color:var(--dim)}
+
+  /* JSON 逐字 */
+  .jsonbox{width:100%;max-width:500px;border:1px solid var(--line);border-radius:12px;background:rgba(12,19,34,.75);padding:13px}
+  .jsonline{font-family:var(--mono);font-size:11.5px;line-height:1.9;color:#c3cde2;word-break:break-all}
+  .jsonline .done{color:#a7f3d0}
+  .jsonline .cur{background:rgba(34,211,238,.18);border-radius:3px;padding:0 2px;color:#a5f3fc}
+  .jsonline .rest{color:#5b6884}
+  .jsonmeta{display:flex;gap:14px;margin-top:10px;padding-top:9px;border-top:1px dashed rgba(255,255,255,.12);
+    font-family:var(--mono);font-size:9px;color:var(--dim);flex-wrap:wrap}
+  .jsonmeta b{color:var(--cyan)}
+
+  /* 收尾 */
+  .facts{display:flex;flex-direction:column;gap:8px;width:100%;max-width:500px}
+  .fact{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:11.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10px;color:var(--dim);line-height:1.55}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1 active">
+  <div class="hero-wrap">
+    <div class="hero-inner">
+      <div class="hero-kicker rv d1">推理原理 · 11</div>
+      <h1 class="rv d2">只能走<span class="grad">对的路</span></h1>
+      <p class="hero-sub rv d3">它想写什么都可以。<br>但每一步，只有落在语法里的 token 才被允许。</p>
+    </div>
+    <div class="c3d" id="c3d-net"></div>
+  </div>
+  <div class="next-hint rv d6">向下滚动<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>01</b>三种约束</div>
+    <h2 class="rv d2">给输出画一个圈</h2>
+    <p class="scr-desc rv d3">三种写法，最后都变成同一件事：某一步允不允许。</p>
+  </div>
+  <div class="stage">
+    <div class="kinds">
+      <div class="kd rv d3"><div class="nm">json_schema</div><b>最常用的那种</b><p>字段名、类型、必填项都写在 schema 里。</p></div>
+      <div class="kd rv d4"><div class="nm">regex</div><b>一个正则</b><p>例如订单号 <code>^[A-Z]{2}\d{6}$</code>，逐字符限定。</p></div>
+      <div class="kd rv d5"><div class="nm">ebnf</div><b>一段文法</b><p>比正则更强，能表达嵌套结构。</p></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">不管哪种，都要先被翻译成一台<b>会走路的机器</b>。</div>
+</section>
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>02</b>编译</div>
+    <h2 class="rv d2">schema 变成自动机</h2>
+    <p class="scr-desc rv d3">每个圆圈是一个状态，每条边是"允许写什么"。</p>
+  </div>
+  <div class="stage">
+    <div class="fsm">
+      <svg viewBox="0 0 500 150" aria-hidden="true">
+        <defs>
+          <marker id="arw" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#5b6884"/>
+          </marker>
+        </defs>
+        <circle cx="52" cy="76" r="22" fill="rgba(34,211,238,.1)" stroke="#22d3ee" stroke-width="1.2"/>
+        <text x="52" y="80" fill="#a5f3fc" font-size="9" font-family="monospace" text-anchor="middle">{</text>
+
+        <circle cx="164" cy="76" r="22" fill="rgba(34,211,238,.08)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="164" y="80" fill="#a5f3fc" font-size="9" font-family="monospace" text-anchor="middle">"n</text>
+
+        <circle cx="276" cy="76" r="22" fill="rgba(34,211,238,.08)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="276" y="80" fill="#a5f3fc" font-size="9" font-family="monospace" text-anchor="middle">ame</text>
+
+        <circle cx="388" cy="76" r="22" fill="rgba(52,211,153,.1)" stroke="#34d399" stroke-width="1.2"/>
+        <text x="388" y="80" fill="#a7f3d0" font-size="9" font-family="monospace" text-anchor="middle">"</text>
+
+        <circle cx="470" cy="76" r="16" fill="rgba(52,211,153,.2)" stroke="#34d399" stroke-width="1.6"/>
+        <circle cx="470" cy="76" r="21" fill="none" stroke="#34d399" stroke-opacity=".4"/>
+
+        <line x1="74" y1="76" x2="140" y2="76" stroke="#5b6884" marker-end="url(#arw)"/>
+        <line x1="186" y1="76" x2="252" y2="76" stroke="#5b6884" marker-end="url(#arw)"/>
+        <line x1="298" y1="76" x2="364" y2="76" stroke="#5b6884" marker-end="url(#arw)"/>
+        <line x1="410" y1="76" x2="452" y2="76" stroke="#34d399" marker-end="url(#arw)"/>
+
+        <text x="52" y="120" fill="#5b6884" font-size="8" font-family="monospace" text-anchor="middle">起始</text>
+        <text x="276" y="120" fill="#5b6884" font-size="8" font-family="monospace" text-anchor="middle">只允许字母</text>
+        <text x="470" y="120" fill="#6ee7b7" font-size="8" font-family="monospace" text-anchor="middle">接受</text>
+      </svg>
+      <p style="font-size:10.5px;color:var(--dim);text-align:center;line-height:1.7;margin-top:2px">
+        每读一个 token，沿边走一格。<br>走不到的状态，那个 token 就<b>不允许被采样</b>。
+      </p>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">编译一次，可以服务很多请求 —— 所以它被挪到了<b>推理引擎之外</b>。</div>
+</section>
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>03</b>解耦</div>
+    <h2 class="rv d2">编译的不在关键路径上</h2>
+    <p class="scr-desc rv d3">schema 编译很贵，但只做一次。</p>
+  </div>
+  <div class="stage">
+    <div class="split2">
+      <div class="sp2 a rv d3">
+        <div class="hd">专用编译机</div>
+        <b>把约束编译成自动机</b>
+        <p>异步进行，算完存起来。请求来之前就已经准备好。</p>
+      </div>
+      <div class="sp2 b rv d4">
+        <div class="hd">推理引擎</div>
+        <b>只负责"走一步"</b>
+        <p>每步推进自动机、算合法集合、生成掩码。</p>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">编译与推理分开，意味着<b>编译慢不会拖慢线上</b>。</div>
+</section>
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>04</b>每步</div>
+    <h2 class="rv d2">此刻，只有这些能写</h2>
+    <p class="scr-desc rv d3">自动机往前看一步，给出合法 token 的集合。</p>
+  </div>
+  <div class="stage">
+    <div class="cands">
+      <div class="cand-row">
+        <span class="cd">Sure</span><span class="cd">Here</span><span class="cd">好的</span>
+        <span class="cd ok">{</span><span class="cd ok"> 空格</span><span class="cd ok">"</span>
+        <span class="cd">Sure!</span><span class="cd">```json</span>
+      </div>
+      <p class="cand-note">划掉的是"模型很想说、但语法不允许"的 token。<br>划在 <b>mask</b> 里，不是靠事后修文本。</p>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">注意：这不是提示词里写"请输出 JSON"，而是<b>物理上写不出来</b>。</div>
+</section>
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>05</b>掩码</div>
+    <h2 class="rv d2">把非法项的分数按到底</h2>
+    <p class="scr-desc rv d3">不是删掉，是置成负无穷 —— 采样就永远不会选中。</p>
+  </div>
+  <div class="stage">
+    <div class="maskbox">
+      <div class="logits" id="logits"></div>
+      <div class="maskrow"><span>词表里的候选 token</span><span>红色：被 mask</span></div>
+      <p class="mask-note">mask 是一个和词表等长的向量，<b>每个 decode step 都要算一次</b>。<br>所以它的开销，直接算在 TBT 里。</p>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">掩码让"合法"变成"高概率"，而不是"希望它听话"。</div>
+</section>
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>06</b>顺序</div>
+    <h2 class="rv d2">先掩码，再采样</h2>
+    <p class="scr-desc rv d3">顺序反了，前面全白做。</p>
+  </div>
+  <div class="stage">
+    <div class="order">
+      <div class="orow good rv d3"><span class="n">✓</span><span class="t">先 mask，再 temperature / top_p</span><span class="tag">正确</span></div>
+      <div class="orow bad rv d4"><span class="n">✕</span><span class="t">先采样，再检查合法性</span><span class="tag">已经写出去了</span></div>
+      <div class="orow bad rv d5"><span class="n">✕</span><span class="t">采完发现非法，再回退重写</span><span class="tag">浪费一步</span></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">采样参数照常生效 —— 约束只缩小<b>可选范围</b>，不改变范围内的偏好。</div>
+</section>
+
+<section class="screen s8">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>07</b>走一遍</div>
+    <h2 class="rv d2">一个 JSON，一步步收窄</h2>
+    <p class="scr-desc rv d3">每写一个字符，合法的下一步都在变少。</p>
+  </div>
+  <div class="stage">
+    <div class="jsonbox">
+      <div class="jsonline"><span class="done">{"name": "</span><span class="cur">天</span><span class="rest">…</span></div>
+      <div class="jsonmeta">
+        <span>已走 <b>11</b> 步</span>
+        <span>当前合法集合 <b>≈ 3.2 万</b> 个 token</span>
+        <span>整词表 <b>≈ 12.8 万</b></span>
+      </div>
+    </div>
+    <p class="cand-note" style="margin-top:12px">开头第一个字符只有极少数选择，越往后越宽；<br>遇到引号、括号，可选集合又猛地收窄。</p>
+  </div>
+  <div class="scr-foot rv d6">这也是为什么长 JSON 的 decode 会稍慢 —— <b>每一步都多了一次掩码计算</b>。</div>
+</section>
+
+<section class="screen s9">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>08</b>小结</div>
+    <h2 class="rv d2">最后一步：把 token 变回人话</h2>
+    <p class="scr-desc rv d3">输出合法了，但它还是一串 token。</p>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">🔁</span><div><b>约束即自动机</b><p>schema、正则、文法，最后都编译成状态机。</p></div></div>
+      <div class="fact rv d4"><span class="i">🕳️</span><div><b>掩码定生死</b><p>非法 token 置 −inf，采样只在合法集合里进行。</p></div></div>
+      <div class="fact rv d5"><span class="i">📦</span><div><b>编译在引擎外</b><p>贵的一次性工作挪走，线上只承担每步推进。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">下一集：token 要变成文字流回用户，而字符会被切在两半。</div>
+</section>
+
+<script src="vendor/three.global.js"></script>
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (i === 5) buildLogits();
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+
+  var doneL = false;
+  function buildLogits() {
+    if (doneL) return; doneL = true;
+    var el = document.getElementById('logits');
+    if (!el) return;
+    var N = 34;
+    for (var i = 0; i < N; i++) {
+      var d = document.createElement('div');
+      var legal = [3, 7, 12, 18, 23, 29].indexOf(i) >= 0;
+      var hgt = legal ? 22 + Math.random() * 58 : 3;
+      d.className = 'lg' + (legal ? '' : ' dead');
+      d.style.height = hgt + 'px';
+      d.style.animation = 'rise .4s both';
+      d.style.animationDelay = (i * 0.018) + 's';
+      el.appendChild(d);
+    }
+  }
+
+  /* ---------- 封面 3D：合法路径网 ---------- */
+  var host = document.getElementById('c3d-net');
+  var st = null;
+
+  function init() {
+    if (!window.THREE || !host) return false;
+    var THREE = window.THREE;
+    var w = host.clientWidth, h = host.clientHeight;
+    if (!w || !h) return false;
+
+    var scene = new THREE.Scene();
+    var cam = new THREE.PerspectiveCamera(40, w / h, 0.1, 100);
+    cam.position.set(0, 3.9, 4.7);
+    cam.lookAt(0, -0.1, 0);
+
+    var renderer;
+    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
+    catch (e) { return false; }
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setSize(w, h);
+    host.appendChild(renderer.domElement);
+
+    var group = new THREE.Group();
+    scene.add(group);
+    // 轻微倾斜，像一块倾斜的电路板
+    group.rotation.x = -0.04;
+
+    var COLS = 12, ROWS = 9, SX = 0.42, SZ = 0.42;
+    // 路径：每一步的列固定，行随机游走
+    var path = [];
+    var row = 4;
+    for (var c = 0; c < COLS; c++) {
+      if (c > 0) row = Math.max(0, Math.min(ROWS - 1, row + (Math.random() > 0.5 ? 1 : -1) * (Math.random() > 0.55 ? 1 : 0)));
+      path.push(row);
+    }
+
+    var nodes = [];
+    for (var r = 0; r < ROWS; r++) {
+      for (var c2 = 0; c2 < COLS; c2++) {
+        var onPath = path[c2] === r;
+        var geo = new THREE.SphereGeometry(onPath ? 0.075 : 0.042, 10, 10);
+        var col = onPath ? 0x22d3ee : 0x475569;
+        var mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: onPath ? 0.95 : 0.35 });
+        var m = new THREE.Mesh(geo, mat);
+        m.position.set((c2 - (COLS - 1) / 2) * SX, 0, (r - (ROWS - 1) / 2) * SZ);
+        group.add(m);
+        nodes.push({ m: m, onPath: onPath, ph: Math.random() * 6.28 });
+      }
+    }
+
+    // 合法路径连线
+    for (var i = 1; i < COLS; i++) {
+      var a = new THREE.Vector3((i - 1 - (COLS - 1) / 2) * SX, 0, (path[i - 1] - (ROWS - 1) / 2) * SZ);
+      var b = new THREE.Vector3((i - (COLS - 1) / 2) * SX, 0, (path[i] - (ROWS - 1) / 2) * SZ);
+      var lg = new THREE.BufferGeometry().setFromPoints([a, b]);
+      group.add(new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.75 })));
+    }
+
+    // 被挡住的岔路
+    for (var k = 2; k < COLS - 1; k += 2) {
+      var nr = path[k] === 0 ? 1 : path[k] - 1;
+      var a2 = new THREE.Vector3((k - (COLS - 1) / 2) * SX, 0, (path[k] - (ROWS - 1) / 2) * SZ);
+      var b2 = new THREE.Vector3((k - (COLS - 1) / 2) * SX + 0.13, 0, (nr - (ROWS - 1) / 2) * SZ);
+      var lg2 = new THREE.BufferGeometry().setFromPoints([a2, b2]);
+      group.add(new THREE.Line(lg2, new THREE.LineBasicMaterial({ color: 0xfb7185, transparent: true, opacity: 0.45 })));
+    }
+
+    // 沿路径跑的光点
+    var runner = new THREE.Mesh(
+      new THREE.SphereGeometry(0.085, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 })
+    );
+    group.add(runner);
+
+    st = { scene: scene, cam: cam, renderer: renderer, group: group, nodes: nodes, path: path, runner: runner, COLS: COLS, ROWS: ROWS, SX: SX, SZ: SZ, t: 0 };
+    return true;
+  }
+
+  var last = 0;
+  function loop(now) {
+    if (st && visible()) {
+      var dt = Math.min(0.05, (now - last) / 1000 || 0.016);
+      last = now; st.t += dt;
+      var t = st.t;
+
+      st.group.rotation.z = Math.sin(t * 0.18) * 0.05;
+      st.group.position.y = 0.3 + Math.sin(t * 0.4) * 0.03;
+
+      st.nodes.forEach(function (n) {
+        if (n.onPath) {
+          var s = 1 + Math.sin(t * 2 + n.ph) * 0.12;
+          n.m.scale.setScalar(s);
+        }
+      });
+
+      // 光点沿线跑
+      var total = st.COLS - 1;
+      var p = (t * 0.7) % 1;
+      var seg = Math.min(total - 1, Math.floor(p * total));
+      var frac = p * total - seg;
+      var x1 = (seg - (st.COLS - 1) / 2) * st.SX;
+      var z1 = (st.path[seg] - (st.ROWS - 1) / 2) * st.SZ;
+      var x2 = (seg + 1 - (st.COLS - 1) / 2) * st.SX;
+      var z2 = (st.path[seg + 1] - (st.ROWS - 1) / 2) * st.SZ;
+      st.runner.position.set(x1 + (x2 - x1) * frac, 0.02, z1 + (z2 - z1) * frac);
+      st.runner.material.opacity = 0.55 + Math.sin(p * Math.PI * 3) * 0.3;
+
+      st.renderer.render(st.scene, st.cam);
+    }
+    requestAnimationFrame(loop);
+  }
+
+  function visible() {
+    if (!host) return false;
+    var r = host.getBoundingClientRect();
+    return r.bottom > 0 && r.top < innerHeight;
+  }
+
+  function boot() {
+    if (!init()) {
+      host.style.background = 'radial-gradient(60% 46% at 50% 50%, rgba(34,211,238,.12), transparent 70%)';
+    }
+    requestAnimationFrame(loop);
+  }
+
+  var rz;
+  addEventListener('resize', function () {
+    clearTimeout(rz);
+    rz = setTimeout(function () {
+      if (!st) return;
+      var w = host.clientWidth, h = host.clientHeight;
+      st.cam.aspect = w / h; st.cam.updateProjectionMatrix();
+      st.renderer.setSize(w, h);
+    }, 150);
+  });
+
+  if (document.readyState === 'complete') boot();
+  else addEventListener('load', boot);
+})();
+</script>
+</body>
+</html>

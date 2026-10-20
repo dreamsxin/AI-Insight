@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="推理原理 10 · 专家也会堵车：EPLB 冗余专家副本、统计窗口、周期重排布，以及三级负载均衡">
+<title>推理原理 10 · 专家也会堵车</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--amber);transform:scale(1.4);box-shadow:0 0 10px rgba(251,191,36,.85)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,rgba(251,191,36,.09)),transparent 70%)}
+  .s1{--glow:rgba(251,191,36,.12)}.s2{--glow:rgba(34,211,238,.08)}.s3{--glow:rgba(251,113,133,.09)}
+  .s4{--glow:rgba(251,191,36,.09)}.s5{--glow:rgba(52,211,153,.09)}.s6{--glow:rgba(167,139,250,.09)}
+  .s7{--glow:rgba(34,211,238,.09)}.s8{--glow:rgba(244,114,182,.08)}.s9{--glow:rgba(52,211,153,.10)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--amber);
+    border:1px solid rgba(251,191,36,.35);background:rgba(251,191,36,.07);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-wrap{position:relative;width:100%;max-width:640px;height:100%;display:flex;flex-direction:column;align-items:center}
+  .c3d{position:relative;z-index:0;flex:1 1 auto;width:100%;min-height:0;margin-top:2px}
+  .c3d canvas{display:block;width:100%!important;height:100%!important}
+  .hero-inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;flex:0 0 auto;padding-top:1vh}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.55);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(28px,7.4vw,44px);line-height:1.16;font-weight:800;margin:16px 0 10px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,#fbbf24 5%,#fb7185 55%,#a78bfa 95%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em;z-index:3}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* EP 布局 */
+  .epmap{display:flex;gap:8px;width:100%;max-width:460px;justify-content:center}
+  .card{flex:1;max-width:110px;border:1px solid var(--line);border-radius:9px;background:var(--card);padding:8px 6px}
+  .card .hd{font-family:var(--mono);font-size:8px;color:var(--dim);text-align:center;margin-bottom:6px}
+  .card .ex{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
+  .card .ex i{aspect-ratio:1;border-radius:2px;background:rgba(34,211,238,.28);border:1px solid rgba(34,211,238,.2)}
+  .card .ex i.hot{background:rgba(251,113,133,.65);border-color:rgba(251,113,133,.8)}
+  .card .ex i.warm{background:rgba(251,191,36,.5);border-color:rgba(251,191,36,.6)}
+  .tokenfly{text-align:center;font-family:var(--mono);font-size:9px;color:var(--dim);margin-top:8px}
+  .tokenfly b{color:var(--cyan)}
+
+  /* 木桶 */
+  .bucket{width:100%;max-width:460px}
+  .bk-row{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+  .bk-row .k{width:44px;flex:0 0 44px;font-family:var(--mono);font-size:8.5px;color:var(--dim);text-align:right}
+  .bk-bar{flex:1;height:18px;border-radius:4px;background:rgba(255,255,255,.05);overflow:hidden;position:relative}
+  .bk-bar i{display:block;height:100%;border-radius:4px;width:0;background:linear-gradient(90deg,rgba(52,211,153,.7),rgba(52,211,153,.35))}
+  .screen.active .bk-bar i{animation:fillw 1s cubic-bezier(.22,1,.36,1) .4s forwards}
+  @keyframes fillw{to{width:var(--w)}}
+  .bk-bar.slow i{background:linear-gradient(90deg,rgba(251,113,133,.8),rgba(251,113,133,.45))}
+  .bk-bar .avg{position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,.5)}
+  .bk-row .v{width:42px;flex:0 0 42px;font-family:var(--mono);font-size:8.5px;color:var(--dim)}
+  .bucket .formula{margin-top:12px;text-align:center;font-family:var(--mono);font-size:10px;color:var(--dim);line-height:1.9}
+  .bucket .formula b{color:var(--amber);font-size:11px}
+
+  /* 冗余副本 */
+  .redundant{display:flex;gap:9px;width:100%;max-width:470px}
+  .rd{flex:1;border:1px solid var(--line);border-radius:11px;background:var(--card);padding:10px}
+  .rd .hd{font-family:var(--mono);font-size:8.5px;color:var(--dim);margin-bottom:7px;text-align:center}
+  .rd .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+  .rd .grid i{aspect-ratio:1.35;border-radius:3px;background:rgba(34,211,238,.22);border:1px solid rgba(34,211,238,.18)}
+  .rd .grid i.rep{border:1px dashed rgba(52,211,153,.8);background:rgba(52,211,153,.16)}
+  .rd .ft{font-size:8.5px;color:var(--dim);text-align:center;margin-top:7px;line-height:1.4}
+
+  /* 周期 */
+  .cycle{width:100%;max-width:500px}
+  .cyc-line{display:flex;align-items:center;gap:4px}
+  .cyc-line .seg{flex:1;height:22px;border-radius:4px;background:rgba(34,211,238,.28);
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:7.5px;color:#a5f3fc}
+  .cyc-line .seg.stat{background:rgba(167,139,250,.3);color:#ddd6fe}
+  .cyc-line .seg.shuf{background:rgba(251,191,36,.45);color:#332405;flex:0 0 26px}
+  .cyc-cap{display:flex;justify-content:space-between;font-family:var(--mono);font-size:8px;color:var(--dim);margin-top:6px}
+
+  /* 参数对比 */
+  .params{display:flex;flex-direction:column;gap:9px;width:100%;max-width:500px}
+  .pm{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 13px}
+  .pm .hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
+  .pm .hd b{font-size:11.5px}
+  .pm .hd span{font-family:var(--mono);font-size:8.5px;padding:2px 7px;border-radius:4px}
+  .pm.pf .hd span{background:rgba(34,211,238,.13);color:#7ee7f7}
+  .pm.dc .hd span{background:rgba(167,139,250,.13);color:#c4b5fd}
+  .pm .row{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);padding:3px 0}
+  .pm .row b{color:#e8eefc;font-family:var(--mono);font-size:9.5px}
+
+  /* 三级 LB */
+  .lbs{display:flex;flex-direction:column;gap:7px;width:100%;max-width:500px}
+  .lb{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+  .lb .n{font-family:var(--mono);font-size:8.5px;color:var(--cyan);flex:0 0 48px}
+  .lb .t{font-size:10px;color:#aab6cf;line-height:1.55}
+  .lb .t b{color:#e8eefc}
+
+  /* 收尾 */
+  .facts{display:flex;flex-direction:column;gap:8px;width:100%;max-width:500px}
+  .fact{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:11.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10px;color:var(--dim);line-height:1.55}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1 active">
+  <div class="hero-wrap">
+    <div class="hero-inner">
+      <div class="hero-kicker rv d1">推理原理 · 10</div>
+      <h1 class="rv d2">专家也会<span class="grad">堵车</span></h1>
+      <p class="hero-sub rv d3">MoE 把专家分到很多卡上。<br>可总有几个专家，被所有人抢着用。</p>
+    </div>
+    <div class="c3d" id="c3d-heat"></div>
+  </div>
+  <div class="next-hint rv d6">向下滚动<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>01</b>布局</div>
+    <h2 class="rv d2">专家分居，token 上门</h2>
+    <p class="scr-desc rv d3">每张卡守一部分专家，token 按路由飞过去计算。</p>
+  </div>
+  <div class="stage">
+    <div class="epmap">
+      <div class="card rv d3"><div class="hd">GPU 0</div><div class="ex" id="e1"></div></div>
+      <div class="card rv d3"><div class="hd">GPU 1</div><div class="ex" id="e2"></div></div>
+      <div class="card rv d4"><div class="hd">GPU 2</div><div class="ex" id="e3"></div></div>
+      <div class="card rv d4"><div class="hd">GPU 3</div><div class="ex" id="e4"></div></div>
+    </div>
+    <p class="tokenfly rv d5">一批 token 进来 → 路由到 <b>各自的专家</b> → 结果再汇合</p>
+  </div>
+  <div class="scr-foot rv d6">问题在于：下一批 token 会选中谁，事先并不知道。</div>
+</section>
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>02</b>热点</div>
+    <h2 class="rv d2">少数专家，吃掉大部分流量</h2>
+    <p class="scr-desc rv d3">热门专家所在的那张卡，就成了瓶颈。</p>
+  </div>
+  <div class="stage">
+    <div class="epmap">
+      <div class="card rv d3"><div class="hd">GPU 0</div><div class="ex" id="f1"></div></div>
+      <div class="card rv d3"><div class="hd">GPU 1</div><div class="ex" id="f2"></div></div>
+      <div class="card rv d4"><div class="hd">GPU 2</div><div class="ex" id="f3"></div></div>
+      <div class="card rv d4"><div class="hd">GPU 3</div><div class="ex" id="f4"></div></div>
+    </div>
+    <p class="tokenfly rv d5">红色格子 = 被选中次数远高于平均</p>
+  </div>
+  <div class="scr-foot rv d6">专家分布是训练出来的，不是部署时能改的 —— 只能<b>在运行时搬</b>。</div>
+</section>
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>03</b>木桶</div>
+    <h2 class="rv d2">最慢的那张卡，决定整步时间</h2>
+    <p class="scr-desc rv d3">所有卡要等齐才能进入下一步，快的没用。</p>
+  </div>
+  <div class="stage">
+    <div class="bucket">
+      <div class="bk-row rv d3"><span class="k">rank 0</span><div class="bk-bar"><i style="--w:62%"></i><span class="avg" style="left:78%"></span></div><span class="v">0.62</span></div>
+      <div class="bk-row rv d3"><span class="k">rank 1</span><div class="bk-bar"><i style="--w:74%"></i></div><span class="v">0.74</span></div>
+      <div class="bk-row rv d4"><span class="k">rank 2</span><div class="bk-bar slow"><i style="--w:98%"></i></div><span class="v">0.98</span></div>
+      <div class="bk-row rv d4"><span class="k">rank 3</span><div class="bk-bar"><i style="--w:68%"></i></div><span class="v">0.68</span></div>
+      <div class="formula rv d5">moe_lb = 最慢 rank / 平均 = <b>1.09</b><br>意思是：这一步有 <b>9%</b> 的时间在干等</div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">这个比值越接近 1 越好。但完全等于 1 是不可能的 —— 只能逼近。</div>
+</section>
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>04</b>副本</div>
+    <h2 class="rv d2">给热门专家，多备几份</h2>
+    <p class="scr-desc rv d3">每张卡除了自己的专家，再多托管几个热专家的副本。</p>
+  </div>
+  <div class="stage">
+    <div class="redundant">
+      <div class="rd rv d3">
+        <div class="hd">改之前</div>
+        <div class="grid" id="r1"></div>
+        <div class="ft">热专家只有一份<br>所有流量挤向同一张卡</div>
+      </div>
+      <div class="rd rv d4">
+        <div class="hd">加冗余之后</div>
+        <div class="grid" id="r2"></div>
+        <div class="ft">虚线格 = 副本<br>流量可以就近落到别的卡</div>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">冗余不是免费的：每多一份副本，就多占一份显存放权重。</div>
+</section>
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>05</b>重排</div>
+    <h2 class="rv d2">统计一段，再洗一次牌</h2>
+    <p class="scr-desc rv d3">不是实时调，而是按窗口收集、按周期重排。</p>
+  </div>
+  <div class="stage">
+    <div class="cycle">
+      <div class="cyc-line">
+        <div class="seg stat rv d3">统计窗口</div>
+        <div class="seg stat rv d3">统计窗口</div>
+        <div class="seg stat rv d4">统计窗口</div>
+        <div class="seg shuf rv d5">重排</div>
+        <div class="seg stat rv d5">统计窗口</div>
+      </div>
+      <div class="cyc-cap rv d6"><span>过去 N 步的专家负载</span><span>每 M 步搬一次</span></div>
+    </div>
+    <p class="tokenfly rv d6" style="margin-top:14px">权重的搬运走卡间高速互联（<b>symm_mem</b>），服务不中断</p>
+  </div>
+  <div class="scr-foot rv d6">重排太勤会扰动，太懒会失衡 —— 窗口和周期都是调出来的。</div>
+</section>
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>06</b>参数</div>
+    <h2 class="rv d2">两段用的参数，差一个量级</h2>
+    <p class="scr-desc rv d3">因为它们的负载变化速度完全不同。</p>
+  </div>
+  <div class="stage">
+    <div class="params">
+      <div class="pm pf rv d3">
+        <div class="hd"><b>Prefill · 抖得厉害</b><span>EP4DP4 / EP2DP2</span></div>
+        <div class="row"><span>冗余专家</span><b>4 个 / 卡</b></div>
+        <div class="row"><span>统计窗口</span><b>100 步</b></div>
+        <div class="row"><span>重排周期</span><b>每 1000 步</b></div>
+        <div class="row"><span>实测 moe_lb</span><b>1.074 / 1.045</b></div>
+      </div>
+      <div class="pm dc rv d5">
+        <div class="hd"><b>Decode · 慢变</b><span>EP64</span></div>
+        <div class="row"><span>冗余专家</span><b>1 个 / 卡</b></div>
+        <div class="row"><span>统计窗口</span><b>1000 步</b></div>
+        <div class="row"><span>重排周期</span><b>每 10000 步</b></div>
+        <div class="row"><span>实测 moe_lb</span><b>1.090</b></div>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">prefill 是大 batch 同步突发，负载抖；decode 每步只走一小撮，慢变。</div>
+</section>
+
+<section class="screen s8">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>07</b>全局</div>
+    <h2 class="rv d2">除了专家，还有三层要均衡</h2>
+    <p class="scr-desc rv d3">专家只是最细的一层。</p>
+  </div>
+  <div class="stage">
+    <div class="lbs">
+      <div class="lb rv d3"><span class="n">PREFILL</span><span class="t">按上下文长度分 4 档桶，配额按上一轮需求<b>动态重分配</b></span></div>
+      <div class="lb rv d4"><span class="n">DECODE</span><span class="t">同时看<b>请求数</b>和 <b>KV 总长</b>两个维度，短请求去长队列的卡</span></div>
+      <div class="lb rv d5"><span class="n">VE</span><span class="t">按 <b>patch 数</b>（宽/patch × 高/patch）挑最闲的那张卡</span></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">三层加起来，能做到理想均衡离线基准的<b>约 80%</b> —— 剩下的 20% 是与真实流量搏斗的成本。</div>
+</section>
+
+<section class="screen s9">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>08</b>小结</div>
+    <h2 class="rv d2">算得又快又匀了，但输出还不一定合法</h2>
+    <p class="scr-desc rv d3">下一集：让它只能写出我们要的格式。</p>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">🚦</span><div><b>木桶决定速度</b><p>一步的时间由最慢的 rank 决定，均值再好看也没用。</p></div></div>
+      <div class="fact rv d4"><span class="i">📦</span><div><b>冗余副本换均衡</b><p>热专家多备几份，用显存换掉那 9% 的干等。</p></div></div>
+      <div class="fact rv d5"><span class="i">🕒</span><div><b>窗口 + 周期</b><p>统计一段、重排一次，两段的工作负载节奏不同，参数也不同。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">下一集：schema 变成自动机，每一步只留下合法的 token。</div>
+</section>
+
+<script src="vendor/three.global.js"></script>
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (i === 1) buildEx(['e1', 'e2', 'e3', 'e4'], false);
+        if (i === 2) buildEx(['f1', 'f2', 'f3', 'f4'], true);
+        if (i === 4) buildRep();
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+
+  /* 专家网格 */
+  function buildEx(ids, hot) {
+    ids.forEach(function (id, ci) {
+      var el = document.getElementById(id);
+      if (!el || el.dataset.done) return;
+      el.dataset.done = '1';
+      for (var i = 0; i < 12; i++) {
+        var c = document.createElement('i');
+        if (hot) {
+          if (ci === 1 && (i === 2 || i === 3 || i === 6)) c.className = 'hot';
+          else if (ci === 2 && i === 5) c.className = 'warm';
+        }
+        el.appendChild(c);
+      }
+    });
+  }
+
+  function buildRep() {
+    [['r1', false], ['r2', true]].forEach(function (cfg) {
+      var el = document.getElementById(cfg[0]);
+      if (!el || el.dataset.done) return;
+      el.dataset.done = '1';
+      for (var i = 0; i < 12; i++) {
+        var c = document.createElement('i');
+        if (cfg[1] && (i === 4 || i === 9)) c.className = 'rep';
+        if (!cfg[1] && (i === 1 || i === 4)) c.style.background = 'rgba(251,113,133,.5)';
+        if (cfg[1] && (i === 1 || i === 4)) c.style.background = 'rgba(251,113,133,.35)';
+        el.appendChild(c);
+      }
+    });
+  }
+
+  /* ---------- 封面 3D：热力专家阵列 ---------- */
+  var host = document.getElementById('c3d-heat');
+  var st = null;
+
+  function init() {
+    if (!window.THREE || !host) return false;
+    var THREE = window.THREE;
+    var w = host.clientWidth, h = host.clientHeight;
+    if (!w || !h) return false;
+
+    var scene = new THREE.Scene();
+    var cam = new THREE.PerspectiveCamera(38, w / h, 0.1, 100);
+    cam.position.set(0, 4.4, 6.4);
+    cam.lookAt(0, 0.1, 0);
+
+    var renderer;
+    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
+    catch (e) { return false; }
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setSize(w, h);
+    host.appendChild(renderer.domElement);
+
+    var group = new THREE.Group();
+    scene.add(group);
+
+    var N = 8, SP = 0.44;
+    var cubes = [];
+    // 造几个热点
+    var hotSpots = [{ r: 2, c: 3, s: 0.95 }, { r: 5, c: 5, s: 0.72 }, { r: 1, c: 6, s: 0.55 }, { r: 6, c: 2, s: 0.5 }];
+
+    for (var r = 0; r < N; r++) {
+      for (var c = 0; c < N; c++) {
+        var load = 0.16 + Math.random() * 0.16;
+        hotSpots.forEach(function (hs) {
+          var d = Math.hypot(r - hs.r, c - hs.c);
+          load += hs.s * Math.exp(-d * d / 0.9);
+        });
+        load = Math.min(1.05, load);
+
+        var hgt = 0.06 + load * 0.62;
+        var geo = new THREE.BoxGeometry(0.3, hgt, 0.3);
+        var col = 0x22d3ee;
+        if (load > 0.62) col = 0xfb7185;
+        else if (load > 0.42) col = 0xfbbf24;
+        else if (load > 0.28) col = 0x34d399;
+
+        var mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.42 });
+        var m = new THREE.Mesh(geo, mat);
+        var px = (c - (N - 1) / 2) * SP, pz = (r - (N - 1) / 2) * SP;
+        m.position.set(px, hgt / 2 - 0.35, pz);
+        group.add(m);
+
+        var e = new THREE.LineSegments(new THREE.EdgesGeometry(geo),
+          new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.85 }));
+        e.position.copy(m.position);
+        group.add(e);
+
+        cubes.push({ mesh: m, edge: e, base: m.position.y, h: hgt, ph: Math.random() * 6.28, load: load });
+      }
+    }
+
+    // 底座网格线
+    var pts = [];
+    var half = (N - 1) / 2 * SP + 0.22;
+    for (var i2 = 0; i2 <= N; i2++) {
+      var p2 = -half + i2 * (half * 2 / N);
+      pts.push(-half, -0.36, p2, half, -0.36, p2);
+      pts.push(p2, -0.36, -half, p2, -0.36, half);
+    }
+    var lg = new THREE.BufferGeometry();
+    lg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    var lines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x64748b, transparent: true, opacity: 0.13 }));
+    group.add(lines);
+
+    st = { scene: scene, cam: cam, renderer: renderer, group: group, cubes: cubes, t: 0 };
+    return true;
+  }
+
+  var last = 0;
+  function loop(now) {
+    if (st && visible()) {
+      var dt = Math.min(0.05, (now - last) / 1000 || 0.016);
+      last = now; st.t += dt;
+      var t = st.t;
+
+      st.group.rotation.y = 0.5 + Math.sin(t * 0.2) * 0.26;
+      st.group.position.y = 0.28 + Math.sin(t * 0.45) * 0.03;
+
+      st.cubes.forEach(function (b) {
+        var s = 1 + Math.sin(t * 1.3 + b.ph) * 0.03 * b.load;
+        b.mesh.scale.y = s;
+        b.edge.scale.y = s;
+        var yOff = b.h * (s - 1) / 2;
+        b.mesh.position.y = b.base + yOff;
+        b.edge.position.y = b.base + yOff;
+      });
+
+      st.renderer.render(st.scene, st.cam);
+    }
+    requestAnimationFrame(loop);
+  }
+
+  function visible() {
+    if (!host) return false;
+    var r = host.getBoundingClientRect();
+    return r.bottom > 0 && r.top < innerHeight;
+  }
+
+  function boot() {
+    if (!init()) {
+      host.style.background = 'radial-gradient(60% 46% at 50% 50%, rgba(251,191,36,.12), transparent 70%)';
+    }
+    requestAnimationFrame(loop);
+  }
+
+  var rz;
+  addEventListener('resize', function () {
+    clearTimeout(rz);
+    rz = setTimeout(function () {
+      if (!st) return;
+      var w = host.clientWidth, h = host.clientHeight;
+      st.cam.aspect = w / h; st.cam.updateProjectionMatrix();
+      st.renderer.setSize(w, h);
+    }, 150);
+  });
+
+  if (document.readyState === 'complete') boot();
+  else addEventListener('load', boot);
+})();
+</script>
+</body>
+</html>

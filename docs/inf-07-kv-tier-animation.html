@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="推理原理 07 · 缓存金字塔：HBM、主机内存、3FS 三级 KV 存储，前缀命中、异步取回、TTL 与 GC">
+<title>推理原理 07 · 缓存金字塔</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--green);transform:scale(1.4);box-shadow:0 0 10px rgba(52,211,153,.85)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,rgba(52,211,153,.09)),transparent 70%)}
+  .s1{--glow:rgba(52,211,153,.12)}.s2{--glow:rgba(52,211,153,.08)}.s3{--glow:rgba(251,191,36,.08)}
+  .s4{--glow:rgba(34,211,238,.09)}.s5{--glow:rgba(167,139,250,.09)}.s6{--glow:rgba(34,211,238,.08)}
+  .s7{--glow:rgba(251,191,36,.09)}.s8{--glow:rgba(251,113,133,.08)}.s9{--glow:rgba(52,211,153,.10)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--green);
+    border:1px solid rgba(52,211,153,.35);background:rgba(52,211,153,.07);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-wrap{position:relative;width:100%;max-width:640px;height:100%;display:flex;flex-direction:column;align-items:center}
+  .c3d{position:relative;z-index:0;flex:1 1 auto;width:100%;min-height:0;margin-top:4px}
+  .c3d canvas{display:block;width:100%!important;height:100%!important}
+  .hero-inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;flex:0 0 auto;padding-top:1vh}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.55);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(28px,7.4vw,44px);line-height:1.16;font-weight:800;margin:16px 0 10px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,#34d399 5%,#22d3ee 55%,#a78bfa 95%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em;z-index:3}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 三层表 */
+  .tiers3{display:flex;flex-direction:column;gap:8px;width:100%;max-width:540px}
+  .tier3{display:flex;gap:11px;align-items:center;padding:11px 13px;border-radius:12px;border:1px solid var(--line);background:var(--card)}
+  .tier3 .lv{font-family:var(--mono);font-size:9px;color:var(--dim);width:16px;flex:0 0 16px;text-align:center}
+  .tier3 .nm{font-size:12px;font-weight:600;flex:0 0 84px}
+  .tier3 .ds{font-size:10px;color:var(--dim);line-height:1.5}
+  .tier3 .md{margin-left:auto;font-family:var(--mono);font-size:8.5px;padding:2px 6px;border-radius:4px;white-space:nowrap}
+  .tier3.a .nm{color:#7ee7f7}.tier3.a .md{background:rgba(34,211,238,.13);color:#7ee7f7}
+  .tier3.b .nm{color:#a7f3d0}.tier3.b .md{background:rgba(52,211,153,.13);color:#a7f3d0}
+  .tier3.c .nm{color:#c4b5fd}.tier3.c .md{background:rgba(167,139,250,.13);color:#c4b5fd}
+
+  /* 冲突 */
+  .conflict{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;max-width:520px}
+  .cf{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px}
+  .cf .hd{font-size:10.5px;font-weight:600;margin-bottom:6px}
+  .cf p{font-size:10px;color:var(--dim);line-height:1.65}
+  .cf.bad{border-color:rgba(251,113,133,.3);background:rgba(251,113,133,.05)}
+  .cf.bad .hd{color:#fda4af}
+  .cf.good{border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.05)}
+  .cf.good .hd{color:#6ee7b7}
+  .vs{align-self:center;font-family:var(--mono);font-size:10px;color:var(--dim);text-align:center}
+
+  /* 命中链路 */
+  .chain{width:100%;max-width:520px;display:flex;flex-direction:column;gap:7px}
+  .ch-row{display:flex;align-items:center;gap:8px}
+  .ch-row .st{width:56px;flex:0 0 56px;font-family:var(--mono);font-size:8.5px;color:var(--dim);text-align:right}
+  .ch-bar{flex:1;height:30px;border-radius:7px;border:1px solid var(--line);display:flex;overflow:hidden;background:rgba(255,255,255,.02)}
+  .ch-bar i{display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:8px;border-right:1px solid rgba(7,11,20,.5)}
+  .h1b{background:rgba(34,211,238,.5);color:#052630}
+  .h2b{background:rgba(251,191,36,.5);color:#332405}
+  .h3b{background:rgba(167,139,250,.4);color:#1a1330}
+  .ch-note{font-size:10px;color:var(--dim);text-align:center;line-height:1.7;margin-top:6px}
+  .ch-note b{color:#c3cde2}
+
+  /* 取回链路 */
+  .fetch{width:100%;max-width:520px;display:flex;align-items:center;justify-content:space-between;gap:6px}
+  .fx{flex:1;text-align:center;position:relative}
+  .fx .box{border:1px solid var(--line);border-radius:9px;background:var(--card);padding:10px 6px}
+  .fx .box b{font-size:10.5px;display:block}
+  .fx .box p{font-size:8.5px;color:var(--dim);margin-top:3px;line-height:1.4}
+  .fx .ar{position:absolute;right:-9px;top:50%;transform:translateY(-50%);color:var(--dim);font-size:11px;z-index:2}
+  .fetch-cap{font-size:10px;color:var(--dim);text-align:center;margin-top:10px;line-height:1.7}
+  .fetch-cap b{color:var(--cyan)}
+
+  /* 容量账 */
+  .nums3{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:480px}
+  .num3{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:13px 12px;text-align:center}
+  .num3 .v{font-family:var(--mono);font-size:clamp(16px,4.4vw,20px);font-weight:800;color:var(--green)}
+  .num3 .v small{font-size:.5em;color:var(--dim);margin-left:2px}
+  .num3 .k{font-size:9.5px;color:var(--dim);margin-top:5px;line-height:1.45}
+
+  /* TTL 曲线 */
+  .chartbox{width:100%;max-width:500px;position:relative}
+  .chartbox canvas{width:100%;height:clamp(140px,30vh,180px);display:block}
+  .chartnote{font-size:10px;color:var(--dim);text-align:center;margin-top:6px;line-height:1.7}
+  .chartnote b{color:var(--amber)}
+
+  /* GC */
+  .gc{width:100%;max-width:480px;display:flex;flex-direction:column;gap:7px}
+  .gcrow{display:flex;align-items:center;gap:8px;font-size:10px;color:#aab6cf}
+  .gcrow .bx{width:14px;height:14px;border-radius:3px;background:rgba(52,211,153,.4);flex:0 0 14px}
+  .gcrow .bx.gone{background:rgba(251,113,133,.2);border:1px dashed rgba(251,113,133,.5)}
+
+  /* 收尾 */
+  .facts{display:flex;flex-direction:column;gap:8px;width:100%;max-width:500px}
+  .fact{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:11.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10px;color:var(--dim);line-height:1.55}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1 active">
+  <div class="hero-wrap">
+    <div class="hero-inner">
+      <div class="hero-kicker rv d1">推理原理 · 07</div>
+      <h1 class="rv d2">缓存<span class="grad">金字塔</span></h1>
+      <p class="hero-sub rv d3">算过的东西，<br>按"离 GPU 多远"分三层存着。</p>
+    </div>
+    <div class="c3d" id="c3d-pyramid"></div>
+  </div>
+  <div class="next-hint rv d6">向下滚动<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>01</b>三层</div>
+    <h2 class="rv d2">热的在显存，温的在内存，冷的在存储</h2>
+    <p class="scr-desc rv d3">不是所有 KV 都值得占显存，也不是所有 KV 都值得丢。</p>
+  </div>
+  <div class="stage">
+    <div class="tiers3">
+      <div class="tier3 a rv d3"><span class="lv">1</span><span class="nm">HBM 显存</span><span class="ds">在飞的块 + 状态缓存，引擎自己管</span><span class="md">最快</span></div>
+      <div class="tier3 b rv d4"><span class="lv">2</span><span class="nm">主机内存</span><span class="ds">滑动窗口 KV，单副本，跟着机器走</span><span class="md">跨机 400G 拉取</span></div>
+      <div class="tier3 c rv d5"><span class="lv">3</span><span class="nm">3FS 存储</span><span class="ds">分页块 KV，全集群共享，容量最大</span><span class="md">最便宜</span></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">越往下越便宜、越慢、越大。命中哪一层，决定了这次省多少。</div>
+</section>
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>02</b>选址</div>
+    <h2 class="rv d2">为什么不放本地盘</h2>
+    <p class="scr-desc rv d3">本地缓存会让"命中"和"均衡"打架。</p>
+  </div>
+  <div class="stage">
+    <div class="conflict">
+      <div class="cf bad rv d3">
+        <div class="hd">放本地机</div>
+        <p>想让前缀命中，就得把请求发到"有这份缓存"的机器。<br>可负载均衡想把请求发给"最闲"的机器。<br>两件事互相拧着。</p>
+      </div>
+      <div class="vs rv d3">vs</div>
+      <div class="cf good rv d4">
+        <div class="hd">放共享存储</div>
+        <p>任何一台 prefill 机都能命中任意前缀。<br>路由只看忙闲，不必看缓存在哪。</p>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">代价是每次命中都要走一次网络 —— <b>但至少不用二选一</b>。</div>
+</section>
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>03</b>命中</div>
+    <h2 class="rv d2">先算清命中多长，再决定发给谁</h2>
+    <p class="scr-desc rv d3">只查元数据，不搬 KV。这一步省不掉，但很快。</p>
+  </div>
+  <div class="stage">
+    <div class="chain">
+      <div class="ch-row rv d3"><span class="st">前缀哈希链</span><div class="ch-bar">
+        <i class="h1b" style="width:22%">块 1</i><i class="h1b" style="width:22%">块 2</i>
+        <i class="h2b" style="width:22%">块 3</i><i class="h3b" style="width:34%">未命中</i></div></div>
+      <p class="ch-note rv d4">命中长度 = <b>连续命中的块数</b>（按 128 token 对齐）<br>这个数字必须<b>在路由之前</b>拿到，所以它藏不掉。</p>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">其余环节都能异步重叠，唯独"算命中长度"站在关键路径上。</div>
+</section>
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>04</b>搬运</div>
+    <h2 class="rv d2">取回 KV 的三段路</h2>
+    <p class="scr-desc rv d3">从存储到显存，不能一口气堵在路上。</p>
+  </div>
+  <div class="stage">
+    <div class="fetch">
+      <div class="fx rv d3"><div class="box"><b>3FS</b><p>单独进程异步拉</p></div><span class="ar">→</span></div>
+      <div class="fx rv d4"><div class="box"><b>共享内存</b><p>先落主机内存</p></div><span class="ar">→</span></div>
+      <div class="fx rv d5"><div class="box"><b>HBM</b><p>逐层换入</p></div></div>
+    </div>
+    <p class="fetch-cap rv d6">换入时用 <b>GDR</b>：让网卡直接读写显存，占用 PCIe 但不占 SM。<br>因为 CUDA 拷贝引擎处理这种<b>细碎块</b>很不划算。</p>
+  </div>
+  <div class="scr-foot rv d6">目标是让"搬 KV"和"算前向"同时进行，而不是串起来。</div>
+</section>
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>05</b>账本</div>
+    <h2 class="rv d2">这套缓存的量级</h2>
+    <p class="scr-desc rv d3">容量决定了能留住多少人的"上次对话"。</p>
+  </div>
+  <div class="stage">
+    <div class="nums3">
+      <div class="num3 rv d3"><div class="v">14.4<small>TB / GPU</small></div><div class="k">逻辑容量<br>（物理还要更多）</div></div>
+      <div class="num3 rv d4"><div class="v">100<small>PiB</small></div><div class="k">整个 KV 存储集群<br>的 SSD 规模</div></div>
+      <div class="num3 rv d5"><div class="v">20<small>× 30.73TB</small></div><div class="k">单台存储节点<br>的 SSD 配置</div></div>
+      <div class="num3 rv d5"><div class="v">40<small>GB/s</small></div><div class="k">单节点读带宽<br>（写 5 GB/s）</div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">每个 GPU 摊到十几 TB 的缓存预算 —— 这是"敢留 3 天"的底气。</div>
+</section>
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>06</b>过期</div>
+    <h2 class="rv d2">留三天，还是七天</h2>
+    <p class="scr-desc rv d3">对话流量的命中是长尾的：少数 KV 被反复读很多次。</p>
+  </div>
+  <div class="stage">
+    <div class="chartbox">
+      <canvas id="ttl"></canvas>
+      <div class="chartnote rv d5">把 chatbot 的 TTL 从 7 天砍到 3 天，命中率只损失 <b>0.5%–1%</b>。<br>agent 流量则用 3 天。</div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">这不是拍脑袋：长尾曲线在 3 天之后已经<b>平得几乎看不出来</b>。</div>
+</section>
+
+<section class="screen s8">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>07</b>回收</div>
+    <h2 class="rv d2">谁负责删</h2>
+    <p class="scr-desc rv d3">缓存服务自己不判过期，交给存储层做。</p>
+  </div>
+  <div class="stage">
+    <div class="gc">
+      <div class="gcrow rv d3"><i class="bx"></i>存储节点上跑一个 GC Worker</div>
+      <div class="gcrow rv d4"><i class="bx"></i>按 LRU 驱逐最久没被读的块</div>
+      <div class="gcrow rv d5"><i class="bx gone"></i>压到水位线以下就停手</div>
+      <div class="gcrow rv d6" style="color:var(--dim)">数据本身有 10+2 纠删码，容忍两台节点同时故障</div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">缓存层不设 TTL 逻辑，只设"留多久"的策略 —— <b>删的活交给更懂磁盘的人</b>。</div>
+</section>
+
+<section class="screen s9">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>08</b>小结</div>
+    <h2 class="rv d2">块缓存有了，滑动窗口那部分呢</h2>
+    <p class="scr-desc rv d3">不是所有 KV 都适合按块存。</p>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">🏔️</span><div><b>三级介质</b><p>显存 → 主机内存 → 共享存储，按热度和成本分层。</p></div></div>
+      <div class="fact rv d4"><span class="i">📡</span><div><b>共享让路由自由</b><p>任何机器都能命中任意前缀，不必为缓存牺牲均衡。</p></div></div>
+      <div class="fact rv d5"><span class="i">⏳</span><div><b>TTL 是性价比题</b><p>3 天换回 99% 的命中率，剩下的长尾不值得再付钱。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">下一集：滑动窗口的 KV 不按块存，那它怎么复用？答案是<b>只重算一小段</b>。</div>
+</section>
+
+<script src="vendor/three.global.js"></script>
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (i === 6) drawTTL();
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+
+  /* TTL 命中率曲线 */
+  var drawn = false;
+  function drawTTL() {
+    if (drawn) return; drawn = true;
+    var cv = document.getElementById('ttl');
+    if (!cv) return;
+    var ctx = cv.getContext('2d');
+    var dpr = Math.min(devicePixelRatio || 1, 2);
+
+    function paint(p) {
+      var w = cv.clientWidth, h = cv.clientHeight;
+      if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      var pl = 32, pr = 16, pt = 16, pb = 26;
+      var iw = w - pl - pr, ih = h - pt - pb;
+
+      ctx.strokeStyle = 'rgba(255,255,255,.07)';
+      for (var g = 0; g <= 4; g++) {
+        var y = pt + ih * g / 4;
+        ctx.beginPath(); ctx.moveTo(pl, y); ctx.lineTo(pl + iw, y); ctx.stroke();
+      }
+
+      // 命中率曲线：7 天内快速上升后趋平
+      function hit(t) { return 0.62 + 0.36 * (1 - Math.exp(-t * 1.35)); }
+
+      ctx.beginPath();
+      var N = 80;
+      for (var i = 0; i <= N * p; i++) {
+        var t = i / N * 7;
+        var x = pl + iw * (i / N);
+        var y = pt + ih - ih * hit(t);
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+      ctx.strokeStyle = '#34d399'; ctx.lineWidth = 2.2;
+      ctx.shadowColor = '#34d399'; ctx.shadowBlur = 9; ctx.stroke(); ctx.shadowBlur = 0;
+
+      // 3 天 / 7 天标记
+      [3, 7].forEach(function (d, k) {
+        var x = pl + iw * (d / 7);
+        var y = pt + ih - ih * hit(d);
+        ctx.setLineDash([3, 4]);
+        ctx.strokeStyle = 'rgba(255,255,255,.18)';
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, pt + ih); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.arc(x, y, 3.6, 0, 7);
+        ctx.fillStyle = k ? '#34d399' : '#fbbf24'; ctx.fill();
+        ctx.fillStyle = k ? '#8b96ad' : '#fbbf24';
+        ctx.font = '9px ui-monospace,monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(d + ' 天', x, pt + ih + 13);
+      });
+
+      ctx.fillStyle = 'rgba(139,150,173,.9)';
+      ctx.font = '9px ui-monospace,monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText('命中率', pl - 4, pt + 8);
+      ctx.textAlign = 'left';
+      ctx.fillText('低', pl - 2, pt + ih + 10);
+      ctx.textAlign = 'right';
+      ctx.fillText('高', pl - 2, pt + 12);
+    }
+
+    var t0 = performance.now();
+    (function anim(now) {
+      var p = Math.min(1, (now - t0) / 1500);
+      paint(1 - Math.pow(1 - p, 3));
+      if (p < 1) requestAnimationFrame(anim);
+    })(t0);
+
+    var rz;
+    addEventListener('resize', function () {
+      clearTimeout(rz); rz = setTimeout(function () { paint(1); }, 160);
+    });
+  }
+
+  /* ---------- 封面 3D：三层金字塔 ---------- */
+  var host = document.getElementById('c3d-pyramid');
+  var st = null;
+
+  function init() {
+    if (!window.THREE || !host) return false;
+    var THREE = window.THREE;
+    var w = host.clientWidth, h = host.clientHeight;
+    if (!w || !h) return false;
+
+    var scene = new THREE.Scene();
+    var cam = new THREE.PerspectiveCamera(40, w / h, 0.1, 100);
+    cam.position.set(0, 2.1, 7.6);
+    cam.lookAt(0, -0.1, 0);
+
+    var renderer;
+    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
+    catch (e) { return false; }
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setSize(w, h);
+    host.appendChild(renderer.domElement);
+
+    var group = new THREE.Group();
+    scene.add(group);
+
+    var tiers = [
+      { r: 1.05, y: 0.82, c: 0x22d3ee, op: 0.16 },
+      { r: 1.85, y: 0.0, c: 0x34d399, op: 0.11 },
+      { r: 2.75, y: -0.82, c: 0xa78bfa, op: 0.08 }
+    ];
+
+    var plates = [];
+    tiers.forEach(function (t, i) {
+      var geo = new THREE.CylinderGeometry(t.r, t.r, 0.12, 48, 1, false);
+      var mat = new THREE.MeshBasicMaterial({ color: t.c, transparent: true, opacity: t.op });
+      var m = new THREE.Mesh(geo, mat);
+      m.position.y = t.y;
+      group.add(m);
+
+      var ring = new THREE.Mesh(
+        new THREE.RingGeometry(t.r * 0.985, t.r, 48),
+        new THREE.MeshBasicMaterial({ color: t.c, transparent: true, opacity: 0.6, side: THREE.DoubleSide })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = t.y + 0.061;
+      group.add(ring);
+
+      // 内圈纹理
+      var inner = new THREE.Mesh(
+        new THREE.RingGeometry(t.r * 0.42, t.r * 0.44, 40),
+        new THREE.MeshBasicMaterial({ color: t.c, transparent: true, opacity: 0.25, side: THREE.DoubleSide })
+      );
+      inner.rotation.x = -Math.PI / 2;
+      inner.position.y = t.y + 0.062;
+      group.add(inner);
+
+      plates.push({ m: m, ring: ring, inner: inner, base: t.y, ph: i * 0.9 });
+    });
+
+    // 上下流动的光点
+    var COUNT = 26;
+    var pos = new Float32Array(COUNT * 3);
+    var seeds = [];
+    for (var i = 0; i < COUNT; i++) {
+      var ang = Math.random() * Math.PI * 2;
+      var rad = 0.3 + Math.random() * 2.2;
+      seeds.push({
+        x: Math.cos(ang) * rad, z: Math.sin(ang) * rad,
+        y: -1 + Math.random() * 2, s: 0.22 + Math.random() * 0.4, up: Math.random() > 0.45
+      });
+    }
+    var geo2 = new THREE.BufferGeometry();
+    geo2.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    var pts = new THREE.Points(geo2, new THREE.PointsMaterial({
+      color: 0x6ee7b7, size: 0.06, transparent: true, opacity: 0.85,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    group.add(pts);
+
+    st = { scene: scene, cam: cam, renderer: renderer, group: group, plates: plates, seeds: seeds, geo2: geo2, t: 0 };
+    return true;
+  }
+
+  var last = 0;
+  function loop(now) {
+    if (st && visible()) {
+      var dt = Math.min(0.05, (now - last) / 1000 || 0.016);
+      last = now; st.t += dt;
+      var t = st.t;
+
+      st.group.rotation.y = t * 0.09;
+      st.group.position.y = 0.34 + Math.sin(t * 0.5) * 0.04;
+
+      st.plates.forEach(function (p) {
+        var b = Math.sin(t * 0.7 + p.ph) * 0.02;
+        p.m.position.y = p.base + b;
+        p.ring.position.y = p.base + 0.061 + b;
+        p.inner.position.y = p.base + 0.062 + b;
+      });
+
+      var arr = st.geo2.attributes.position.array;
+      st.seeds.forEach(function (s, i) {
+        s.y += (s.up ? 1 : -1) * s.s * dt;
+        if (s.y > 1.15) { s.y = -1.15; }
+        if (s.y < -1.15) { s.y = 1.15; }
+        arr[i * 3] = s.x; arr[i * 3 + 1] = s.y; arr[i * 3 + 2] = s.z;
+      });
+      st.geo2.attributes.position.needsUpdate = true;
+
+      st.renderer.render(st.scene, st.cam);
+    }
+    requestAnimationFrame(loop);
+  }
+
+  function visible() {
+    if (!host) return false;
+    var r = host.getBoundingClientRect();
+    return r.bottom > 0 && r.top < innerHeight;
+  }
+
+  function boot() {
+    if (!init()) {
+      host.style.background = 'radial-gradient(60% 46% at 50% 50%, rgba(52,211,153,.13), transparent 70%)';
+    }
+    requestAnimationFrame(loop);
+  }
+
+  var rz;
+  addEventListener('resize', function () {
+    clearTimeout(rz);
+    rz = setTimeout(function () {
+      if (!st) return;
+      var w = host.clientWidth, h = host.clientHeight;
+      st.cam.aspect = w / h; st.cam.updateProjectionMatrix();
+      st.renderer.setSize(w, h);
+    }, 150);
+  });
+
+  if (document.readyState === 'complete') boot();
+  else addEventListener('load', boot);
+})();
+</script>
+</body>
+</html>

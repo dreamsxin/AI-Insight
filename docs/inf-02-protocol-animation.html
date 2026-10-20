@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="推理原理 02 · 三张面孔一套内核：Chat Completions / Responses / Messages 三种协议归一成一段对话，再分流回三种流式事件">
+<title>推理原理 02 · 三张面孔，一套内核</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--cyan);transform:scale(1.4);box-shadow:0 0 10px rgba(34,211,238,.85)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,rgba(34,211,238,.10)),transparent 70%)}
+  .s1{--glow:rgba(34,211,238,.13)}.s2{--glow:rgba(34,211,238,.08)}.s3{--glow:rgba(167,139,250,.09)}
+  .s4{--glow:rgba(52,211,153,.08)}.s5{--glow:rgba(251,191,36,.08)}.s6{--glow:rgba(167,139,250,.09)}
+  .s7{--glow:rgba(244,114,182,.08)}.s8{--glow:rgba(34,211,238,.10)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,30px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--cyan);
+    border:1px solid rgba(34,211,238,.35);background:rgba(34,211,238,.07);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:13px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-wrap{position:relative;width:100%;max-width:640px;display:flex;flex-direction:column;align-items:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.55);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(28px,7.6vw,44px);line-height:1.16;font-weight:800;margin:16px 0 10px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,#22d3ee 10%,#a78bfa 55%,#f472b6 95%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub code{font-size:.9em;color:var(--cyan)}
+  .proto-cards{display:flex;gap:10px;margin-top:26px;justify-content:center;flex-wrap:wrap}
+  .pc{width:150px;padding:12px 11px;border-radius:14px;border:1px solid var(--line);background:rgba(12,19,34,.75);text-align:left}
+  .pc b{font-size:11.5px;display:block;margin-bottom:7px;color:#dbe6fb}
+  .pc code{display:block;font-size:9.5px;color:var(--dim);line-height:1.65;white-space:pre}
+  .pc .tagn{display:inline-block;font-family:var(--mono);font-size:8.5px;padding:1px 5px;border-radius:4px;margin-bottom:6px}
+  .pc.a .tagn{background:rgba(34,211,238,.16);color:#7ee7f7}
+  .pc.b .tagn{background:rgba(167,139,250,.16);color:#c4b5fd}
+  .pc.c .tagn{background:rgba(52,211,153,.16);color:#6ee7b7}
+  .screen.active .pc{animation:floatIn .7s cubic-bezier(.22,1,.36,1) both}
+  @keyframes floatIn{from{opacity:0;transform:translateY(24px) scale(.96)}to{opacity:1;transform:none}}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 三棵树 */
+  .trees{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;width:100%;max-width:600px}
+  .tree{border:1px solid var(--line);border-radius:13px;background:var(--card);padding:11px 10px;min-height:186px}
+  .tree .tt{font-family:var(--mono);font-size:9.5px;color:var(--dim);margin-bottom:9px;letter-spacing:.04em}
+  .nd{font-family:var(--mono);font-size:9.5px;line-height:1.5;padding:3px 6px;border-radius:5px;margin-bottom:3px;
+    border-left:2px solid transparent;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .nd.k{background:rgba(34,211,238,.11);border-left-color:var(--cyan);color:#a5f3fc}
+  .nd.v{background:rgba(255,255,255,.05);color:#c3cde2}
+  .nd.i{margin-left:10px}
+  .nd.ii{margin-left:20px}
+  .nd.p{background:rgba(167,139,250,.1);color:#ddd6fe;border-left-color:var(--purple)}
+  .nd.g{background:rgba(52,211,153,.1);color:#a7f3d0;border-left-color:var(--green)}
+  .tree .depth{margin-top:8px;font-size:9px;color:var(--dim);border-top:1px dashed rgba(255,255,255,.1);padding-top:6px}
+  .tree .depth b{color:#fbbf24;font-family:var(--mono)}
+
+  /* 汇流 */
+  .merge{width:100%;max-width:560px;position:relative}
+  .merge svg{width:100%;height:auto;display:block;overflow:visible}
+  .flowline{fill:none;stroke-width:1.6;stroke-dasharray:4 6;opacity:.7}
+  .screen.active .flowline{animation:dash 1.6s linear infinite}
+  @keyframes dash{to{stroke-dashoffset:-40}}
+  .conv{padding:12px 13px;border:1px solid rgba(34,211,238,.32);border-radius:13px;background:rgba(34,211,238,.06);margin-top:10px}
+  .conv .ch{font-family:var(--mono);font-size:9.5px;color:var(--cyan);margin-bottom:8px}
+  .row{display:flex;gap:8px;align-items:center;margin-bottom:5px;font-family:var(--mono);font-size:10px}
+  .row .r{width:56px;flex:0 0 56px;padding:2px 0;border-radius:4px;text-align:center;background:rgba(255,255,255,.06)}
+  .row .r.sys{color:#fbbf24;background:rgba(251,191,36,.12)}
+  .row .r.usr{color:#22d3ee;background:rgba(34,211,238,.12)}
+  .row .r.ast{color:#a78bfa;background:rgba(167,139,250,.12)}
+  .row .c{color:#c3cde2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  /* 标准件 */
+  .parts{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:500px}
+  .pt{padding:12px 13px;border-radius:12px;border:1px solid var(--line);background:var(--card)}
+  .pt b{font-size:12px;display:block;margin-bottom:4px}
+  .pt p{font-size:10px;color:var(--dim);line-height:1.55}
+  .pt .tg{font-family:var(--mono);font-size:9px;color:var(--cyan);margin-top:5px;display:block}
+
+  /* 模板 */
+  .tpl{width:100%;max-width:560px;display:flex;align-items:stretch;gap:9px}
+  .tpl .col{flex:1;border:1px solid var(--line);border-radius:12px;background:var(--card);padding:10px 11px}
+  .tpl .hd{font-size:9.5px;color:var(--dim);font-family:var(--mono);margin-bottom:8px;letter-spacing:.05em}
+  .tpl .arrow{display:flex;align-items:center;justify-content:center;width:26px;color:var(--dim);font-size:14px}
+  .prompt{font-family:var(--mono);font-size:9px;line-height:1.85;color:#9fb3d1;white-space:pre-wrap;word-break:break-all}
+  .prompt .sp{color:var(--cyan);background:rgba(34,211,238,.1);border-radius:3px;padding:0 2px}
+  .prompt .bad{color:var(--red);background:rgba(251,113,133,.12);border-radius:3px;padding:0 2px}
+  .badge-v{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:5px;margin-bottom:7px;display:inline-block}
+  .badge-v.v4{background:rgba(251,113,133,.14);color:#fda4af}
+  .badge-v.v41{background:rgba(52,211,153,.14);color:#6ee7b7}
+
+  /* 反向流 */
+  .reverse{width:100%;max-width:560px;display:flex;flex-direction:column;gap:7px}
+  .rv-row{display:flex;align-items:center;gap:8px}
+  .rv-row .lab{width:74px;flex:0 0 74px;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .rv-box{flex:1;display:flex;gap:5px;flex-wrap:wrap}
+  .chip{font-family:var(--mono);font-size:9.5px;padding:3px 8px;border-radius:6px;border:1px solid var(--line);background:rgba(255,255,255,.05)}
+  .chip.t{color:#a5f3fc;border-color:rgba(34,211,238,.3);background:rgba(34,211,238,.09)}
+  .chip.r{color:#ddd6fe;border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.09)}
+  .chip.g{color:#a7f3d0;border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.09)}
+  .split{height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.16),transparent);margin:4px 0}
+
+  /* 对照表 */
+  .tbl{width:100%;max-width:580px;border-collapse:collapse;font-size:10px}
+  .tbl th,.tbl td{border-bottom:1px solid rgba(255,255,255,.09);padding:7px 6px;text-align:left;vertical-align:top}
+  .tbl th{font-family:var(--mono);font-size:9px;color:var(--dim);font-weight:600;letter-spacing:.04em}
+  .tbl td:first-child{color:#c3cde2;font-size:10px;width:74px}
+  .tbl code{font-size:9.5px;color:#9fb3d1}
+  .tbl .diff{color:var(--amber)}
+  .screen.active .tbl tr{animation:rise .45s both}
+  .screen.active .tbl tr:nth-child(2){animation-delay:.15s}
+  .screen.active .tbl tr:nth-child(3){animation-delay:.3s}
+  .screen.active .tbl tr:nth-child(4){animation-delay:.45s}
+  .screen.active .tbl tr:nth-child(5){animation-delay:.6s}
+
+  /* 收尾 */
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:500px}
+  .fact{display:flex;gap:11px;padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+  .fact .i{font-size:16px}
+  .fact b{font-size:12px;display:block;margin-bottom:3px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1 active">
+  <div class="hero-wrap">
+    <div class="hero-kicker rv d1">推理原理 · 02</div>
+    <h1 class="rv d2"><span class="grad">三张面孔</span><br>一套内核</h1>
+    <p class="hero-sub rv d3">三个 SDK，三种 JSON 结构。<br>模型看到的，永远是<b>同一段对话</b>。</p>
+    <div class="proto-cards">
+      <div class="pc a" style="animation-delay:.5s"><span class="tagn">Chat</span><b>Chat Completions</b><code>messages: [
+  { role, content }
+]</code></div>
+      <div class="pc b" style="animation-delay:.68s"><span class="tagn">Resp</span><b>Responses</b><code>input: [
+  { type, content: [...] }
+]</code></div>
+      <div class="pc c" style="animation-delay:.86s"><span class="tagn">Msg</span><b>Messages</b><code>messages: [
+  { content: [blocks] }
+]</code></div>
+    </div>
+  </div>
+  <div class="next-hint rv d6">向下滚动<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>01</b>形状</div>
+    <h2 class="rv d2">同样是"你好"，嵌得深浅不同</h2>
+    <p class="scr-desc rv d3">字段名不一样，嵌套层数不一样 —— 但信息是同一份。</p>
+  </div>
+  <div class="stage">
+    <div class="trees">
+      <div class="tree rv d3">
+        <div class="tt">Chat Completions</div>
+        <div class="nd k">messages[]</div>
+        <div class="nd i v">{ role: "user" }</div>
+        <div class="nd i v">{ content: "你好" }</div>
+        <div class="nd i p">{ tool_calls: [...] }</div>
+        <div class="depth">嵌套 <b>2</b> 层</div>
+      </div>
+      <div class="tree rv d4">
+        <div class="tt">Responses</div>
+        <div class="nd k">input[]</div>
+        <div class="nd i v">{ type: "message" }</div>
+        <div class="nd ii p">content: [ ... ]</div>
+        <div class="nd ii v">{ type: "input_text" }</div>
+        <div class="depth">嵌套 <b>4</b> 层</div>
+      </div>
+      <div class="tree rv d5">
+        <div class="tt">Messages</div>
+        <div class="nd k">messages[]</div>
+        <div class="nd i v">{ role: "user" }</div>
+        <div class="nd ii p">content: [ blocks ]</div>
+        <div class="nd ii g">{ type: "text" }</div>
+        <div class="depth">嵌套 <b>3</b> 层</div>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">如果每个后端都自己去解析这三种形状，就会有三份实现、三种 bug。</div>
+</section>
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>02</b>汇流</div>
+    <h2 class="rv d2">先归一，再谈模型</h2>
+    <p class="scr-desc rv d3">三种请求，落到同一个 Conversation 结构上；后面的模板、分词、推理只写一遍。</p>
+  </div>
+  <div class="stage">
+    <div class="merge">
+      <svg viewBox="0 0 560 124" aria-hidden="true">
+        <path class="flowline" d="M80 18 C 160 18, 200 82, 280 82" stroke="#22d3ee"/>
+        <path class="flowline" d="M280 18 L 280 82" stroke="#a78bfa"/>
+        <path class="flowline" d="M480 18 C 400 18, 360 82, 280 82" stroke="#34d399"/>
+        <circle cx="280" cy="82" r="19" fill="rgba(34,211,238,.08)" stroke="#22d3ee" stroke-width="1"/>
+        <circle cx="280" cy="82" r="5" fill="#22d3ee"/>
+        <path class="flowline" d="M280 101 L 280 122" stroke="#fbbf24"/>
+        <text x="80" y="10" fill="#7ee7f7" font-size="9" font-family="monospace" text-anchor="middle">Chat</text>
+        <text x="280" y="10" fill="#c4b5fd" font-size="9" font-family="monospace" text-anchor="middle">Responses</text>
+        <text x="480" y="10" fill="#6ee7b7" font-size="9" font-family="monospace" text-anchor="middle">Messages</text>
+        <text x="308" y="79" fill="#8b96ad" font-size="9" font-family="monospace">归一</text>
+      </svg>
+      <div class="conv rv d4">
+        <div class="ch">Conversation · 统一结构</div>
+        <div class="row"><span class="r sys">system</span><span class="c">You are a helpful assistant.</span></div>
+        <div class="row"><span class="r usr">user</span><span class="c">你好</span></div>
+        <div class="row"><span class="r ast">assistant</span><span class="c">reasoning + text + tool_call</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">这一层不产生任何智能，但它决定了<b>后端能不能替换</b>。</div>
+</section>
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>03</b>零件</div>
+    <h2 class="rv d2">对话里只有四类标准件</h2>
+    <p class="scr-desc rv d3">协议再花哨，拆完还是这几样东西。</p>
+  </div>
+  <div class="stage">
+    <div class="parts">
+      <div class="pt rv d3"><b>① 角色</b><p>system / user / assistant，决定这段话是谁说的。</p><span class="tg">role</span></div>
+      <div class="pt rv d3"><b>② 内容片段</b><p>文本、图片、思考过程，按顺序拼在一条消息里。</p><span class="tg">content parts</span></div>
+      <div class="pt rv d4"><b>③ 工具调用</b><p>函数名 + 参数，以及工具返回的结果。</p><span class="tg">tool call / result</span></div>
+      <div class="pt rv d4"><b>④ 图片来源</b><p>base64 或外链，交给模型前统一预处理。</p><span class="tg">image ref</span></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">四类零件 + 顺序 = 一段完整对话。<b>顺序丢了，模型就失忆了。</b></div>
+</section>
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>04</b>模板</div>
+    <h2 class="rv d2">同一段对话，不同版本渲染出不同的字</h2>
+    <p class="scr-desc rv d3">模板由<b>模型版本</b>决定。V4 不吃图片，V4.1 才吃。</p>
+  </div>
+  <div class="stage">
+    <div class="tpl">
+      <div class="col rv d3">
+        <div class="hd">对话</div>
+        <div class="prompt"><span class="bad" style="color:#fbbf24;background:rgba(251,191,36,.1)">user</span>
+你好，看这张图
+<span class="bad" style="color:#a78bfa;background:rgba(167,139,250,.12)">image</span>
+</div>
+      </div>
+      <div class="arrow rv d3">→</div>
+      <div class="col rv d4">
+        <div class="badge-v v4">V4 · 不接图片</div>
+        <div class="prompt"><span class="sp">&lt;｜User｜&gt;</span>你好，看这张图
+<span class="bad">[Unsupported Image]</span>
+<span class="sp">&lt;｜Assistant｜&gt;</span></div>
+      </div>
+    </div>
+    <div class="tpl" style="margin-top:8px">
+      <div class="col rv d5">
+        <div class="hd">同一段对话</div>
+        <div class="prompt"><span class="bad" style="color:#fbbf24;background:rgba(251,191,36,.1)">user</span>
+你好，看这张图
+<span class="bad" style="color:#a78bfa;background:rgba(167,139,250,.12)">image</span>
+</div>
+      </div>
+      <div class="arrow rv d5">→</div>
+      <div class="col rv d6">
+        <div class="badge-v v41">V4.1 · 支持图片</div>
+        <div class="prompt"><span class="sp">&lt;｜User｜&gt;</span>你好，看这张图
+<span class="sp">&lt;｜image｜&gt;</span>
+<span class="sp">&lt;｜Assistant｜&gt;</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">图片被换成一行文字，不是报错 —— <b>降级也是一种兼容</b>。</div>
+</section>
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>05</b>回流</div>
+    <h2 class="rv d2">输出走的是同一条路，反过来</h2>
+    <p class="scr-desc rv d3">模型只吐 token。先解析成事件，再按各家协议分包。</p>
+  </div>
+  <div class="stage">
+    <div class="reverse">
+      <div class="rv-row rv d3">
+        <div class="lab">后端</div>
+        <div class="rv-box"><span class="chip t">tok</span><span class="chip t">tok</span><span class="chip t">tok</span><span class="chip t">tok</span><span class="chip">…</span></div>
+      </div>
+      <div class="split"></div>
+      <div class="rv-row rv d4">
+        <div class="lab">事件</div>
+        <div class="rv-box">
+          <span class="chip r">reasoning.delta</span>
+          <span class="chip g">text.delta</span>
+          <span class="chip r">tool_call.delta</span>
+          <span class="chip g">finish</span>
+        </div>
+      </div>
+      <div class="split"></div>
+      <div class="rv-row rv d5">
+        <div class="lab">Chat</div>
+        <div class="rv-box"><span class="chip">choices[0].delta</span><span class="chip t">reasoning_content</span><span class="chip">tool_calls</span></div>
+      </div>
+      <div class="rv-row rv d5">
+        <div class="lab">Responses</div>
+        <div class="rv-box"><span class="chip">response.output_text.delta</span><span class="chip r">reasoning.delta</span><span class="chip g">item.done</span></div>
+      </div>
+      <div class="rv-row rv d6">
+        <div class="lab">Messages</div>
+        <div class="rv-box"><span class="chip">content_block_delta</span><span class="chip r">thinking_delta</span><span class="chip g">message_stop</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">一进一出，协议层就干这两件事：<b>翻译</b>与<b>再翻译</b>。</div>
+</section>
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>06</b>对账</div>
+    <h2 class="rv d2">同样的意思，三种拼写</h2>
+    <p class="scr-desc rv d3">不用背，知道"每家都有对应物"就够了。</p>
+  </div>
+  <div class="stage">
+    <table class="tbl">
+      <tr><th>语义</th><th>Chat Completions</th><th>Responses</th><th>Messages</th></tr>
+      <tr><td>正文增量</td><td><code>delta.content</code></td><td><code>output_text.delta</code></td><td><code>text_delta</code></td></tr>
+      <tr><td>思考内容</td><td><code class="diff">reasoning_content</code></td><td><code class="diff">reasoning.delta</code></td><td><code class="diff">thinking_delta</code></td></tr>
+      <tr><td>工具调用</td><td><code>tool_calls[]</code></td><td><code>function_call</code></td><td><code>tool_use</code></td></tr>
+      <tr><td>结束原因</td><td><code>finish_reason</code></td><td><code>status</code></td><td><code>stop_reason</code></td></tr>
+      <tr><td>用量</td><td><code>usage</code></td><td><code>usage</code></td><td><code>usage</code></td></tr>
+    </table>
+  </div>
+  <div class="scr-foot rv d6">差异集中在"思考"和"结束"两处 —— 也是各家最不兼容的地方。</div>
+</section>
+
+<section class="screen s8">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>07</b>为什么</div>
+    <h2 class="rv d2">这一层为什么值得用 Rust 重写</h2>
+    <p class="scr-desc rv d3">它不在 GPU 上跑，却站在每个请求的必经之路上。</p>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">⚡</span><div><b>一次遍历</b><p>转换、渲染、解析串成一条链路，不来回构造中间对象。</p></div></div>
+      <div class="fact rv d4"><span class="i">🐍</span><div><b>Python 只做绑定</b><p>Python 侧只拿到调用接口，重活留在 Rust 里。</p></div></div>
+      <div class="fact rv d5"><span class="i">🧩</span><div><b>行为可对齐</b><p>第三方自建部署跑同一套组件，API 行为与官方一致。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">下一集：这段 prompt 里，有些字符的身份<b>取决于它站在哪</b>。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+</body>
+</html>
