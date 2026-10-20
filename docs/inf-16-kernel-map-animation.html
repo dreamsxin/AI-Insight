@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="推理原理 16 · kernel 层全景：一次 decode 从构建 metadata 到采样要跑过哪些 kernel，时间花在计算、空隙还是通信上，以及三个必须融合的地方">
+<title>推理原理 16 · 一个 decode step 的 kernel 账单</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#fbbf24;--acc2:#f472b6;
+    --accBg:rgba(251,191,36,.08);--accBd:rgba(251,191,36,.34);--accGl:rgba(251,191,36,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1{--glow:var(--accGl)}.s2{--glow:rgba(34,211,238,.08)}.s3{--glow:rgba(52,211,153,.08)}
+  .s4{--glow:rgba(167,139,250,.08)}.s5{--glow:rgba(251,191,36,.07)}.s6{--glow:rgba(244,114,182,.07)}
+  .s7{--glow:rgba(52,211,153,.09)}.s8{--glow:rgba(34,211,238,.09)}.s9{--glow:rgba(167,139,250,.09)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--acc2) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .bigcmp{display:flex;align-items:center;gap:16px;margin-top:26px;justify-content:center}
+  .bignum{text-align:center}
+  .bignum .v{font-family:var(--mono);font-size:clamp(23px,6.2vw,34px);font-weight:800;line-height:1}
+  .bignum .k{font-size:9.5px;color:var(--dim);margin-top:6px}
+  .bignum.old .v{color:#94a3b8;text-decoration:line-through;text-decoration-thickness:1px;opacity:.75}
+  .bignum.new .v{color:var(--acc)}
+  .bigcmp .ar{font-size:18px;color:var(--dim)}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 通用组件 */
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .stack{display:flex;flex-direction:column;gap:11px;width:100%;max-width:540px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:540px}
+  .cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;width:100%;max-width:540px}
+  .tag{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.07);color:#c3cde2}
+  .tag.acc{background:var(--accBg);color:var(--acc);border:1px solid var(--accBd)}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+
+  .bars{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .bar{display:flex;align-items:center;gap:8px}
+  .bar .lbl{width:56px;flex:none;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .bar .track{flex:1;height:10px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .bar .fill{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accBg),var(--acc))}
+  .screen.active .bar .fill{animation:grow .9s cubic-bezier(.2,1,.3,1) both}
+  @keyframes grow{to{width:var(--w,50%)}}
+  .bar .val{width:52px;flex:none;font-family:var(--mono);font-size:9.5px;color:#c3cde2}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .chartbox{width:100%;max-width:560px}
+  .chartbox canvas{width:100%;height:clamp(176px,34vh,236px);display:block}
+
+  .cells{display:grid;gap:3px;width:100%;max-width:520px}
+  .cells i{height:26px;border-radius:2px;background:rgba(255,255,255,.06);display:block}
+  .cells i.on{background:linear-gradient(180deg,var(--acc),var(--accBg))}
+  .cells i.hot{background:linear-gradient(180deg,#fb7185,rgba(251,113,133,.35))}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+:root{--acc:#22d3ee;--acc2:#a78bfa;--accBg:rgba(34,211,238,.08);--accBd:rgba(34,211,238,.34);--accGl:rgba(34,211,238,.12)}
+
+  /* 流水 */
+  .pipe{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;width:100%;max-width:560px}
+  .pchip{border:1px solid var(--line);border-radius:8px;background:var(--card);padding:7px 9px;
+    font-family:var(--mono);font-size:9.5px;color:#c3cde2;position:relative}
+  .pchip.two{color:#94a3b8}
+  .pchip.hot{border-color:var(--accBd);background:var(--accBg);color:var(--acc)}
+  .pchip .n{display:block;font-size:7.5px;color:var(--dim);margin-bottom:3px;letter-spacing:.06em}
+
+  /* 甘特 */
+  .gantt{width:100%;max-width:540px;display:flex;flex-direction:column;gap:9px}
+  .grow{display:flex;flex-direction:column;gap:4px}
+  .grow .gl{display:flex;justify-content:space-between;font-family:var(--mono);font-size:8.5px;color:var(--dim)}
+  .gbar{display:flex;gap:2px;height:26px}
+  .gbar span{border-radius:3px;display:block;height:100%}
+  .gbar .c{background:linear-gradient(180deg,rgba(34,211,238,.75),rgba(34,211,238,.32))}
+  .gbar .m{background:linear-gradient(180deg,rgba(52,211,153,.72),rgba(52,211,153,.3))}
+  .gbar .e{background:repeating-linear-gradient(135deg,rgba(251,113,133,.3) 0 3px,rgba(251,113,133,.06) 3px 6px)}
+  .gbar .x{background:linear-gradient(180deg,rgba(167,139,250,.75),rgba(167,139,250,.3))}
+  .gbar.fused span{border-radius:4px}
+  .gleg{display:flex;gap:12px;justify-content:center;font-size:9px;color:var(--dim);font-family:var(--mono);margin-top:2px}
+  .gleg span{display:inline-flex;align-items:center;gap:4px}
+  .gleg i{width:8px;height:8px;border-radius:2px;display:inline-block}
+
+  /* 融合三处 */
+  .fuse{width:100%;max-width:540px;display:flex;flex-direction:column;gap:8px}
+  .fz{display:grid;grid-template-columns:1fr 18px 1fr;align-items:center;gap:6px;
+    border:1px solid var(--line);border-radius:11px;background:var(--card);padding:9px 11px}
+  .fz .a{font-family:var(--mono);font-size:9px;color:#94a3b8;line-height:1.5}
+  .fz .ar{color:var(--acc);text-align:center;font-size:11px}
+  .fz .b{font-family:var(--mono);font-size:9.5px;color:var(--acc);line-height:1.5;text-align:right}
+
+  .klist{width:100%;max-width:540px;display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  .klist span{font-family:var(--mono);font-size:9px;color:#94a3b8;background:rgba(255,255,255,.045);
+    border:1px solid rgba(255,255,255,.07);border-radius:5px;padding:5px 7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .klist span b{color:#c3cde2;font-weight:600}
+
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="inf-15-fp4-where-animation.html" aria-label="上一集" title="上一集：同一个 4 位，三把尺子">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="inf-17-mega-moe-animation.html" aria-label="下一集" title="下一集：三段融成一段">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1 active">
+  <div class="hero-kicker rv d1">推理原理 · 16</div>
+  <h1 class="rv d2">一个 step，<br><span class="grad">几十个 kernel</span></h1>
+  <p class="hero-sub rv d3">decode 的每一步，不是一个算子，<br>是一串<b>被依次点亮的 kernel</b>。</p>
+  <div class="bigcmp rv d5">
+    <div class="bignum"><div class="v">1</div><div class="k">个 token</div></div>
+    <div class="ar">→</div>
+    <div class="bignum new"><div class="v">几十</div><div class="k">次 kernel 启动</div></div>
+  </div>
+  <div class="next-hint rv d6">向下滚动<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>01</b>主干</div>
+    <h2 class="rv d2">一步走完的八个阶段</h2>
+    <p class="scr-desc rv d3">从「准备好元数据」到「把 KV 写回去」，每一步都是一次或多次 kernel 启动。</p>
+  </div>
+  <div class="stage">
+    <div class="pipe rv d4">
+      <span class="pchip"><span class="n">01</span>准备 metadata</span>
+      <span class="pchip"><span class="n">02</span>norm + 量化</span>
+      <span class="pchip"><span class="n">03</span>按 block 取 KV</span>
+      <span class="pchip hot"><span class="n">04</span>注意力</span>
+      <span class="pchip"><span class="n">05</span>路由 top-k</span>
+      <span class="pchip"><span class="n">06</span>dispatch</span>
+      <span class="pchip hot"><span class="n">07</span>专家 GEMM</span>
+      <span class="pchip"><span class="n">08</span>combine</span>
+      <span class="pchip"><span class="n">09</span>norm + lm_head</span>
+      <span class="pchip hot"><span class="n">10</span>采样</span>
+      <span class="pchip two"><span class="n">11</span>写回 KV</span>
+    </div>
+    <p class="small rv d5">高亮的三个是<b>真正吃算力</b>的；其余大半时间在搬数据、拼元数据。</p>
+  </div>
+  <div class="scr-foot rv d6">这些 kernel 大多不是手写的 CUDA，而是用 TileLang 一类工具生成的 —— 跑在 <code>tilelang_ops/</code> 里。</div>
+</section>
+
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>02</b>时间轴</div>
+    <h2 class="rv d2">GPU 在等什么</h2>
+    <p class="scr-desc rv d3">把一步拆成时间片，会看到大量<b>非计算</b>的空隙。</p>
+  </div>
+  <div class="stage">
+    <div class="gantt rv d4">
+      <div class="grow">
+        <div class="gl"><span>拆分：11 个 kernel</span><span>一步 ≈ 100%</span></div>
+        <div class="gbar">
+          <span class="c" style="flex:9"></span><span class="e" style="flex:3"></span>
+          <span class="c" style="flex:7"></span><span class="e" style="flex:2"></span>
+          <span class="x" style="flex:12"></span><span class="e" style="flex:4"></span>
+          <span class="m" style="flex:14"></span><span class="e" style="flex:3"></span>
+          <span class="x" style="flex:10"></span><span class="e" style="flex:2"></span>
+          <span class="c" style="flex:6"></span>
+        </div>
+      </div>
+      <div class="grow">
+        <div class="gl"><span>融合后：3 个 kernel</span><span>同样的一步</span></div>
+        <div class="gbar fused">
+          <span class="c" style="flex:16"></span>
+          <span class="x" style="flex:26"></span>
+          <span class="c" style="flex:6"></span>
+        </div>
+      </div>
+      <div class="gleg">
+        <span><i style="background:#22d3ee"></i>计算</span>
+        <span><i style="background:#a78bfa"></i>通信</span>
+        <span><i style="background:rgba(251,113,133,.55)"></i>空隙（启动/同步）</span>
+      </div>
+    </div>
+    <p class="small rv d5">空隙不只是「浪费时间」，它还意味着<b>这段时间 SM 完全空着</b>。</p>
+  </div>
+  <div class="scr-foot rv d6">融合不是为了少几次启动，是为了<b>让数据不落回显存</b>。</div>
+</section>
+
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>03</b>融合</div>
+    <h2 class="rv d2">三个值得融的地方</h2>
+    <p class="scr-desc rv d3">判断标准只有一个：中间结果是不是<b>本来就要落回显存</b>。</p>
+  </div>
+  <div class="stage">
+    <div class="fuse rv d4">
+      <div class="fz"><span class="a">RMSNorm<br>→ 8bit 量化</span><span class="ar">→</span><span class="b">一次读出、<br>三套 scale 一起写</span></div>
+      <div class="fz"><span class="a">dispatch<br>→ 专家 GEMM<br>→ combine</span><span class="ar">→</span><span class="b">Mega MoE：<br>token 不再落回 HBM</span></div>
+      <div class="fz"><span class="a">lm_head<br>→ 采样</span><span class="ar">→</span><span class="b">logits 不写回，<br>直接在寄存器里采样</span></div>
+    </div>
+    <p class="small rv d5">第三处最容易被忽略：词表有几万个，logits 写回再读一遍，<b>就是几十 MB 的纯浪费</b>。</p>
+  </div>
+  <div class="scr-foot rv d6">下一集专门看第二处 —— 它是这三处里最难、也最值钱的。</div>
+</section>
+
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>04</b>清单</div>
+    <h2 class="rv d2">这些 kernel 长什么样</h2>
+    <p class="scr-desc rv d3">工程里能直接看到名字 —— 一个阶段常常拆成好几个细粒度算子。</p>
+  </div>
+  <div class="stage">
+    <div class="klist rv d4">
+      <span><b>norm</b>.py</span><span>gather.py</span>
+      <span>load_paged_kv_cache</span><span>store_kv_cache</span>
+      <span>swa_index</span><span>get_kv_index</span>
+      <span>flash_mla_utils</span><span>candidate_blocks</span>
+      <span>schedule_mtp_varlen</span><span>fused_sample</span>
+      <span>random_sampling</span><span>structure_output</span>
+      <span>prepare_v4_decode_metadata</span><span>outlier_detection</span>
+    </div>
+    <p class="small rv d5">名字本身就是线索：<b>metadata</b>、<b>index</b>、<b>schedule</b> 这类不算数的算子，占了半壁江山。</p>
+  </div>
+  <div class="scr-foot rv d6">所以「推理框架」的一大半工作，是<b>把元数据算对、把调度排好</b>，而不是写矩阵乘。</div>
+</section>
+
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>05</b>代价</div>
+    <h2 class="rv d2">越碎，越贵</h2>
+    <p class="scr-desc rv d3">kernel 数量上去，有效算力反而下来。</p>
+  </div>
+  <div class="stage">
+    <div class="bars rv d4">
+      <div class="bar"><span class="lbl">3 个</span><span class="track"><span class="fill" style="--w:88%"></span></span><span class="val">高</span></div>
+      <div class="bar"><span class="lbl">8 个</span><span class="track"><span class="fill" style="--w:64%"></span></span><span class="val">中</span></div>
+      <div class="bar"><span class="lbl">20 个</span><span class="track"><span class="fill" style="--w:42%"></span></span><span class="val">低</span></div>
+    </div>
+    <p class="small rv d5">横条 = 同样的计算量下，SM 真正在算的时间占比（示意）；每次启动都有固定开销，还要重读一遍中间结果。</p>
+  </div>
+  <div class="scr-foot rv d6">这就是为什么「算子级优化」的天花板，往往卡在<b>算子之间的缝</b>里。</div>
+</section>
+
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>收</b>小结</div>
+    <h2 class="rv d2">第三道账：融合</h2>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">🧾</span><div><b>一步几十个 kernel</b><p>算力只集中在其中三个。</p></div></div>
+      <div class="fact rv d4"><span class="i">🕳️</span><div><b>空隙是纯损失</b><p>启动与同步期间，SM 空转。</p></div></div>
+      <div class="fact rv d5"><span class="i">🔗</span><div><b>融合看中间结果</b><p>要落回显存的，才值得融。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">下一集：把 dispatch、专家 GEMM、combine 三段融成一个 kernel。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  var HOOK = null;
+  /* ---------- episode ---------- */
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (HOOK) { try { HOOK(i); } catch (e) {} }
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+
+</body>
+</html>

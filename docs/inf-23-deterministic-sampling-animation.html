@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="推理原理 23 · 确定性采样：用序列种子与位置生成随机数，而不是共享全局 RNG，换机器换 batch 都得到同一个 token">
+<title>推理原理 23 · 每个序列一个种子</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#fbbf24;--acc2:#f472b6;
+    --accBg:rgba(251,191,36,.08);--accBd:rgba(251,191,36,.34);--accGl:rgba(251,191,36,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1{--glow:var(--accGl)}.s2{--glow:rgba(34,211,238,.08)}.s3{--glow:rgba(52,211,153,.08)}
+  .s4{--glow:rgba(167,139,250,.08)}.s5{--glow:rgba(251,191,36,.07)}.s6{--glow:rgba(244,114,182,.07)}
+  .s7{--glow:rgba(52,211,153,.09)}.s8{--glow:rgba(34,211,238,.09)}.s9{--glow:rgba(167,139,250,.09)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--acc2) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .bigcmp{display:flex;align-items:center;gap:16px;margin-top:26px;justify-content:center}
+  .bignum{text-align:center}
+  .bignum .v{font-family:var(--mono);font-size:clamp(23px,6.2vw,34px);font-weight:800;line-height:1}
+  .bignum .k{font-size:9.5px;color:var(--dim);margin-top:6px}
+  .bignum.old .v{color:#94a3b8;text-decoration:line-through;text-decoration-thickness:1px;opacity:.75}
+  .bignum.new .v{color:var(--acc)}
+  .bigcmp .ar{font-size:18px;color:var(--dim)}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 通用组件 */
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .stack{display:flex;flex-direction:column;gap:11px;width:100%;max-width:540px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:540px}
+  .cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;width:100%;max-width:540px}
+  .tag{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.07);color:#c3cde2}
+  .tag.acc{background:var(--accBg);color:var(--acc);border:1px solid var(--accBd)}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+
+  .bars{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .bar{display:flex;align-items:center;gap:8px}
+  .bar .lbl{width:56px;flex:none;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .bar .track{flex:1;height:10px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .bar .fill{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accBg),var(--acc))}
+  .screen.active .bar .fill{animation:grow .9s cubic-bezier(.2,1,.3,1) both}
+  @keyframes grow{to{width:var(--w,50%)}}
+  .bar .val{width:52px;flex:none;font-family:var(--mono);font-size:9.5px;color:#c3cde2}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .chartbox{width:100%;max-width:560px}
+  .chartbox canvas{width:100%;height:clamp(176px,34vh,236px);display:block}
+
+  .cells{display:grid;gap:3px;width:100%;max-width:520px}
+  .cells i{height:26px;border-radius:2px;background:rgba(255,255,255,.06);display:block}
+  .cells i.on{background:linear-gradient(180deg,var(--acc),var(--accBg))}
+  .cells i.hot{background:linear-gradient(180deg,#fb7185,rgba(251,113,133,.35))}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+:root{--acc:#a78bfa;--acc2:#f472b6;--accBg:rgba(167,139,250,.08);--accBd:rgba(167,139,250,.34);--accGl:rgba(167,139,250,.12)}
+
+  .flow3{width:100%;max-width:540px;display:flex;align-items:center;gap:6px;justify-content:center;flex-wrap:wrap}
+  .fb{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:9px 11px;
+    font-family:var(--mono);font-size:9px;color:#c3cde2;text-align:center;line-height:1.5}
+  .fb.hl{border-color:var(--accBd);background:var(--accBg);color:var(--acc)}
+  .fb .s{display:block;font-size:7.5px;color:var(--dim);letter-spacing:.08em;margin-bottom:3px}
+  .fb.hl .s{color:var(--acc)}
+  .flow3 .ar{color:var(--dim);font-size:12px}
+
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:540px}
+  .two .card.bad{border-color:rgba(251,113,133,.3);background:rgba(251,113,133,.05)}
+  .two .card.good{border-color:var(--accBd);background:var(--accBg)}
+  .two .card .k{font-size:8.5px}
+  .two .card.bad .k{color:#fda4af}
+
+  .machines{width:100%;max-width:540px;display:flex;flex-direction:column;gap:7px}
+  .mc{display:grid;grid-template-columns:88px 1fr 60px;align-items:center;gap:8px;
+    border:1px solid var(--line);border-radius:10px;background:var(--card);padding:8px 11px;font-family:var(--mono);font-size:9px}
+  .mc .nm{color:var(--dim)}
+  .mc .tk{color:#c3cde2}
+  .mc .rs{color:var(--acc);text-align:right}
+
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="inf-22-batch-invariant-animation.html" aria-label="上一集" title="上一集：同一个输入，同一个输出">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="inf-24-three-ledgers-animation.html" aria-label="下一集" title="下一集：四道看不见的账">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1 active">
+  <div class="hero-kicker rv d1">推理原理 · 23</div>
+  <h1 class="rv d2">每个序列，<br><span class="grad">一个种子</span></h1>
+  <p class="hero-sub rv d3">不再问「现在随机数是多少」，<br>而是问「<b>第 37 个序列、第 512 个位置</b>该是什么」。</p>
+  <div class="bigcmp rv d5">
+    <div class="bignum old"><div class="v">全局 RNG</div><div class="k">顺序一变就变</div></div>
+    <div class="ar">→</div>
+    <div class="bignum new"><div class="v">seed + pos</div><div class="k">纯函数</div></div>
+  </div>
+  <div class="next-hint rv d6">向下滚动<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>01</b>老办法</div>
+    <h2 class="rv d2">共享一个随机数流</h2>
+    <p class="scr-desc rv d3">批量推理里最自然、也最坑的做法。</p>
+  </div>
+  <div class="stage">
+    <div class="two rv d4">
+      <div class="card bad">
+        <div class="k">ANTI-PATTERN</div>
+        <b>全局 RNG</b>
+        <p>谁先取随机数，谁就拿到不同的一段。batch 一变，每个请求分到的数全变。</p>
+      </div>
+      <div class="card good">
+        <div class="k">PATTERN</div>
+        <b>按序列取随机数</b>
+        <p>随机数由「种子 + 位置」算出来，取不取、取几次，都不影响结果。</p>
+      </div>
+    </div>
+    <p class="small rv d5">差别只有一个：随机数是<b>流</b>，还是<b>地址</b>。</p>
+  </div>
+  <div class="scr-foot rv d6">一旦把随机数当成「地址」，批处理就不再是副作用的来源。</div>
+</section>
+
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>02</b>换成地址</div>
+    <h2 class="rv d2">seed + position → 同一个字</h2>
+    <p class="scr-desc rv d3">采样变成一次纯函数调用。</p>
+  </div>
+  <div class="stage">
+    <div class="flow3 rv d4">
+      <span class="fb"><span class="s">输入 1</span>seq_seed</span>
+      <span class="ar">+</span>
+      <span class="fb"><span class="s">输入 2</span>position</span>
+      <span class="ar">→</span>
+      <span class="fb hl"><span class="s">kernel 内</span>算随机数<br>→ 逆变换采样</span>
+      <span class="ar">→</span>
+      <span class="fb"><span class="s">输出</span>token 下标</span>
+    </div>
+    <div class="machines rv d5">
+      <div class="mc"><span class="nm">机器 A</span><span class="tk">batch=1 · 单独跑</span><span class="rs">「的」</span></div>
+      <div class="mc"><span class="nm">机器 B</span><span class="tk">batch=64 · 第 41 行</span><span class="rs">「的」</span></div>
+      <div class="mc"><span class="nm">机器 C</span><span class="tk">batch=8 · 重试一次</span><span class="rs">「的」</span></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">不同机器、不同 batch、重试一次 —— <b>都吐同一个字</b>。</div>
+</section>
+
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>03</b>怎么测</div>
+    <h2 class="rv d2">三个断言就够了</h2>
+    <p class="scr-desc rv d3">这个性质是可以被测试守住的。</p>
+  </div>
+  <div class="stage">
+    <div class="codeblk rv d4"><i># 1. 跑两遍</i>
+assert equal(again, ref)
+
+<i># 2. 打乱行序</i>
+out = sampling(probs[perm], seed[perm], pos[perm])
+assert equal(out, ref[perm])
+
+<i># 3. 逐行单独跑</i>
+for i: assert equal(sampling(row_i), ref[i])</div>
+    <p class="small rv d5">第三条最狠：它把「batch 不变」直接压成 n 次单例调用。</p>
+  </div>
+  <div class="scr-foot rv d6">工程上，这种测试比任何文档都更能防止回归。</div>
+</section>
+
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>04</b>与采样参数</div>
+    <h2 class="rv d2">温度、top-p 都还在这儿</h2>
+    <p class="scr-desc rv d3">确定性只是把「随机源」换掉，不是把概率抹平。</p>
+  </div>
+  <div class="stage">
+    <div class="stack rv d4">
+      <div class="card"><div class="k">步骤 1</div><b>改概率</b><p>温度缩放、top-k / top-p 截断，得到一个分布。</p></div>
+      <div class="card"><div class="k">步骤 2</div><b>用固定的随机数反解</b><p>拿 seed+pos 算出的均匀随机数，去反查累积分布落在哪个 token。</p></div>
+      <div class="card"><div class="k">性质</div><b>概率为零的永不采样到</b><p>这也是契约里那句「zero-probability columns are never sampled」。</p></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">所以同一个 seed 跑两次，<b>连「多想了一会儿」的中间态都一致</b>。</div>
+</section>
+
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>收</b>小结</div>
+    <h2 class="rv d2">可复现是一项产品能力</h2>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">🔢</span><div><b>随机数是地址，不是流</b><p>seed + position 就能定位到一个数。</p></div></div>
+      <div class="fact rv d4"><span class="i">🧪</span><div><b>三个断言守住它</b><p>重跑、打乱、逐行，全都要相等。</p></div></div>
+      <div class="fact rv d5"><span class="i">🔍</span><div><b>能复现才查得动 bug</b><p>线上一条轨迹，本地能一模一样重放。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">最后一集：把这一季的四道账合起来看一遍。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  var HOOK = null;
+  /* ---------- episode ---------- */
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (HOOK) { try { HOOK(i); } catch (e) {} }
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+
+</body>
+</html>

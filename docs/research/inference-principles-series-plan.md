@@ -304,7 +304,7 @@
 ## 八、待确认的决策点
 
 1. **集数**：12 集一季，还是先砍到 8 集（合并 02+03 为"入口层"、04+05 为"算力组织"）？砍到 8 集单集信息量会变重，但上线更快。
-2. **第二季选题**（已备料，不进第一季）：弹性与故障（grace period 迁移、EP failover、autoscale 冗余配额）、低精度（FP4 per-16 e4m3 / indexer 与 MoE 权重 MXFP4 per-32 ue8m0）、Kernel 层（Mega MoE / FlashMLA / DeepGEMM / TileLang）、批不变性与确定性采样（同输入同输出，评测可复现）。
+2. **第二季选题**（已备料，不进第一季）：弹性与故障（grace period 迁移、EP failover、autoscale 冗余配额）、低精度（FP4 per-16 e4m3 / indexer 与 MoE 权重 MXFP4 per-32 ue8m0）、Kernel 层（Mega MoE / FlashMLA / DeepGEMM / TileLang）、批不变性与确定性采样（同输入同输出，评测可复现）。→ **已交付，见第十节。**
 3. **顺手清理**：`docs/` 下有 **18 个动画文件未挂到 `index.html`**（实测清单）：`ai-13-transformer`、`ai-14-moe`、`ai-15-kv-cache`、`ai-16-reasoning`、`ai-17-rlvr`、`ai-18-finetune`、`ai-19-embedding`、`ai-20-multimodal`、`dev-05-injection`、`hermes-12-thinking`、`hermes-13-skills`、`hermes-14-hooks`、`hermes-16-mcp2026`、`hermes-17-a2a`、`hermes-18-harness`、`hermes-19-cua`、`rag-04-agentic-rag`、`rag-05-graphrag`。
    也就是说索引目前只覆盖了约四分之三的内容。新系列上线时建议一并补挂（其中 `ai-15-kv-cache`、`ai-16-reasoning` 恰是本系列最需要的前置阅读）。
 
@@ -346,3 +346,65 @@
 
 - 第二季选题见第八节（弹性与故障、低精度、Kernel 层、批不变性）。
 - `docs/` 里另有 18 个既有动画未挂到 `index.html`，可一并补挂。
+
+---
+
+## 十、实施记录（第二季已交付）
+
+### 结构：四幕账本
+
+第一季是按请求的生命周期走；第二季没有生命周期可走，因此改用**一本账**串起来——每一幕都是「省了什么、付了什么」。四幕各有专属主色，观众凭颜色即可定位：
+
+| 幕 | 主题 | 主色 | 集 |
+| :-- | :--- | :--- | :-- |
+| **A · 精度** | 把数字变小的代价 | amber `#fbbf24` | 13–15 |
+| **B · 融合** | 把 kernel 焊在一起的代价 | cyan `#22d3ee` | 16–18 |
+| **C · 弹性** | 撑住流量的代价 | green `#34d399` | 19–21 |
+| **D · 一致** | 可复现的代价 | purple `#a78bfa` | 22–24 |
+
+第 24 集收口：四本账并排结清，回扣第一季 01 的五层堆叠板。
+
+### 交付物
+
+12 个单文件动画（`docs/inf-*.html`），共 **81 屏**，在 `docs/index.html` 注册为独立系列「推理原理 · 第二季」，编号接续 13–24。
+
+| 集 | 文件 | 幕 | 屏 | 3D |
+| :-- | :--- | :-: | --: | :-- |
+| 13 | `inf-13-fp4-animation.html` | A | 9 | ✅ 高度场逐级量化 |
+| 14 | `inf-14-scale-grain-animation.html` | A | 7 | — |
+| 15 | `inf-15-fp4-where-animation.html` | A | 7 | — |
+| 16 | `inf-16-kernel-map-animation.html` | B | 7 | — |
+| 17 | `inf-17-mega-moe-animation.html` | B | 8 | ✅ 三块板焊成一块 |
+| 18 | `inf-18-kernel-gap-animation.html` | B | 7 | —（Canvas 曲线） |
+| 19 | `inf-19-autoscale-animation.html` | C | 6 | — |
+| 20 | `inf-20-grace-period-animation.html` | C | 7 | —（SVG 倒计时环） |
+| 21 | `inf-21-ep-failover-animation.html` | C | 6 | ✅ 8×8 阵列坏一颗 |
+| 22 | `inf-22-batch-invariant-animation.html` | D | 7 | — |
+| 23 | `inf-23-deterministic-sampling-animation.html` | D | 6 | — |
+| 24 | `inf-24-three-ledgers-animation.html` | D | 6 | ✅ 五层板 + 上升光点 |
+
+### 数据锚点（全部可回溯）
+
+- **精度**：主 KV 每 16 一档 e4m3、indexer KV 每 32 一档 ue8m0、MoE 路由专家权重每 32 一档 ue8m0；有效位宽 `4+8/32=4.25`、`4+8/16=4.53`、`8+8/128=8.06`。一次 RMSNorm 同时产出三种 scale 格式（`norm.py`）。
+- **Kernel**：`tilelang_ops/` 十四个 kernel 的真实清单；Mega MoE 在同一 scale-up 域内、任何 EP/批大小都优于不融合版本，通信与计算共享 SM（`DEEPINFER_USERBUFFER_COMM_SMS`）；ue8m0 packed 布局每行 `d/128` 个 int32、垫齐 `align(block_m,128)`、UTCCP 128×4 转置。
+- **弹性**：缩容红线 0.8 配额利用率；grace period 1 分钟、未完成请求连同 KV 一次性转交；单卡故障即整实例不可用，重启后按当前健康卡数重定 EP。
+- **一致**：`DEEPINFER_BATCH_INVARIANT` 关掉 `allow_multiple_reduction`；`random_sampling` 只依赖 `(seq_seeds, sample_positions, is_nextn_predict)`；测试断言三次相等（重跑、换行序、逐行单跑）。
+
+### 与第一季的偏差（有意为之）
+
+1. **屏数进一步收紧到 6–9**（第二季均 6.75，第一季 8.75）。第二季概念更硬，一屏只保留一个视觉 + 一句话，把「举例」「补充」全部移到卡片副标题。
+2. **3D 只用在 4 集，且都放在幕首或幕尾**（13/17/21/24），形成「开幕—中段—收尾」的节奏锚点；其余各集全部 CSS/SVG/Canvas，避免连续 3D 造成疲劳。
+3. **引入按幕的主色变量**（`--acc/--acc2/--accBg/--accBd/--accGl`），不再每集手写颜色。整季 12 个文件共用一套外壳样式，改版只需改一处。
+4. **生成器而非手写**：每集是一个 Python dict，由 `.workbuddy/s2/shell.py` 渲染成完整 HTML，`.workbuddy/s2/build.py` 批量产出。生成器不入库（`.workbuddy/` 已 gitignore），仓库里只有 12 个成品 HTML。
+5. **屏上仍不标 A/B/C 可信度级别**，沿用第一季做法：用「实测」「约」「示意」措辞区分。
+
+### 校验方式
+
+- `nav-gen.py` 重生成导航：索引共 93 集，写入 14 个文件，`--check` 报同步；`inf-12 → inf-13` 与 `inf-23 ↔ inf-24` 衔接已核对。
+- Playwright（系统 Edge，headless）逐集逐屏遍历 12 集、81 屏，收集 `pageerror` 与 console error：**全部零错误**。
+- 逐集截图人工核对（900×1000 @2x）：修复了 13 集 3D 高度场被压成橙墙、标尺渐变消失、14 集刻度标签不可读、18 集 Canvas 钩子错位、19 集水位线被裁切、21 集实例色被基材质吞掉、24 集板面过淡等问题。
+
+### 后续可做
+
+- 第三季候选（尚未备料）：调度器内部的抢占与配额、多机 PD 分离的跨节点带宽账、长上下文外推的位置编码、投机解码的 draft 模型训练侧。
+

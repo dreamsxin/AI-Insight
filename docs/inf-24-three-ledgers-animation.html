@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="推理原理 24 · 第二季收尾：精度、融合、弹性、一致性四道账各自省什么付什么，它们如何互相冲突，以及这套系统该从哪里开始量">
+<title>推理原理 24 · 四道看不见的账</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#fbbf24;--acc2:#f472b6;
+    --accBg:rgba(251,191,36,.08);--accBd:rgba(251,191,36,.34);--accGl:rgba(251,191,36,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1{--glow:var(--accGl)}.s2{--glow:rgba(34,211,238,.08)}.s3{--glow:rgba(52,211,153,.08)}
+  .s4{--glow:rgba(167,139,250,.08)}.s5{--glow:rgba(251,191,36,.07)}.s6{--glow:rgba(244,114,182,.07)}
+  .s7{--glow:rgba(52,211,153,.09)}.s8{--glow:rgba(34,211,238,.09)}.s9{--glow:rgba(167,139,250,.09)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--acc2) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .bigcmp{display:flex;align-items:center;gap:16px;margin-top:26px;justify-content:center}
+  .bignum{text-align:center}
+  .bignum .v{font-family:var(--mono);font-size:clamp(23px,6.2vw,34px);font-weight:800;line-height:1}
+  .bignum .k{font-size:9.5px;color:var(--dim);margin-top:6px}
+  .bignum.old .v{color:#94a3b8;text-decoration:line-through;text-decoration-thickness:1px;opacity:.75}
+  .bignum.new .v{color:var(--acc)}
+  .bigcmp .ar{font-size:18px;color:var(--dim)}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 通用组件 */
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .stack{display:flex;flex-direction:column;gap:11px;width:100%;max-width:540px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:540px}
+  .cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;width:100%;max-width:540px}
+  .tag{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.07);color:#c3cde2}
+  .tag.acc{background:var(--accBg);color:var(--acc);border:1px solid var(--accBd)}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+
+  .bars{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .bar{display:flex;align-items:center;gap:8px}
+  .bar .lbl{width:56px;flex:none;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .bar .track{flex:1;height:10px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .bar .fill{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accBg),var(--acc))}
+  .screen.active .bar .fill{animation:grow .9s cubic-bezier(.2,1,.3,1) both}
+  @keyframes grow{to{width:var(--w,50%)}}
+  .bar .val{width:52px;flex:none;font-family:var(--mono);font-size:9.5px;color:#c3cde2}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .chartbox{width:100%;max-width:560px}
+  .chartbox canvas{width:100%;height:clamp(176px,34vh,236px);display:block}
+
+  .cells{display:grid;gap:3px;width:100%;max-width:520px}
+  .cells i{height:26px;border-radius:2px;background:rgba(255,255,255,.06);display:block}
+  .cells i.on{background:linear-gradient(180deg,var(--acc),var(--accBg))}
+  .cells i.hot{background:linear-gradient(180deg,#fb7185,rgba(251,113,133,.35))}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+:root{--acc:#a78bfa;--acc2:#f472b6;--accBg:rgba(167,139,250,.08);--accBd:rgba(167,139,250,.34);--accGl:rgba(167,139,250,.12)}
+
+  .hero-wrap{position:relative;width:100%;max-width:640px;height:100%;display:flex;flex-direction:column;align-items:center}
+  .hero-inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;flex:0 0 auto;padding-top:2vh}
+  .c3d{position:relative;z-index:0;flex:1 1 auto;width:100%;min-height:0;margin-top:2px}
+  .c3d canvas{display:block;width:100%!important;height:100%!important}
+
+  .ledger{width:100%;max-width:560px;display:flex;flex-direction:column;gap:7px}
+  .lg{display:grid;grid-template-columns:64px 1fr 1fr;gap:8px;align-items:center;
+    border:1px solid var(--line);border-radius:11px;background:var(--card);padding:9px 11px}
+  .lg .nm{font-family:var(--mono);font-size:9px;color:var(--acc);line-height:1.4}
+  .lg .get{font-size:10px;color:#a7f3d0;line-height:1.5}
+  .lg .pay{font-size:10px;color:#fcd34d;line-height:1.5}
+  .lg.hd{background:transparent;border:none;padding:0 11px;font-family:var(--mono);font-size:8px;color:var(--dim);letter-spacing:.08em}
+  .lg.hd div{padding:0}
+
+  .clash{width:100%;max-width:540px;display:flex;flex-direction:column;gap:8px}
+  .cl{display:flex;align-items:center;gap:8px;border:1px solid rgba(251,113,133,.24);border-radius:10px;
+    background:rgba(251,113,133,.045);padding:9px 11px;font-size:10px;color:#e2c9cf;line-height:1.55}
+  .cl b{color:#fda4af;font-family:var(--mono);font-size:9px;flex:none}
+
+  .mapline{width:100%;max-width:540px}
+  .mapline .bar{display:flex;gap:2px;height:30px;margin-bottom:8px}
+  .mapline .bar span{border-radius:3px;display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:7.5px;color:#0b1220;font-weight:700;overflow:hidden}
+  .mapline .note{font-size:10px;color:var(--dim);line-height:1.65;text-align:center}
+  .mapline .note b{color:#c3cde2}
+
+  /* 竖向步骤 */
+  .steps{width:100%;max-width:540px;display:flex;flex-direction:column;gap:0}
+  .stp{display:flex;gap:10px;position:relative;padding-bottom:14px}
+  .stp:last-child{padding-bottom:0}
+  .stp::before{content:"";position:absolute;left:9px;top:20px;bottom:0;width:1px;background:rgba(255,255,255,.1)}
+  .stp:last-child::before{display:none}
+  .stp .dot{width:19px;height:19px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:8px;background:var(--accBg);border:1px solid var(--accBd);color:var(--acc);z-index:1}
+  .stp .tx b{font-size:11.5px;display:block;margin-bottom:3px}
+  .stp .tx p{font-size:10px;color:var(--dim);line-height:1.6}
+
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="inf-23-deterministic-sampling-animation.html" aria-label="上一集" title="上一集：每个序列一个种子">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="dev-01-tools-animation.html" aria-label="下一集" title="下一集：工具设计">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1 active">
+  <div class="hero-wrap"><div class="hero-inner">
+    <div class="hero-kicker rv d1">推理原理 · 24</div>
+    <h1 class="rv d2">四道<br><span class="grad">看不见的账</span></h1>
+    <p class="hero-sub rv d3">精度、融合、弹性、一致性 ——<br>每一样都要付账，<b>而且互相牵制</b>。</p>
+  </div><div class="c3d" id="c3d-hero"></div></div>
+  <div class="next-hint rv d7">向下滚动<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>01</b>对账</div>
+    <h2 class="rv d2">省什么，付什么</h2>
+    <p class="scr-desc rv d3">这一季讲的全是「没有免费午餐」。</p>
+  </div>
+  <div class="stage">
+    <div class="ledger rv d4">
+      <div class="lg hd"><div>账目</div><div>省下</div><div>付出</div></div>
+      <div class="lg"><span class="nm">精度</span><span class="get">4 倍字节</span><span class="pay">尺子与反量化</span></div>
+      <div class="lg"><span class="nm">融合</span><span class="get">显存往返</span><span class="pay">布局对齐的复杂度</span></div>
+      <div class="lg"><span class="nm">弹性</span><span class="get">扛住尖峰与故障</span><span class="pay">常备冗余</span></div>
+      <div class="lg"><span class="nm">一致性</span><span class="get">可复现、可回放</span><span class="pay">部分吞吐</span></div>
+    </div>
+    <p class="small rv d5">四道账里，<b>只有「融合」是纯赚</b>（复杂度一次性付清）。</p>
+  </div>
+  <div class="scr-foot rv d6">其余三道，本质上都在<b>拿效率换别的东西</b>。</div>
+</section>
+
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>02</b>打架</div>
+    <h2 class="rv d2">它们不是独立的选择</h2>
+    <p class="scr-desc rv d3">调一个，另一个就得让路。</p>
+  </div>
+  <div class="stage">
+    <div class="clash rv d4">
+      <div class="cl"><b>一致性 × 弹性</b>要批不变，就得关掉专家重排；而专家重排正是负载均衡的手段。</div>
+      <div class="cl"><b>精度 × 一致性</b>4 位的舍入对累加顺序更敏感，噪声更容易翻掉 top-1。</div>
+      <div class="cl"><b>融合 × 弹性</b>一个巨大的 kernel 更难被抢占、更难迁移，宽限期搬家变贵。</div>
+      <div class="cl"><b>弹性 × 成本</b>冗余配额是常态化的支出，不是应急手段。</div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">所以线上配置从来不是「全都要」，而是<b>按业务挑几个必须项</b>。</div>
+</section>
+
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>03</b>回顾</div>
+    <h2 class="rv d2">四幕，落在一条链上</h2>
+    <p class="scr-desc rv d3">把这一季的 12 集放回第一季那张五层图里。</p>
+  </div>
+  <div class="stage">
+    <div class="mapline rv d4">
+      <div class="bar">
+        <span style="flex:13;background:linear-gradient(180deg,#fcd34d,#fbbf24)">精度 13–15</span>
+        <span style="flex:13;background:linear-gradient(180deg,#67e8f9,#22d3ee)">kernel 16–18</span>
+        <span style="flex:13;background:linear-gradient(180deg,#6ee7b7,#34d399)">弹性 19–21</span>
+        <span style="flex:13;background:linear-gradient(180deg,#c4b5fd,#a78bfa)">一致性 22–23</span>
+      </div>
+      <p class="note">精度决定「搬多少」，kernel 决定「怎么算」，弹性决定「活不活得下去」，一致性决定「<b>能不能被验证</b>」。</p>
+    </div>
+    <div class="stack rv d5">
+      <div class="card"><div class="k">对上</div><b>第一季讲「怎么跑得快」</b><p>两阶段、分层、调度、缓存、投机。</p></div>
+      <div class="card"><div class="k">这一季</div><b>讲「快到极限之后」</b><p>再压位宽、再融算子、再扛故障、再保一致。</p></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">两季合起来，才是一台真实机器上跑的那个推理系统。</div>
+</section>
+
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>04</b>从哪开始</div>
+    <h2 class="rv d2">先量，再动刀</h2>
+    <p class="scr-desc rv d3">这一季所有数字都有一个共同出处：trace。</p>
+  </div>
+  <div class="stage">
+    <div class="steps rv d4">
+      <div class="stp"><span class="dot">1</span><div class="tx"><b>跑 benchmark，拿 trace</b><p>先看清每类 kernel 的占比与空隙，再决定改哪里。</p></div></div>
+      <div class="stp"><span class="dot">2</span><div class="tx"><b>找占比最大的那一块</b><p>优化 3% 的东西一倍，也只赚 1.5%。</p></div></div>
+      <div class="stp"><span class="dot">3</span><div class="tx"><b>再问「它为什么这么大」</b><p>多半不是算子慢，而是数据被搬了太多次。</p></div></div>
+      <div class="stp"><span class="dot">4</span><div class="tx"><b>最后才是写 kernel</b><p>手写 SASS 是最后一层，不是第一层。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">这套顺序，比任何单点技巧都重要。</div>
+</section>
+
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>收</b>完结</div>
+    <h2 class="rv d2">推理原理 · 两季完结</h2>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">1️⃣</span><div><b>第一季：把系统搭起来</b><p>协议、两阶段、解耦、调度、缓存、投机。</p></div></div>
+      <div class="fact rv d4"><span class="i">2️⃣</span><div><b>第二季：把极限推下去</b><p>精度、kernel、弹性、一致性。</p></div></div>
+      <div class="fact rv d5"><span class="i">📎</span><div><b>全部细节有出处</b><p>口径来自部署 Q&A 与仓库代码，示意处已标注。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">回到索引，或者任选一集重看 —— 每集左上角的「目录」都能跳回去。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  var HOOK = null;
+  /* ---------- episode ---------- */
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (HOOK) { try { HOOK(i); } catch (e) {} }
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+<script src="vendor/three.global.js"></script>
+<script>
+/* ===== 封面 3D：五层板与上升的光点 —— 回到第一季开场的那张图 ===== */
+(function () {
+  var host = document.getElementById('c3d-hero');
+  if (!host) return;
+  var st = null;
+  var LAYERS = 5;
+
+  function fitZ(w, h) {
+    var t = Math.tan(Math.PI / 180 * 18);
+    return Math.max(1.15 / t, 1.95 / (t * (w / h))) * 1.02;
+  }
+
+  function init() {
+    if (!window.THREE) return false;
+    var THREE = window.THREE;
+    var w = host.clientWidth, h = host.clientHeight;
+    if (!w || !h) return false;
+
+    var scene = new THREE.Scene();
+    var cam = new THREE.PerspectiveCamera(36, w / h, 0.1, 100);
+    cam.position.set(0, 1.55, fitZ(w, h));
+    cam.lookAt(0, 0.12, 0);
+
+    var renderer;
+    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
+    catch (e) { return false; }
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setSize(w, h);
+    host.appendChild(renderer.domElement);
+
+    var group = new THREE.Group();
+    scene.add(group);
+
+    var plates = [];
+    var cols = [0x22d3ee, 0xa78bfa, 0x34d399, 0xfbbf24, 0xf472b6];
+    for (var i = 0; i < LAYERS; i++) {
+      var gw = 2.9 - i * 0.1, gd = 1.75 - i * 0.06;
+      var geo = new THREE.BoxGeometry(gw, 0.035, gd);
+      var mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        color: cols[i], transparent: true, opacity: 0.1
+      }));
+      mesh.position.y = (LAYERS - 1) / 2 * 0.42 - i * 0.42;
+      group.add(mesh);
+
+      var eg = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({ color: cols[i], transparent: true, opacity: 0.72 })
+      );
+      eg.position.copy(mesh.position);
+      group.add(eg);
+      plates.push(eg);
+    }
+
+    /* 上升的光点：从底层穿到顶层 */
+    var N = 70;
+    var arr = new Float32Array(N * 3), seeds = [];
+    for (var k = 0; k < N; k++) {
+      seeds.push({
+        x: (Math.random() - 0.5) * 2.5, z: (Math.random() - 0.5) * 1.5,
+        y: Math.random() * 1.9 - 0.95, v: 0.1 + Math.random() * 0.22,
+        c: cols[Math.floor(Math.random() * LAYERS)]
+      });
+    }
+    var geo2 = new THREE.BufferGeometry();
+    geo2.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    var colArr = new Float32Array(N * 3);
+    seeds.forEach(function (s, i) {
+      var c = new THREE.Color(s.c);
+      colArr[i * 3] = c.r; colArr[i * 3 + 1] = c.g; colArr[i * 3 + 2] = c.b;
+    });
+    geo2.setAttribute('color', new THREE.BufferAttribute(colArr, 3));
+    var dust = new THREE.Points(geo2, new THREE.PointsMaterial({
+      size: 0.05, vertexColors: true, transparent: true, opacity: 0.75,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    group.add(dust);
+
+    st = { scene: scene, cam: cam, renderer: renderer, group: group, plates: plates,
+      dust: dust, dGeo: geo2, seeds: seeds, t: 0 };
+    return true;
+  }
+
+  function visible() {
+    var r = host.getBoundingClientRect();
+    return r.bottom > 0 && r.top < innerHeight;
+  }
+
+  var last = 0;
+  function tick(now) {
+    if (st && visible()) {
+      var dt = Math.min(0.05, (now - last) / 1000 || 0.016);
+      last = now;
+      st.t += dt;
+
+      var a = st.dGeo.attributes.position.array;
+      st.seeds.forEach(function (s, i) {
+        s.y += s.v * dt;
+        if (s.y > 1.05) { s.y = -1.05; s.x = (Math.random() - 0.5) * 2.5; }
+        a[i * 3] = s.x; a[i * 3 + 1] = s.y; a[i * 3 + 2] = s.z;
+      });
+      st.dGeo.attributes.position.needsUpdate = true;
+
+      for (var j = 0; j < st.plates.length; j++) {
+        st.plates[j].position.y = (2 - j) * 0.42 + Math.sin(st.t * 0.6 + j * 0.5) * 0.03;
+      }
+      st.group.rotation.y = Math.sin(st.t * 0.2) * 0.3;
+      st.renderer.render(st.scene, st.cam);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function boot() {
+    if (!init()) {
+      host.style.background = 'radial-gradient(58% 44% at 50% 52%, rgba(167,139,250,.13), transparent 70%)';
+    }
+    requestAnimationFrame(tick);
+  }
+
+  var rz;
+  addEventListener('resize', function () {
+    clearTimeout(rz);
+    rz = setTimeout(function () {
+      if (!st) return;
+      var w = host.clientWidth, h = host.clientHeight;
+      if (!w || !h) return;
+      st.cam.aspect = w / h;
+      st.cam.position.z = fitZ(w, h);
+      st.cam.updateProjectionMatrix();
+      st.renderer.setSize(w, h);
+    }, 150);
+  });
+
+  if (document.readyState === 'complete') boot();
+  else addEventListener('load', boot);
+})();
+</script>
+
+</body>
+</html>

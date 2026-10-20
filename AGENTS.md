@@ -69,7 +69,7 @@ Frontend (run from `frontend/`):
   `backend/app/data/saved_models/` (no database). The directory is git-ignored and
   created at runtime by `services/model_store.py`; don't commit model files.
 - `docs/` holds the animation collection; `index.html` is the only entry point
-  and links all 81 episodes (none orphaned). Nine series, in index order:
+  and links all 93 episodes (none orphaned). Ten series, in index order:
   HERMES AGENT 对象拆解 ·01–18 (08 跨会话记忆篇 is 前瞻演绎/designed
   extrapolation); HERMES AGENT 进阶机制 ·01–07 (thinking budget wired into the
   main loop, Skills progressive disclosure, Hooks lifecycle slots, MCP 2026
@@ -82,10 +82,14 @@ Frontend (run from `frontend/`):
   paging, embedding & two-stage retrieval, RLVR & distillation, LoRA
   fine-tuning, multimodal); LLM 模型算法
   原理 ·01–05 (embedding/loss/position-encoding/residual internals + a worked
-  vector-attention poem); 推理原理 ·01–12 (`inf-` prefix: the serving layer —
-  protocol normalisation, special-token identity, prefill/decode, E-P-D
-  disaggregation, async scheduling, three-tier KV cache, SWA bounded replay,
-  speculative decoding, EPLB, constrained decoding, streaming parse); AGENT
+  vector-attention poem); 推理原理 ·01–24 (`inf-` prefix, two seasons: S1
+  01–12 is the serving layer — protocol normalisation, special-token identity,
+  prefill/decode, E-P-D disaggregation, async scheduling, three-tier KV cache,
+  SWA bounded replay, speculative decoding, EPLB, constrained decoding,
+  streaming parse; S2 13–24 is the underside — FP4 quantisation grain,
+  MXFP4/ue8m0 scale packing, kernel map & Mega MoE, the closed-kernel gap,
+  autoscaling redundancy, grace-period handover, EP failover, batch invariance,
+  deterministic sampling, and a four-ledger cost recap); AGENT
   开发避坑指南 ·01–05 (incl. 05 tool-poisoning injection); AGENT 实战工坊
   ·01–06 (knowledge-QA RAG walkthrough, project-selection guide, Agentic RAG,
   GraphRAG); AGENT 模式进阶 ·01–06 (`pat-` prefix: Plan-and-Execute,
@@ -104,7 +108,7 @@ Frontend (run from `frontend/`):
   which is idempotent. After adding, removing or reordering an episode,
   re-run it (`--check` reports drift without writing). Never hand-edit the
   block — it is replaced wholesale on the next run, and it is what keeps the
-  episodes from being 81 dead ends.
+  episodes from being 93 dead ends.
 - **Index affordances.** `index.html` also has a client-side search (`/`
   focuses, `Esc` clears; matches `a.card` on text + href), a static 知识地图
   (L1 训练 → L2 模型原理 → L3 推理服务 → L4 Agent 工程) and three recommended
@@ -113,7 +117,8 @@ Frontend (run from `frontend/`):
   update the per-layer counts in the map.
 - **3D in docs demos**: `docs/vendor/three.global.js` is three.js r160 with its
   ES-module `export{}` rewritten to `window.THREE` (so it loads from `file://`
-  without a server). Users are: `inf-` 01/05/07/10/11, plus `ai-13-thinking`
+  without a server). Users are: `inf-` 01/05/07/10/11 and 13/17/21/24, plus
+  `ai-13-thinking`
   (search tree with backtracking), `ai-19-embedding` (points on the unit sphere,
   angle = cosine similarity) and `ai-15-diffusion` (noise cloud settling into a
   grid). Load it with a plain `<script src="vendor/three.global.js">` *before*

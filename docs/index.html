@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#070b14">
-<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-18 + Hermes 进阶机制 01-07 + AI 运作原理拆解 01-14 + AI 深入篇 01-07 + LLM 模型算法原理 01-05 + Agent 开发避坑指南 01-05 + AGENT 实战工坊 01-06 + AGENT 模式进阶 01-06 + 推理原理 01-12，共 81 个自包含逐屏动画">
+<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-18 + Hermes 进阶机制 01-07 + AI 运作原理拆解 01-14 + AI 深入篇 01-07 + LLM 模型算法原理 01-05 + Agent 开发避坑指南 01-05 + AGENT 实战工坊 01-06 + AGENT 模式进阶 01-06 + 推理原理 01-24（两季），共 93 个自包含逐屏动画">
 <title>AI 运作原理 · 动画演示索引</title>
 <style>
   :root {
@@ -193,11 +193,11 @@
 <div class="wrap">
   <span class="kicker">AI-INSIGHT · DOCS</span>
   <h1>运作动画<span class="grad">演示索引</span></h1>
-  <p class="sub">81 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
+  <p class="sub">93 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
 
   <div class="finder">
-    <input id="q" type="search" placeholder="搜索 81 集 · 试试「KV」「注入」「MoE」「缓存」" aria-label="搜索动画" autocomplete="off">
-    <span class="finder-n" id="qn">81 集</span>
+    <input id="q" type="search" placeholder="搜索 93 集 · 试试「KV」「注入」「MoE」「缓存」" aria-label="搜索动画" autocomplete="off">
+    <span class="finder-n" id="qn">93 集</span>
   </div>
 
   <section class="board" id="map">
@@ -224,7 +224,7 @@
         <a href="inf-09-dspark-animation.html">投机解码</a>
         <a href="ai-15-kv-cache-animation.html">KV 深入</a>
       </div>
-      <div class="layer-n">16 集</div>
+      <div class="layer-n">28 集</div>
     </div>
     <div class="layer">
       <div class="layer-l"><b>L2</b>模型原理</div>
@@ -697,6 +697,85 @@
         <div class="card-top"><span class="card-ico">✂️</span><span class="num n-h6">· 12</span></div>
         <b>切成两半的字符</b>
         <p>跨 chunk 补齐 UTF-8 · 增量 KMP · 边生成边转 JSON</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="series">
+    <div class="series-head"><b>推理原理 · 第二季</b></div>
+    <div class="series-note">🎬 第二季 12 集：第一季讲「怎么跑得快」，这一季讲「快到极限之后」—— 位宽再压、算子再融、机器会坏、输出要能复现。四幕：<b>精度 13–15</b> → <b>kernel 16–18</b> → <b>弹性 19–21</b> → <b>一致性 22–23</b>，24 收账。数字同样出自 DeepInfer 部署问答与仓库代码，示意处已在屏上标注。</div>
+    <div class="grid">
+      <a class="card" href="inf-13-fp4-animation.html">
+        <div class="card-top"><span class="card-ico">📏</span><span class="num n-h1">· 13</span></div>
+        <b>四位数够用</b>
+        <p>位宽砍半 = 搬运砍半 · FP4 只有 8 档 · 16 个数共享一把尺子</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="inf-14-scale-grain-animation.html">
+        <div class="card-top"><span class="card-ico">📐</span><span class="num n-h2">· 14</span></div>
+        <b>尺子放多细</b>
+        <p>per-16 比 per-32 贵 6.6% · 四把尺子塞进一个 int32 · 一层三种粒度</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="inf-15-fp4-where-animation.html">
+        <div class="card-top"><span class="card-ico">📊</span><span class="num n-h3">· 15</span></div>
+        <b>同一个 4 位，三把尺子</b>
+        <p>主 KV 细、indexer 粗、MoE 静态 · 判据只有三个问题</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="inf-16-kernel-map-animation.html">
+        <div class="card-top"><span class="card-ico">📋</span><span class="num n-h4">· 16</span></div>
+        <b>一个 step 的 kernel 账单</b>
+        <p>11 个阶段只有 3 个在算 · 空隙时 SM 全空着 · 三处值得融</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="inf-17-mega-moe-animation.html">
+        <div class="card-top"><span class="card-ico">🔗</span><span class="num n-h5">· 17</span></div>
+        <b>三段融成一段</b>
+        <p>dispatch + GEMM + combine 一个 kernel · 尺子就地生成 · 只赢在 scale-up 域</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="inf-18-kernel-gap-animation.html">
+        <div class="card-top"><span class="card-ico">📉</span><span class="num n-h6">· 18</span></div>
+        <b>只差 5%</b>
+        <p>手写 SASS 慢 5–10% · 端到端只 5% · kernel 边际收益收敛得快</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="inf-19-autoscale-animation.html">
+        <div class="card-top"><span class="card-ico">📈</span><span class="num n-h1">· 19</span></div>
+        <b>扩看请求，缩看水位</b>
+        <p>P 看非缓存 token、D 看并发 · 限速与上下界 · 0.8 以上不缩容</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="inf-20-grace-period-animation.html">
+        <div class="card-top"><span class="card-ico">⏱️</span><span class="num n-h2">· 20</span></div>
+        <b>六十秒搬家</b>
+        <p>请求连 KV 一起走 · 1 分钟宽限期 · 容错靠冗余不靠重启</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="inf-21-ep-failover-animation.html">
+        <div class="card-top"><span class="card-ico">💥</span><span class="num n-h3">· 21</span></div>
+        <b>一块卡坏掉之后</b>
+        <p>EP 是一个通信域 · 单卡故障 = 实例故障 · 按实际卡数重组</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="inf-22-batch-invariant-animation.html">
+        <div class="card-top"><span class="card-ico">⚖️</span><span class="num n-h4">· 22</span></div>
+        <b>同一个输入，同一个输出</b>
+        <p>只由 seed + position 决定 · 归约/分块/专家位置是三个破坏者</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="inf-23-deterministic-sampling-animation.html">
+        <div class="card-top"><span class="card-ico">🎲</span><span class="num n-h5">· 23</span></div>
+        <b>每个序列一个种子</b>
+        <p>随机数是地址不是流 · 三个断言守住它 · 可复现才查得动 bug</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="inf-24-three-ledgers-animation.html">
+        <div class="card-top"><span class="card-ico">🗺️</span><span class="num n-h6">· 24</span></div>
+        <b>四道看不见的账</b>
+        <p>精度·融合·弹性·一致性 · 互相牵制 · 先量 trace 再动刀</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
     </div>

@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="推理原理 20 · 宽限期迁移：decode 引擎收到关停通知后有 1 分钟宽限，未完成请求连同 KV 一次性转给别的引擎继续解码">
+<title>推理原理 20 · 六十秒搬家</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#fbbf24;--acc2:#f472b6;
+    --accBg:rgba(251,191,36,.08);--accBd:rgba(251,191,36,.34);--accGl:rgba(251,191,36,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1{--glow:var(--accGl)}.s2{--glow:rgba(34,211,238,.08)}.s3{--glow:rgba(52,211,153,.08)}
+  .s4{--glow:rgba(167,139,250,.08)}.s5{--glow:rgba(251,191,36,.07)}.s6{--glow:rgba(244,114,182,.07)}
+  .s7{--glow:rgba(52,211,153,.09)}.s8{--glow:rgba(34,211,238,.09)}.s9{--glow:rgba(167,139,250,.09)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--acc2) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .bigcmp{display:flex;align-items:center;gap:16px;margin-top:26px;justify-content:center}
+  .bignum{text-align:center}
+  .bignum .v{font-family:var(--mono);font-size:clamp(23px,6.2vw,34px);font-weight:800;line-height:1}
+  .bignum .k{font-size:9.5px;color:var(--dim);margin-top:6px}
+  .bignum.old .v{color:#94a3b8;text-decoration:line-through;text-decoration-thickness:1px;opacity:.75}
+  .bignum.new .v{color:var(--acc)}
+  .bigcmp .ar{font-size:18px;color:var(--dim)}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 通用组件 */
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .stack{display:flex;flex-direction:column;gap:11px;width:100%;max-width:540px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:540px}
+  .cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;width:100%;max-width:540px}
+  .tag{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.07);color:#c3cde2}
+  .tag.acc{background:var(--accBg);color:var(--acc);border:1px solid var(--accBd)}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+
+  .bars{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .bar{display:flex;align-items:center;gap:8px}
+  .bar .lbl{width:56px;flex:none;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .bar .track{flex:1;height:10px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .bar .fill{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accBg),var(--acc))}
+  .screen.active .bar .fill{animation:grow .9s cubic-bezier(.2,1,.3,1) both}
+  @keyframes grow{to{width:var(--w,50%)}}
+  .bar .val{width:52px;flex:none;font-family:var(--mono);font-size:9.5px;color:#c3cde2}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .chartbox{width:100%;max-width:560px}
+  .chartbox canvas{width:100%;height:clamp(176px,34vh,236px);display:block}
+
+  .cells{display:grid;gap:3px;width:100%;max-width:520px}
+  .cells i{height:26px;border-radius:2px;background:rgba(255,255,255,.06);display:block}
+  .cells i.on{background:linear-gradient(180deg,var(--acc),var(--accBg))}
+  .cells i.hot{background:linear-gradient(180deg,#fb7185,rgba(251,113,133,.35))}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+:root{--acc:#34d399;--acc2:#22d3ee;--accBg:rgba(52,211,153,.08);--accBd:rgba(52,211,153,.34);--accGl:rgba(52,211,153,.12)}
+
+  /* 长尾 */
+  .tail{width:100%;max-width:540px}
+  .tail svg{width:100%;height:auto;display:block}
+
+  /* 倒计时环 */
+  .ring{position:relative;width:168px;height:168px;margin:0 auto}
+  .ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+  .ring .txt{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+  .ring .txt b{font-family:var(--mono);font-size:30px;font-weight:800;color:var(--acc);line-height:1}
+  .ring .txt span{font-size:9px;color:var(--dim);letter-spacing:.1em}
+  .ring circle.prog{stroke-dasharray:440;stroke-dashoffset:440}
+  .screen.active .ring circle.prog{animation:countdown 4.6s linear .3s forwards}
+  @keyframes countdown{to{stroke-dashoffset:0}}
+
+  .moves{width:100%;max-width:540px;display:flex;flex-direction:column;gap:8px}
+  .mv{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:11px;
+    background:var(--card);padding:10px 12px}
+  .mv .ic{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+    background:rgba(52,211,153,.12);font-size:13px;flex:none}
+  .mv .tx b{font-size:11.5px;display:block;margin-bottom:2px}
+  .mv .tx p{font-size:10px;color:var(--dim);line-height:1.55}
+
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="inf-19-autoscale-animation.html" aria-label="上一集" title="上一集：扩看请求，缩看水位">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="inf-21-ep-failover-animation.html" aria-label="下一集" title="下一集：一块卡坏掉之后">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1 active">
+  <div class="hero-kicker rv d1">推理原理 · 20</div>
+  <h1 class="rv d2">六十秒，<br><span class="grad">连人带行李</span></h1>
+  <p class="hero-sub rv d3">要下线一台 decode 引擎，<br>不能把还在生成一半的请求直接扔掉。</p>
+  <div class="bigcmp rv d5">
+    <div class="bignum"><div class="v">60s</div><div class="k">宽限期</div></div>
+    <div class="ar">→</div>
+    <div class="bignum new"><div class="v">1 次</div><div class="k">整体转交</div></div>
+  </div>
+  <div class="next-hint rv d6">向下滚动<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>01</b>长尾</div>
+    <h2 class="rv d2">大部分请求很快，少数拖很久</h2>
+    <p class="scr-desc rv d3">缩容的时机，往往正好落在一条长尾上。</p>
+  </div>
+  <div class="stage">
+    <div class="tail rv d4">
+      <svg viewBox="0 0 540 160" role="img" aria-label="请求时长分布的长尾">
+        <line x1="30" y1="14" x2="30" y2="128" stroke="rgba(255,255,255,.16)"/>
+        <line x1="30" y1="128" x2="524" y2="128" stroke="rgba(255,255,255,.16)"/>
+        <g fill="rgba(52,211,153,.55)">
+          <rect x="42" y="52" width="16" height="76" rx="2"/>
+          <rect x="64" y="42" width="16" height="86" rx="2"/>
+          <rect x="86" y="62" width="16" height="66" rx="2"/>
+          <rect x="108" y="72" width="16" height="56" rx="2"/>
+          <rect x="130" y="86" width="16" height="42" rx="2"/>
+          <rect x="152" y="96" width="16" height="32" rx="2"/>
+          <rect x="174" y="104" width="16" height="24" rx="2"/>
+        </g>
+        <g fill="rgba(251,191,36,.7)">
+          <rect x="196" y="110" width="16" height="18" rx="2"/>
+          <rect x="240" y="114" width="16" height="14" rx="2"/>
+          <rect x="290" y="118" width="16" height="10" rx="2"/>
+          <rect x="350" y="120" width="16" height="8" rx="2"/>
+        </g>
+        <rect x="430" y="121" width="16" height="7" rx="2" fill="rgba(251,113,133,.8)"/>
+        <text x="42" y="24" fill="#6ee7b7" font-size="9" font-family="monospace">大多数几十毫秒</text>
+        <text x="380" y="112" fill="#fda4af" font-size="9" font-family="monospace">少数几十分钟</text>
+        <text x="278" y="148" text-anchor="middle" fill="#8b96ad" font-size="9" font-family="monospace">请求时长 →</text>
+      </svg>
+    </div>
+    <p class="small rv d5">长尾可能是一个很长的生成任务，也可能是客户端一直在慢慢拉流。</p>
+  </div>
+  <div class="scr-foot rv d6">直接 kill 掉，用户看到的是<b>「输出到一半断了」</b>。</div>
+</section>
+
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>02</b>宽限</div>
+    <h2 class="rv d2">收到关停通知，还有 60 秒</h2>
+    <p class="scr-desc rv d3">这段时间不接新请求，只处理手上的。</p>
+  </div>
+  <div class="stage">
+    <div class="ring rv d4">
+      <svg viewBox="0 0 168 168">
+        <circle cx="84" cy="84" r="70" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="7"/>
+        <circle class="prog" cx="84" cy="84" r="70" fill="none" stroke="var(--acc)" stroke-width="7"
+          stroke-linecap="round"/>
+      </svg>
+      <div class="txt"><b>60</b><span>SECONDS</span></div>
+    </div>
+    <p class="small rv d5">60 秒刚好够「把手上的请求精准地交出去」，又不会拖慢整机的下线节奏。</p>
+  </div>
+  <div class="scr-foot rv d6">宽限期是一笔预算：<b>太长会拖住缩容，太短会丢请求</b>。</div>
+</section>
+
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>03</b>搬家</div>
+    <h2 class="rv d2">不重算，连行李一起搬</h2>
+    <p class="scr-desc rv d3">要搬的不只是「请求」，还有它已经攒下的上下文。</p>
+  </div>
+  <div class="stage">
+    <div class="moves rv d4">
+      <div class="mv"><span class="ic">📨</span><div class="tx"><b>未完成的请求</b><p>生成到第几个 token、采样参数、结构化约束的状态。</p></div></div>
+      <div class="mv"><span class="ic">🧳</span><div class="tx"><b>它的 KV 缓存</b><p>已经算过的上下文一起走，新机器接着解码，不用重算 prefill。</p></div></div>
+      <div class="mv"><span class="ic">🔁</span><div class="tx"><b>一次性转交</b><p>不是「等它跑完」，也不是「让它重来」，而是整段状态平移。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">这也是第一季那个三级 KV 缓存的价值：<b>缓存能跨机器取用，搬家才便宜</b>。</div>
+</section>
+
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>04</b>取舍</div>
+    <h2 class="rv d2">为什么不干脆等它跑完</h2>
+  </div>
+  <div class="stage">
+    <div class="stack rv d4">
+      <div class="card"><div class="k">等</div><b>一台机器被一条长尾钉住</b><p>缩容排队、扩缩容决策全部卡住，整批机器的利用率被拉低。</p></div>
+      <div class="card"><div class="k">扔</div><b>用户看到断流</b><p>首字都付了，输出到一半没了，比慢一点难受得多。</p></div>
+      <div class="card"><div class="k">搬</div><b>多一次传输，换连续体验</b><p>60 秒内把状态推给别的引擎，代价是带宽，收益是不掉线。</p></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">容错这件事上，<b>「搬」通常是三条路里最便宜的那条</b>。</div>
+</section>
+
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>05</b>兜底</div>
+    <h2 class="rv d2">真坏了，靠的不是重启快</h2>
+    <p class="scr-desc rv d3">重启是分钟级的，快不了；能快的是「换一条路」。</p>
+  </div>
+  <div class="stage">
+    <div class="stack rv d4">
+      <div class="card"><div class="k">事实</div><b>单引擎重启要几分钟</b><p>这个时间基本由加载权重、建立通信域决定，优化空间有限。</p></div>
+      <div class="card"><div class="k">所以</div><b>容错靠配额冗余 + 请求级改路由</b><p>别处还有余量，请求转过去就行。</p></div>
+    </div>
+    <p class="small rv d5">这两条加起来，才是「故障对用户不可见」的原因。</p>
+  </div>
+  <div class="scr-foot rv d6">下一集：如果坏的不是一台机器，而是一块 GPU 呢？</div>
+</section>
+
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>收</b>小结</div>
+    <h2 class="rv d2">灰度的三个动作</h2>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">⏱️</span><div><b>先停接新，再处理旧</b><p>宽限期是「有序退出」的窗口。</p></div></div>
+      <div class="fact rv d4"><span class="i">🧳</span><div><b>请求与 KV 一起走</b><p>不重算 prefill，用户不掉线。</p></div></div>
+      <div class="fact rv d5"><span class="i">🛟</span><div><b>容错靠冗余，不靠重启</b><p>重启是分钟级，换路是秒级。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">下一集：一块 GPU 坏掉，为什么整个实例都不能用了。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  var HOOK = null;
+  /* ---------- episode ---------- */
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (HOOK) { try { HOOK(i); } catch (e) {} }
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+
+</body>
+</html>

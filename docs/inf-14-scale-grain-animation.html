@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="推理原理 14 · 分块缩放的粒度：per-tensor / per-128 / per-32 / per-16，有效位宽怎么算，尺子为什么要打包成 int32，以及同一层里三种粒度共存">
+<title>推理原理 14 · 尺子放多细</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#fbbf24;--acc2:#f472b6;
+    --accBg:rgba(251,191,36,.08);--accBd:rgba(251,191,36,.34);--accGl:rgba(251,191,36,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1{--glow:var(--accGl)}.s2{--glow:rgba(34,211,238,.08)}.s3{--glow:rgba(52,211,153,.08)}
+  .s4{--glow:rgba(167,139,250,.08)}.s5{--glow:rgba(251,191,36,.07)}.s6{--glow:rgba(244,114,182,.07)}
+  .s7{--glow:rgba(52,211,153,.09)}.s8{--glow:rgba(34,211,238,.09)}.s9{--glow:rgba(167,139,250,.09)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--acc2) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .bigcmp{display:flex;align-items:center;gap:16px;margin-top:26px;justify-content:center}
+  .bignum{text-align:center}
+  .bignum .v{font-family:var(--mono);font-size:clamp(23px,6.2vw,34px);font-weight:800;line-height:1}
+  .bignum .k{font-size:9.5px;color:var(--dim);margin-top:6px}
+  .bignum.old .v{color:#94a3b8;text-decoration:line-through;text-decoration-thickness:1px;opacity:.75}
+  .bignum.new .v{color:var(--acc)}
+  .bigcmp .ar{font-size:18px;color:var(--dim)}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 通用组件 */
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .stack{display:flex;flex-direction:column;gap:11px;width:100%;max-width:540px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:540px}
+  .cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;width:100%;max-width:540px}
+  .tag{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.07);color:#c3cde2}
+  .tag.acc{background:var(--accBg);color:var(--acc);border:1px solid var(--accBd)}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+
+  .bars{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .bar{display:flex;align-items:center;gap:8px}
+  .bar .lbl{width:56px;flex:none;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .bar .track{flex:1;height:10px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .bar .fill{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accBg),var(--acc))}
+  .screen.active .bar .fill{animation:grow .9s cubic-bezier(.2,1,.3,1) both}
+  @keyframes grow{to{width:var(--w,50%)}}
+  .bar .val{width:52px;flex:none;font-family:var(--mono);font-size:9.5px;color:#c3cde2}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .chartbox{width:100%;max-width:560px}
+  .chartbox canvas{width:100%;height:clamp(176px,34vh,236px);display:block}
+
+  .cells{display:grid;gap:3px;width:100%;max-width:520px}
+  .cells i{height:26px;border-radius:2px;background:rgba(255,255,255,.06);display:block}
+  .cells i.on{background:linear-gradient(180deg,var(--acc),var(--accBg))}
+  .cells i.hot{background:linear-gradient(180deg,#fb7185,rgba(251,113,133,.35))}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+:root{--acc:#fbbf24;--acc2:#f472b6;--accBg:rgba(251,191,36,.08);--accBd:rgba(251,191,36,.34);--accGl:rgba(251,191,36,.12)}
+
+  /* 粒度阶梯 */
+  .ladder{width:100%;max-width:520px;display:flex;flex-direction:column;gap:7px}
+  .lad{display:grid;grid-template-columns:74px 1fr 58px;align-items:center;gap:8px;
+    border:1px solid var(--line);border-radius:10px;background:var(--card);padding:8px 10px}
+  .lad .nm{font-family:var(--mono);font-size:9.5px;color:#c3cde2}
+  .lad .tr{height:7px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .lad .fi{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accBg),var(--acc))}
+  .screen.active .lad .fi{animation:grow .85s cubic-bezier(.2,1,.3,1) both}
+  .lad .vv{font-family:var(--mono);font-size:9px;color:var(--acc);text-align:right}
+  .lad.best{border-color:var(--accBd);background:var(--accBg)}
+
+  /* 打包 */
+  .pack{display:flex;gap:5px;justify-content:center;flex-wrap:wrap;max-width:520px}
+  .i32{display:flex;flex-direction:column;gap:2px;border:1px solid rgba(34,211,238,.3);border-radius:6px;
+    background:rgba(34,211,238,.06);padding:4px 3px}
+  .i32 .by{display:flex;gap:2px}
+  .i32 .by i{width:11px;height:16px;border-radius:2px;background:rgba(34,211,238,.28);display:block}
+  .i32 .lb{font-family:var(--mono);font-size:7px;color:#67e8f9;text-align:center}
+  .bracket{position:relative;height:16px;margin-top:6px;max-width:520px;width:100%}
+  .bracket .ln{position:absolute;left:0;width:64px;top:0;height:7px;border:1px solid var(--accBd);border-top:none;border-radius:0 0 4px 4px}
+  .bracket .tx{position:absolute;left:72px;top:0;font-size:9px;color:var(--acc);font-family:var(--mono)}
+
+  /* 表格 */
+  .tbl{width:100%;max-width:560px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:rgba(7,11,20,.45)}
+  .trow{display:grid;grid-template-columns:1.1fr .5fr 1.55fr;align-items:center;gap:6px;
+    padding:9px 11px;border-top:1px solid rgba(255,255,255,.07);font-size:10.5px}
+  .trow:first-child{border-top:none}
+  .trow.hd{background:rgba(255,255,255,.04);font-family:var(--mono);font-size:8.5px;color:var(--dim);letter-spacing:.06em}
+  .trow .c1{color:#dbe4f5}
+  .trow .c2{font-family:var(--mono);color:var(--acc);font-size:10px}
+  .trow .c3{color:var(--dim);font-size:9.5px;line-height:1.5}
+
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="inf-13-fp4-animation.html" aria-label="上一集" title="上一集：四位数够用">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="inf-15-fp4-where-animation.html" aria-label="下一集" title="下一集：同一个 4 位，三把尺子">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1 active">
+  <div class="hero-kicker rv d1">推理原理 · 14</div>
+  <h1 class="rv d2">4 位，<br><span class="grad">其实不是 4 位</span></h1>
+  <p class="hero-sub rv d3">尺子也要占地方。<br>组越小越准，但<b>尺子本身的开销</b>就浮上来了。</p>
+  <div class="bigcmp rv d5">
+    <div class="bignum"><div class="v">4.25</div><div class="k">per-32 · 每元素有效位</div></div>
+    <div class="ar">/</div>
+    <div class="bignum"><div class="v">4.53</div><div class="k">per-16 · 每元素有效位</div></div>
+  </div>
+  <div class="next-hint rv d6">向下滚动<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>01</b>粒度</div>
+    <h2 class="rv d2">一把尺子，管多少个数</h2>
+    <p class="scr-desc rv d3">这是唯一的旋钮：组越大越省，组越小越准。</p>
+  </div>
+  <div class="stage">
+    <div class="ladder rv d4">
+      <div class="lad"><span class="nm">per-tensor</span><span class="tr"><span class="fi" style="--w:14%"></span></span><span class="vv">最粗</span></div>
+      <div class="lad"><span class="nm">per-128</span><span class="tr"><span class="fi" style="--w:38%"></span></span><span class="vv">fp8 常用</span></div>
+      <div class="lad"><span class="nm">per-32</span><span class="tr"><span class="fi" style="--w:66%"></span></span><span class="vv">MXFP4</span></div>
+      <div class="lad best"><span class="nm">per-16</span><span class="tr"><span class="fi" style="--w:92%"></span></span><span class="vv">最准</span></div>
+    </div>
+    <p class="small rv d5">横条 = 贴合程度（组内数值分布越集中，尺子越贴身，量化误差越小）</p>
+  </div>
+  <div class="scr-foot rv d6">没有「最优粒度」，只有「这一层的数值分布 + 这一层的 kernel 能不能吃」。</div>
+</section>
+
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>02</b>算账</div>
+    <h2 class="rv d2">有效位宽，要连尺子一起算</h2>
+    <p class="scr-desc rv d3">每元素真实占几位 = 数据位 + 尺子位 ÷ 组大小。</p>
+  </div>
+  <div class="stage">
+    <div class="bars rv d4">
+      <div class="bar"><span class="lbl">bf16</span><span class="track"><span class="fill" style="--w:100%"></span></span><span class="val">16.0</span></div>
+      <div class="bar"><span class="lbl">fp8/128</span><span class="track"><span class="fill" style="--w:50.4%"></span></span><span class="val">8.06</span></div>
+      <div class="bar"><span class="lbl">fp4/16</span><span class="track"><span class="fill" style="--w:28.3%"></span></span><span class="val">4.53</span></div>
+      <div class="bar"><span class="lbl">fp4/32</span><span class="track"><span class="fill" style="--w:26.6%"></span></span><span class="val">4.25</span></div>
+    </div>
+    <p class="small rv d5">fp8 per-128 = 8 + 8/128；fp4 per-16 = 4 + 8/16；fp4 per-32 = 4 + 8/32</p>
+  </div>
+  <div class="scr-foot rv d6">per-16 比 per-32 多付 <b>6.6%</b> 的位宽 —— 换回来的精度，值不值要看这一层误差会不会累积。</div>
+</section>
+
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>03</b>打包</div>
+    <h2 class="rv d2">四把尺子，塞进一个 int32</h2>
+    <p class="scr-desc rv d3">ue8m0 只有 8 位，四个正好填满一个 32 位整数。</p>
+  </div>
+  <div class="stage">
+    <div class="pack rv d4" id="pack"></div>
+    <div class="bracket rv d5"><span class="ln"></span><span class="tx">一个 int32 = 4 把尺子 = 128 个 4 位数</span></div>
+    <div class="codeblk rv d6">一行 hidden=d 的 scale 序列 = <em>d/128</em> 个 int32
+读取一次，就拿到 128 个数的尺子 <i>（行主序 packed ue8m0）</i></div>
+  </div>
+  <div class="scr-foot rv d7">打包不是为了省空间（8 位本来就不浪费），是为了让 <b>TMA 一次搬完</b>。</div>
+</section>
+
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>04</b>共存</div>
+    <h2 class="rv d2">同一层里，三种粒度并存</h2>
+    <p class="scr-desc rv d3">一次 RMSNorm 的输出，要同时喂给三个下游。</p>
+  </div>
+  <div class="stage">
+    <div class="tbl rv d4">
+      <div class="trow hd"><span>输出去向</span><span>粒度</span><span>布局</span></div>
+      <div class="trow"><span class="c1">attention（mxfp8）</span><span class="c2">32</span><span class="c3">行主序 packed ue8m0</span></div>
+      <div class="trow"><span class="c1">fp8 GEMM</span><span class="c2">128</span><span class="c3">TMA 对齐，列主序可选</span></div>
+      <div class="trow"><span class="c1">Mega MoE（x_sf）</span><span class="c2">32</span><span class="c3">按 BLOCK_M 分块 + 128×4 转置</span></div>
+    </div>
+    <p class="small rv d5">同一个 kernel 里，<b>三套 scale 用不同布局同时写出</b> —— 因为下游三个 kernel 要的格式不一样。</p>
+  </div>
+  <div class="scr-foot rv d6">这就是「尺子」的隐性成本：不是算不出来，是<b>要按每个下游的 tile 形状重新排一遍</b>。</div>
+</section>
+
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>05</b>边界</div>
+    <h2 class="rv d2">为什么不能无限细</h2>
+    <p class="scr-desc rv d3">再细下去，撞的是硬件和 kernel 的硬约束。</p>
+  </div>
+  <div class="stage">
+    <div class="stack rv d4">
+      <div class="card"><div class="k">01 · 对齐</div><b>TMA 要求 128 对齐</b><p>尺子序列的起止必须落在对齐边界上，否则要拆成两次搬。</p></div>
+      <div class="card"><div class="k">02 · 次数</div><b>per-16 要多读四倍</b><p>同样的 KV 长度，scale 读取次数从 1 次变 4 次，这部分也是带宽。</p></div>
+      <div class="card"><div class="k">03 · 平台</div><b>有的芯片只认 32</b><p>换到 NPU 后端时，粒度会被固定成 32，代码里直接断言。</p></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">所以粒度不是一个数，是<b>数值需求 × kernel 形状 × 平台</b>的交集。</div>
+</section>
+
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>收</b>小结</div>
+    <h2 class="rv d2">第二道账：粒度</h2>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">🎚️</span><div><b>组小 = 准 + 贵</b><p>per-16 比 per-32 多 6.6% 位宽。</p></div></div>
+      <div class="fact rv d4"><span class="i">📦</span><div><b>尺子要打包</b><p>4 个 ue8m0 → 1 个 int32，为的是 TMA 一次搬完。</p></div></div>
+      <div class="fact rv d5"><span class="i">🧩</span><div><b>一层三种格式</b><p>下游要什么，norm 就得同时写出什么。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">下一集：把这三把尺子，逐一放到它们真正的位置上。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  var HOOK = null;
+  /* ---------- episode ---------- */
+
+  /* 打包格子 */
+  var pack = document.getElementById('pack');
+  if (pack) {
+    for (var n = 0; n < 8; n++) {
+      var box = document.createElement('div');
+      box.className = 'i32';
+      var row = document.createElement('div');
+      row.className = 'by';
+      for (var k = 0; k < 4; k++) {
+        var b = document.createElement('i');
+        row.appendChild(b);
+      }
+      box.appendChild(row);
+      var lb = document.createElement('span');
+      lb.className = 'lb';
+      lb.textContent = 's' + (n * 4);
+      box.appendChild(lb);
+      box.style.animation = 'rise .4s ease ' + (0.1 + n * 0.05) + 's both';
+      pack.appendChild(box);
+    }
+  }
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (HOOK) { try { HOOK(i); } catch (e) {} }
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+
+</body>
+</html>

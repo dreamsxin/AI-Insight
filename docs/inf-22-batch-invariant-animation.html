@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="推理原理 22 · 批不变性：采样结果只由序列种子与位置决定，与 batch 大小、行序无关；破坏它的是归约顺序、GEMM 分块与专家位置">
+<title>推理原理 22 · 同一个输入，同一个输出</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#fbbf24;--acc2:#f472b6;
+    --accBg:rgba(251,191,36,.08);--accBd:rgba(251,191,36,.34);--accGl:rgba(251,191,36,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1{--glow:var(--accGl)}.s2{--glow:rgba(34,211,238,.08)}.s3{--glow:rgba(52,211,153,.08)}
+  .s4{--glow:rgba(167,139,250,.08)}.s5{--glow:rgba(251,191,36,.07)}.s6{--glow:rgba(244,114,182,.07)}
+  .s7{--glow:rgba(52,211,153,.09)}.s8{--glow:rgba(34,211,238,.09)}.s9{--glow:rgba(167,139,250,.09)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--acc2) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .bigcmp{display:flex;align-items:center;gap:16px;margin-top:26px;justify-content:center}
+  .bignum{text-align:center}
+  .bignum .v{font-family:var(--mono);font-size:clamp(23px,6.2vw,34px);font-weight:800;line-height:1}
+  .bignum .k{font-size:9.5px;color:var(--dim);margin-top:6px}
+  .bignum.old .v{color:#94a3b8;text-decoration:line-through;text-decoration-thickness:1px;opacity:.75}
+  .bignum.new .v{color:var(--acc)}
+  .bigcmp .ar{font-size:18px;color:var(--dim)}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 通用组件 */
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .stack{display:flex;flex-direction:column;gap:11px;width:100%;max-width:540px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:540px}
+  .cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;width:100%;max-width:540px}
+  .tag{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.07);color:#c3cde2}
+  .tag.acc{background:var(--accBg);color:var(--acc);border:1px solid var(--accBd)}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+
+  .bars{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .bar{display:flex;align-items:center;gap:8px}
+  .bar .lbl{width:56px;flex:none;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .bar .track{flex:1;height:10px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .bar .fill{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accBg),var(--acc))}
+  .screen.active .bar .fill{animation:grow .9s cubic-bezier(.2,1,.3,1) both}
+  @keyframes grow{to{width:var(--w,50%)}}
+  .bar .val{width:52px;flex:none;font-family:var(--mono);font-size:9.5px;color:#c3cde2}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .chartbox{width:100%;max-width:560px}
+  .chartbox canvas{width:100%;height:clamp(176px,34vh,236px);display:block}
+
+  .cells{display:grid;gap:3px;width:100%;max-width:520px}
+  .cells i{height:26px;border-radius:2px;background:rgba(255,255,255,.06);display:block}
+  .cells i.on{background:linear-gradient(180deg,var(--acc),var(--accBg))}
+  .cells i.hot{background:linear-gradient(180deg,#fb7185,rgba(251,113,133,.35))}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+:root{--acc:#a78bfa;--acc2:#f472b6;--accBg:rgba(167,139,250,.08);--accBd:rgba(167,139,250,.34);--accGl:rgba(167,139,250,.12)}
+
+  .contract{width:100%;max-width:540px;border:1px solid var(--accBd);border-radius:12px;
+    background:var(--accBg);padding:12px 13px;font-family:var(--mono);font-size:10px;color:#c3cde2;line-height:1.9}
+  .contract .h{display:block;font-size:8.5px;color:var(--acc);letter-spacing:.1em;margin-bottom:7px}
+  .contract .in{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .contract .in span{border:1px solid rgba(167,139,250,.4);background:rgba(167,139,250,.1);
+    color:#c4b5fd;border-radius:5px;padding:2px 7px;font-size:9px}
+  .contract .out{border-left:2px solid var(--acc);padding-left:8px;color:#e8eefc;font-size:10.5px}
+
+  /* 打乱演示 */
+  .shuffle{width:100%;max-width:440px;display:flex;flex-direction:column;gap:6px}
+  .shuffle .row{display:grid;grid-template-columns:24px 1fr 54px;align-items:center;gap:6px}
+  .shuffle .row i{font-family:var(--mono);font-size:8px;color:var(--dim);font-style:normal;text-align:right}
+  .shuffle .row .cells{display:flex;gap:2px}
+  .shuffle .row .cells span{flex:1;height:14px;border-radius:2px;background:rgba(167,139,250,.28)}
+  .shuffle .row .tk{font-family:var(--mono);font-size:9px;color:var(--acc);text-align:right}
+  .screen.active .shuffle .row{animation:rise .4s ease both}
+  .screen.active .shuffle .row:nth-child(2){animation-delay:.16s}
+  .screen.active .shuffle .row:nth-child(3){animation-delay:.3s}
+  .screen.active .shuffle .row:nth-child(4){animation-delay:.44s}
+
+  .brk{width:100%;max-width:540px;display:flex;flex-direction:column;gap:8px}
+  .bk{display:flex;gap:9px;border:1px solid rgba(251,113,133,.22);border-radius:11px;background:rgba(251,113,133,.04);padding:10px 12px}
+  .bk .n{font-family:var(--mono);font-size:9px;color:#fda4af;flex:none;padding-top:2px}
+  .bk b{font-size:11.5px;display:block;margin-bottom:2px}
+  .bk p{font-size:10px;color:var(--dim);line-height:1.6}
+
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="inf-21-ep-failover-animation.html" aria-label="上一集" title="上一集：一块卡坏掉之后">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="inf-23-deterministic-sampling-animation.html" aria-label="下一集" title="下一集：每个序列一个种子">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1 active">
+  <div class="hero-kicker rv d1">推理原理 · 22</div>
+  <h1 class="rv d2">同一个输入，<br><span class="grad">同一个输出</span></h1>
+  <p class="hero-sub rv d3">跟 batch 大小无关，跟行序无关，<br>跟「这次排在第几个」无关。</p>
+  <div class="bigcmp rv d5">
+    <div class="bignum"><div class="v">batch 1</div><div class="k">单独跑</div></div>
+    <div class="ar">=</div>
+    <div class="bignum new"><div class="v">batch 64</div><div class="k">混在一起跑</div></div>
+  </div>
+  <div class="next-hint rv d6">向下滚动<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>01</b>契约</div>
+    <h2 class="rv d2">只由三样东西决定</h2>
+    <p class="scr-desc rv d3">采样函数的输出，被写死成这三个输入的纯函数。</p>
+  </div>
+  <div class="stage">
+    <div class="contract rv d4">
+      <span class="h">RANDOM_SAMPLING · 契约</span>
+      <div class="in">
+        <span>seq_seed</span><span>sample_position</span><span>is_nextn_predict</span>
+      </div>
+      <div class="out">→ 输出 token 下标，与 batch 大小、行序无关</div>
+    </div>
+    <p class="small rv d5">注意这里<b>没有</b>「batch 里第几行」这个输入 —— 它根本不应该参与计算。</p>
+  </div>
+  <div class="scr-foot rv d6">这条契约一旦写进注释，就变成了可测试、可回归的工程承诺。</div>
+</section>
+
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>02</b>打乱</div>
+    <h2 class="rv d2">换个顺序，结果也跟着换位置</h2>
+    <p class="scr-desc rv d3">行顺序变了，每行的结果不变 —— 只是位置挪了。</p>
+  </div>
+  <div class="stage">
+    <div class="shuffle rv d4">
+      <div class="row"><i>A</i><div class="cells"><span></span><span></span><span></span><span></span></div><span class="tk">#2</span></div>
+      <div class="row"><i>B</i><div class="cells"><span></span><span></span><span></span><span></span></div><span class="tk">#0</span></div>
+      <div class="row"><i>C</i><div class="cells"><span></span><span></span><span></span><span></span></div><span class="tk">#3</span></div>
+      <div class="row"><i>D</i><div class="cells"><span></span><span></span><span></span><span></span></div><span class="tk">#1</span></div>
+    </div>
+    <p class="small rv d5">打乱后：<b>B 仍然出 #0，A 仍然出 #2</b>；把任意一行单独拿去跑，结果也一样。</p>
+  </div>
+  <div class="scr-foot rv d6">这才是「可复现」：不是整体跑两遍一样，而是<b>任意切分都得出同一个字</b>。</div>
+</section>
+
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>03</b>为什么会不一样</div>
+    <h2 class="rv d2">浮点加法不满足结合律</h2>
+    <p class="scr-desc rv d3">换个顺序加，末位就会差一点；差一点，argmax 就可能翻。</p>
+  </div>
+  <div class="stage">
+    <div class="stack rv d4">
+      <div class="codeblk">(a + b) + c  ≠  a + (b + c)   <i>// 差在最后几位</i>
+logits 只差 1e-7 → softmax 之后仍然只差一点点
+但 top-1 的两个候选<b>本来就咬得很紧</b> → 直接换个 token</div>
+      <div class="card"><div class="k">关键</div><b>不是精度不够，是顺序不固定</b><p>同样的数，换一种加法规约，末位就不同。</p></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">大模型输出本来就是<b>概率上接近</b>的两个候选，末位噪声足以改变结果。</div>
+</section>
+
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>04</b>三个来源</div>
+    <h2 class="rv d2">谁在偷偷改变加法顺序</h2>
+  </div>
+  <div class="stage">
+    <div class="brk rv d4">
+      <div class="bk"><span class="n">01</span><div><b>规约方式</b><p>通信时把一次大归约拆成多段，段数随负载变 → 加法树形状变。</p></div></div>
+      <div class="bk"><span class="n">02</span><div><b>GEMM 分块</b><p>batch 形状变了，tile 边界跟着变，累加顺序也就变了。</p></div></div>
+      <div class="bk"><span class="n">03</span><div><b>专家位置</b><p>EPLB 把专家挪到别的卡，token 的累加顺序随之改变。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">三条里最隐蔽的是第三条：<b>负载均衡本身就会破坏可复现性</b>。</div>
+</section>
+
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>05</b>开关</div>
+    <h2 class="rv d2">打开它，要关掉两样东西</h2>
+    <p class="scr-desc rv d3">工程里就是一个环境变量，但代价写在别处。</p>
+  </div>
+  <div class="stage">
+    <div class="codeblk rv d4">BATCH_INVARIANT = 1
+  → 通信 Layer：<em>禁用多段归约</em>
+      （allow_multiple_reduction = False）
+  → 专家重排：<em>必须关掉</em>
+      （否则权重位置一变，累加顺序就变）</div>
+    <p class="small rv d5">反过来看，这行代码恰好说明了：<b>EPLB 与批不变在机制上互斥</b>。</p>
+  </div>
+  <div class="scr-foot rv d6">所以它不是「默认开」的 —— 生产环境更在乎吞吐。</div>
+</section>
+
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>收</b>小结</div>
+    <h2 class="rv d2">第四道账：一致性</h2>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">🧾</span><div><b>契约要写下来</b><p>输出只由 seed / position 决定。</p></div></div>
+      <div class="fact rv d4"><span class="i">🧮</span><div><b>破坏它的是顺序</b><p>归约、分块、专家位置，都会改加法树。</p></div></div>
+      <div class="fact rv d5"><span class="i">⚖️</span><div><b>和吞吐互斥</b><p>要可复现，就得关掉负载均衡的重排。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">下一集：光有「批不变」还不够，采样本身也得是确定的。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  var HOOK = null;
+  /* ---------- episode ---------- */
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (HOOK) { try { HOOK(i); } catch (e) {} }
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+
+</body>
+</html>

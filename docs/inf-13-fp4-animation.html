@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="推理原理 13 · 精度账本：从 BF16 到 FP8 再到 FP4，为什么四位数还能算对，位宽省下来的是带宽，以及分块缩放这把「尺子」">
+<title>推理原理 13 · 四位数够用</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#fbbf24;--acc2:#f472b6;
+    --accBg:rgba(251,191,36,.08);--accBd:rgba(251,191,36,.34);--accGl:rgba(251,191,36,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1{--glow:var(--accGl)}.s2{--glow:rgba(34,211,238,.08)}.s3{--glow:rgba(52,211,153,.08)}
+  .s4{--glow:rgba(167,139,250,.08)}.s5{--glow:rgba(251,191,36,.07)}.s6{--glow:rgba(244,114,182,.07)}
+  .s7{--glow:rgba(52,211,153,.09)}.s8{--glow:rgba(34,211,238,.09)}.s9{--glow:rgba(167,139,250,.09)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--acc2) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .bigcmp{display:flex;align-items:center;gap:16px;margin-top:26px;justify-content:center}
+  .bignum{text-align:center}
+  .bignum .v{font-family:var(--mono);font-size:clamp(23px,6.2vw,34px);font-weight:800;line-height:1}
+  .bignum .k{font-size:9.5px;color:var(--dim);margin-top:6px}
+  .bignum.old .v{color:#94a3b8;text-decoration:line-through;text-decoration-thickness:1px;opacity:.75}
+  .bignum.new .v{color:var(--acc)}
+  .bigcmp .ar{font-size:18px;color:var(--dim)}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 通用组件 */
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .stack{display:flex;flex-direction:column;gap:11px;width:100%;max-width:540px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:540px}
+  .cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;width:100%;max-width:540px}
+  .tag{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.07);color:#c3cde2}
+  .tag.acc{background:var(--accBg);color:var(--acc);border:1px solid var(--accBd)}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+
+  .bars{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .bar{display:flex;align-items:center;gap:8px}
+  .bar .lbl{width:56px;flex:none;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .bar .track{flex:1;height:10px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .bar .fill{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accBg),var(--acc))}
+  .screen.active .bar .fill{animation:grow .9s cubic-bezier(.2,1,.3,1) both}
+  @keyframes grow{to{width:var(--w,50%)}}
+  .bar .val{width:52px;flex:none;font-family:var(--mono);font-size:9.5px;color:#c3cde2}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .chartbox{width:100%;max-width:560px}
+  .chartbox canvas{width:100%;height:clamp(176px,34vh,236px);display:block}
+
+  .cells{display:grid;gap:3px;width:100%;max-width:520px}
+  .cells i{height:26px;border-radius:2px;background:rgba(255,255,255,.06);display:block}
+  .cells i.on{background:linear-gradient(180deg,var(--acc),var(--accBg))}
+  .cells i.hot{background:linear-gradient(180deg,#fb7185,rgba(251,113,133,.35))}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+:root{--acc:#fbbf24;--acc2:#f472b6;--accBg:rgba(251,191,36,.08);--accBd:rgba(251,191,36,.34);--accGl:rgba(251,191,36,.12)}
+
+  /* 封面 3D */
+  .hero-wrap{position:relative;width:100%;max-width:640px;height:100%;display:flex;flex-direction:column;align-items:center}
+  .hero-inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;flex:0 0 auto;padding-top:2vh}
+  .c3d{position:relative;z-index:0;flex:1 1 auto;width:100%;min-height:0;margin-top:2px}
+  .c3d canvas{display:block;width:100%!important;height:100%!important}
+  .hero-legend{position:absolute;left:0;right:0;bottom:calc(44px + env(safe-area-inset-bottom));
+    display:flex;justify-content:center;gap:14px;font-size:10px;color:var(--dim);font-family:var(--mono);z-index:3}
+  .hero-legend span{display:inline-flex;align-items:center;gap:5px}
+  .hero-legend i{width:6px;height:6px;border-radius:50%;display:inline-block}
+  .lg1 i{background:#22d3ee;box-shadow:0 0 7px #22d3ee}
+  .lg2 i{background:#fbbf24;box-shadow:0 0 7px #fbbf24}
+  .lg3 i{background:#fb7185;box-shadow:0 0 7px #fb7185}
+
+  /* 刻度尺 */
+  .ruler{position:relative;width:100%;max-width:540px;height:206px;margin-top:2px}
+  .ruler .lv{position:absolute;bottom:30px;width:15px;transform:translateX(-50%);border-radius:2px 2px 0 0;
+    background:linear-gradient(180deg,var(--acc),rgba(251,191,36,.34));left:var(--x)}
+  .ruler .vll{position:absolute;bottom:9px;transform:translateX(-50%);font-family:var(--mono);font-size:10px;color:var(--dim);left:var(--x)}
+  .ruler .base{position:absolute;left:0;right:0;bottom:28px;height:1px;background:rgba(255,255,255,.18)}
+  .ruler .tgt{position:absolute;left:var(--x);top:14px;bottom:28px;border-left:1px dashed rgba(251,113,133,.75)}
+  .ruler .tgt b{position:absolute;top:-2px;left:5px;font-family:var(--mono);font-size:9px;color:#fda4af;white-space:nowrap}
+  .screen.active .ruler .lv{animation:rise .5s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .ruler .lv:nth-child(1){animation-delay:.1s}
+  .screen.active .ruler .lv:nth-child(2){animation-delay:.18s}
+  .screen.active .ruler .lv:nth-child(3){animation-delay:.26s}
+  .screen.active .ruler .lv:nth-child(4){animation-delay:.34s}
+  .screen.active .ruler .lv:nth-child(5){animation-delay:.42s}
+  .screen.active .ruler .lv:nth-child(6){animation-delay:.5s}
+  .screen.active .ruler .lv:nth-child(7){animation-delay:.58s}
+  .screen.active .ruler .lv:nth-child(8){animation-delay:.66s}
+
+  /* 分块缩放 */
+  .sgwrap{display:flex;gap:12px;width:100%;max-width:500px;justify-content:center}
+  .sg{flex:1;border:1px solid var(--accBd);border-radius:12px;background:var(--accBg);padding:9px 10px 10px}
+  .sg .sgk{font-family:var(--mono);font-size:8.5px;color:var(--acc);display:block;margin-bottom:7px;text-align:center}
+  .sgg{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
+  .sgg i{height:17px;border-radius:2px;background:rgba(251,191,36,.34);display:block}
+  .screen.active .sgg i{animation:pop .34s ease both}
+  @keyframes pop{from{opacity:.15;transform:scale(.82)}to{opacity:1;transform:none}}
+
+  /* 位域 */
+  .bits{display:flex;gap:2px;justify-content:center;margin-top:8px}
+  .bits .b{width:27px;height:31px;border-radius:4px;display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:11px;font-weight:700}
+  .bits .bs{background:rgba(251,113,133,.22);color:#fda4af}
+  .bits .be{background:rgba(251,191,36,.22);color:#fcd34d}
+  .bits .bm{background:rgba(34,211,238,.22);color:#67e8f9}
+  .bits .bn{background:rgba(255,255,255,.06);color:#8b96ad}
+  .lgd{display:flex;gap:14px;justify-content:center;margin-top:10px;font-size:10px;color:var(--dim);font-family:var(--mono)}
+  .lgd span{display:inline-flex;align-items:center;gap:4px}
+  .lgd i{width:7px;height:7px;border-radius:2px;display:inline-block}
+
+  /* 表格 */
+  .tbl{width:100%;max-width:560px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:rgba(7,11,20,.45)}
+  .trow{display:grid;grid-template-columns:1.15fr .62fr .62fr 1.5fr;align-items:center;gap:6px;
+    padding:9px 11px;border-top:1px solid rgba(255,255,255,.07);font-size:10.5px}
+  .trow:first-child{border-top:none}
+  .trow.hd{background:rgba(255,255,255,.04);font-family:var(--mono);font-size:8.5px;color:var(--dim);letter-spacing:.06em}
+  .trow .c1{color:#dbe4f5}
+  .trow .c2,.trow .c3{font-family:var(--mono);color:var(--acc);font-size:10px}
+  .trow .c4{color:var(--dim);font-size:9.5px;line-height:1.5}
+
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="inf-12-stream-animation.html" aria-label="上一集" title="上一集：切成两半的字符">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="inf-14-scale-grain-animation.html" aria-label="下一集" title="下一集：尺子放多细">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1 active">
+  <div class="hero-wrap"><div class="hero-inner">
+    <div class="hero-kicker rv d1">推理原理 · 13</div>
+    <h1 class="rv d2">四位数，<span class="grad">够用</span></h1>
+    <p class="hero-sub rv d3">KV 缓存、索引器、专家权重都在往 4 位走。<br>省的<b>不是显存，是每一步要搬的字节</b>。</p>
+    <div class="bigcmp rv d5">
+      <div class="bignum old"><div class="v">16 bit</div><div class="k">BF16</div></div>
+      <div class="ar">→</div>
+      <div class="bignum new"><div class="v">4 bit</div><div class="k">FP4</div></div>
+    </div>
+  </div><div class="c3d" id="c3d-hero"></div></div>
+  <div class="hero-legend rv d6">
+    <span class="lg1"><i></i>连续取值</span>
+    <span class="lg2"><i></i>8 档</span>
+    <span class="lg3"><i></i>更粗</span>
+  </div>
+  <div class="next-hint rv d7">向下滚动<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>01</b>账本</div>
+    <h2 class="rv d2">decode 是搬运活，不是计算活</h2>
+    <p class="scr-desc rv d3">每生成一个字，都要把整层权重和整段 KV 从显存搬进计算单元。</p>
+  </div>
+  <div class="stage">
+    <div class="bars rv d4">
+      <div class="bar"><span class="lbl">bf16</span><span class="track"><span class="fill" style="--w:100%"></span></span><span class="val">2.0 B</span></div>
+      <div class="bar"><span class="lbl">fp8</span><span class="track"><span class="fill" style="--w:50%"></span></span><span class="val">1.0 B</span></div>
+      <div class="bar"><span class="lbl">fp4</span><span class="track"><span class="fill" style="--w:25%"></span></span><span class="val">0.5 B</span></div>
+    </div>
+    <p class="small rv d5">横条 = 每生成一个 token 要搬的字节数（同参数规模下的相对值）</p>
+  </div>
+  <div class="scr-foot rv d6">精度的第一笔账不在算力，在<b>带宽</b>：位宽砍半，搬的字节就砍半。</div>
+</section>
+
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>02</b>刻度</div>
+    <h2 class="rv d2">4 位只剩 8 档</h2>
+    <p class="scr-desc rv d3">FP4（e2m1）= 1 符号 + 2 指数 + 1 尾数，正数全世界只有这 8 个。</p>
+  </div>
+  <div class="stage">
+    <div class="ruler rv d4">
+      <div class="base"></div>
+      <div class="lv" style="--x:2%;height:2px"></div>
+      <div class="lv" style="--x:9%;height:14px"></div>
+      <div class="lv" style="--x:17%;height:28px"></div>
+      <div class="lv" style="--x:26%;height:42px"></div>
+      <div class="lv" style="--x:34%;height:56px"></div>
+      <div class="lv" style="--x:50%;height:84px"></div>
+      <div class="lv" style="--x:67%;height:112px"></div>
+      <div class="lv" style="--x:84%;height:168px"></div>
+      <div class="vll" style="--x:2%">0</div>
+      <div class="vll" style="--x:9%">.5</div>
+      <div class="vll" style="--x:17%">1</div>
+      <div class="vll" style="--x:26%">1.5</div>
+      <div class="vll" style="--x:34%">2</div>
+      <div class="vll" style="--x:50%">3</div>
+      <div class="vll" style="--x:67%">4</div>
+      <div class="vll" style="--x:84%">6</div>
+      <div class="tgt" style="--x:43%"><b>要表示 2.7</b></div>
+    </div>
+    <div class="bits rv d5">
+      <span class="b bs">s</span><span class="b be">e</span><span class="b be">e</span><span class="b bm">m</span>
+    </div>
+    <div class="lgd rv d5">
+      <span><i style="background:rgba(251,113,133,.6)"></i>符号 1</span>
+      <span><i style="background:rgba(251,191,36,.6)"></i>指数 2</span>
+      <span><i style="background:rgba(34,211,238,.6)"></i>尾数 1</span>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">单独用一个 4 位数，2.7 只能记成 3，误差 11% —— 量级再小一点，<b>全部塌成 0</b>。</div>
+</section>
+
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>03</b>尺子</div>
+    <h2 class="rv d2">16 个数，共用一把尺子</h2>
+    <p class="scr-desc rv d3">分块缩放：每组配一个 scale，存的只是「相对这把尺子的值」。</p>
+  </div>
+  <div class="stage">
+    <div class="sgwrap rv d4">
+      <div class="sg">
+        <span class="sgk">scale ① · 1/16</span>
+        <div class="sgg" id="g1"></div>
+      </div>
+      <div class="sg">
+        <span class="sgk">scale ② · 8</span>
+        <div class="sgg" id="g2"></div>
+      </div>
+    </div>
+    <div class="codeblk rv d5">一组 32 个数 = 4 bit × 32 = <em>128 bit</em>
+再加一把尺子 8 bit  <i>→ 4.25 bit / 个</i></div>
+  </div>
+  <div class="scr-foot rv d6">尺子把 8 档搬到「这一小撮数」的量级上 —— 这才是 4 位能用的原因。</div>
+</section>
+
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>04</b>形状</div>
+    <h2 class="rv d2">尺子本身也要省</h2>
+    <p class="scr-desc rv d3">8 位的 scale 有两种花法：全给指数，或者留几位给尾数。</p>
+  </div>
+  <div class="stage">
+    <div class="cols rv d4">
+      <div class="card">
+        <div class="k">ue8m0</div>
+        <b>8 位全是指数</b>
+        <div class="bits" style="margin-top:8px">
+          <span class="b be">e</span><span class="b be">e</span><span class="b be">e</span><span class="b be">e</span>
+          <span class="b be">e</span><span class="b be">e</span><span class="b be">e</span><span class="b be">e</span>
+        </div>
+        <p style="margin-top:8px">只能表示 2ᵏ。换算 = 加一个整数，几乎白拿。</p>
+      </div>
+      <div class="card">
+        <div class="k">e4m3</div>
+        <b>1 符号 + 4 指数 + 3 尾数</b>
+        <div class="bits" style="margin-top:8px">
+          <span class="b bs">s</span><span class="b be">e</span><span class="b be">e</span><span class="b be">e</span>
+          <span class="b be">e</span><span class="b bm">m</span><span class="b bm">m</span><span class="b bm">m</span>
+        </div>
+        <p style="margin-top:8px">1.0–1.875 之间还有细档，尺子更贴身。</p>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">纯指数省事、乘法便宜；带尾数更准、但要真做一次乘法。这是个<b>刻意的取舍</b>。</div>
+</section>
+
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>05</b>三种配置</div>
+    <h2 class="rv d2">同一份 4 位数据，三把尺子</h2>
+    <p class="scr-desc rv d3">V4.1 Flash 里 FP4 出现在三个地方，配置各不相同。</p>
+  </div>
+  <div class="stage">
+    <div class="tbl rv d4">
+      <div class="trow hd"><span>用在哪</span><span>分组</span><span>尺子</span><span>备注</span></div>
+      <div class="trow"><span class="c1">主 KV 缓存</span><span class="c2">16</span><span class="c3">e4m3</span><span class="c4">像 NVFP4，但没有全局 scale</span></div>
+      <div class="trow"><span class="c1">Indexer KV</span><span class="c2">32</span><span class="c3">ue8m0</span><span class="c4">MXFP4：2 的幂尺子</span></div>
+      <div class="trow"><span class="c1">MoE 路由专家权重</span><span class="c2">32</span><span class="c3">ue8m0</span><span class="c4">MXFP4：静态加载，粗一点没关系</span></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">同一套 kernel 里，三种尺子同时存在 —— 粒度不是「统一标准」，是<b>逐处决策</b>。</div>
+</section>
+
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>06</b>判据</div>
+    <h2 class="rv d2">误差会不会累积</h2>
+    <p class="scr-desc rv d3">同样 4 位，为什么主 KV 用更细的尺子、更小的组？</p>
+  </div>
+  <div class="stage">
+    <div class="chartbox rv d4"><canvas id="err"></canvas></div>
+    <p class="small rv d5">KV 每步都被读一次、逐层放大；权重只在加载时量化一次，之后不动。</p>
+  </div>
+  <div class="scr-foot rv d6">会累积的地方给<b>更细的尺子 + 更小的组</b>，静态的地方粗一点 —— 这就是三处配置不同的唯一理由。</div>
+</section>
+
+
+<section class="screen s8">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>07</b>代价</div>
+    <h2 class="rv d2">4 位不是免费的</h2>
+    <p class="scr-desc rv d3">省下的带宽，要用另外三样东西换。</p>
+  </div>
+  <div class="stage">
+    <div class="stack rv d4">
+      <div class="card"><div class="k">01 · 换取</div><b>反量化开销</b><p>每 16 个数一次 scale 读取、每层一次还原，这些也是显存访问。</p></div>
+      <div class="card"><div class="k">02 · 离群值</div><b>一个数拖垮一组</b><p>组里出现一个特别大的值，尺子被拉大，其余 15 个数全被压扁。</p></div>
+      <div class="card"><div class="k">03 · 边界</div><b>分组要跟 kernel 对齐</b><p>16 / 32 / 128 的分块必须和 TMA、tile 尺寸对齐，否则读不对。</p></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">所以 FP4 真正的难点不是「量化」，是<b>把尺子的布局塞进 GEMM 的 tile 里</b>。</div>
+</section>
+
+
+<section class="screen s9">
+  <div class="scr-head">
+    <div class="step-badge rv d1"><b>收</b>小结</div>
+    <h2 class="rv d2">第一道账：精度</h2>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><span class="i">📦</span><div><b>省的是带宽</b><p>decode 卡在搬运，位宽就是吞吐。</p></div></div>
+      <div class="fact rv d4"><span class="i">📏</span><div><b>靠分块缩放兜底</b><p>8 档够不够，取决于尺子贴不贴身。</p></div></div>
+      <div class="fact rv d5"><span class="i">🎚️</span><div><b>粒度是旋钮</b><p>组越小越准，尺子开销越大。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">下一集：这个旋钮到底能拧到多细，以及拧细了要多付多少。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  var HOOK = null;
+  /* ---------- episode ---------- */
+
+  /* 分块格子 */
+  ['g1', 'g2'].forEach(function (id) {
+    var box = document.getElementById(id);
+    if (!box) return;
+    for (var i = 0; i < 16; i++) {
+      var c = document.createElement('i');
+      c.style.opacity = (0.45 + Math.random() * 0.55).toFixed(2);
+      c.style.animationDelay = (0.12 + i * 0.02) + 's';
+      box.appendChild(c);
+    }
+  });
+
+  /* 误差累积曲线 */
+  var drawnErr = false;
+  function drawErr() {
+    if (drawnErr) return; drawnErr = true;
+    var cv = document.getElementById('err');
+    if (!cv) return;
+    var ctx = cv.getContext('2d');
+    var dpr = Math.min(devicePixelRatio || 1, 2);
+
+    function paint(p) {
+      var w = cv.clientWidth, h = cv.clientHeight;
+      if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      var pl = 40, pr = 16, pt = 16, pb = 26;
+      var iw = w - pl - pr, ih = h - pt - pb;
+
+      ctx.strokeStyle = 'rgba(255,255,255,.07)';
+      for (var g = 0; g <= 4; g++) {
+        var y = pt + ih * g / 4;
+        ctx.beginPath(); ctx.moveTo(pl, y); ctx.lineTo(pl + iw, y); ctx.stroke();
+      }
+
+      var N = 60;
+      /* KV：逐步累积 */
+      ctx.beginPath();
+      for (var i = 0; i <= N * p; i++) {
+        var t = i / N;
+        var x = pl + iw * t, y = pt + ih - ih * Math.min(.92, .06 + Math.pow(t, .62) * .86);
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+      ctx.strokeStyle = '#fb7185'; ctx.lineWidth = 2.3;
+      ctx.shadowColor = '#fb7185'; ctx.shadowBlur = 9; ctx.stroke(); ctx.shadowBlur = 0;
+
+      /* 权重：静态 */
+      ctx.beginPath();
+      for (var j = 0; j <= N * p; j++) {
+        var t2 = j / N;
+        var x2 = pl + iw * t2, y2 = pt + ih - ih * 0.17;
+        j ? ctx.lineTo(x2, y2) : ctx.moveTo(x2, y2);
+      }
+      ctx.strokeStyle = '#22d3ee'; ctx.lineWidth = 2.3;
+      ctx.shadowColor = '#22d3ee'; ctx.shadowBlur = 9; ctx.stroke(); ctx.shadowBlur = 0;
+
+      ctx.font = '9.5px -apple-system,sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#fda4af';
+      ctx.fillText('KV 缓存：每步都被读', pl + iw * 0.42, pt + ih * 0.44);
+      ctx.fillStyle = '#67e8f9';
+      ctx.fillText('权重：只量化一次', pl + iw * 0.42, pt + ih * 0.86);
+
+      ctx.fillStyle = 'rgba(139,150,173,.9)';
+      ctx.font = '9px ui-monospace,monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText('误差', pl - 5, pt + 8);
+      ctx.textAlign = 'center';
+      ctx.fillText('解码步数 →', pl + iw / 2, h - 6);
+    }
+
+    var t0 = performance.now();
+    (function anim(now) {
+      var p = Math.min(1, (now - t0) / 1200);
+      paint(1 - Math.pow(1 - p, 3));
+      if (p < 1) requestAnimationFrame(anim);
+    })(t0);
+
+    var rz;
+    addEventListener('resize', function () {
+      clearTimeout(rz); rz = setTimeout(function () { paint(1); }, 160);
+    });
+  }
+
+  HOOK = function (i) { if (i === 6) drawErr(); };
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (HOOK) { try { HOOK(i); } catch (e) {} }
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+<script src="vendor/three.global.js"></script>
+<script>
+/* ===== 封面 3D：一片连续的高度场，被一步步压成 8 档台阶 ===== */
+(function () {
+  var host = document.getElementById('c3d-hero');
+  if (!host) return;
+  var st = null;
+  var COLS = 19, ROWS = 12, N = COLS * ROWS;
+  var SX = 2.62, SZ = 1.62;
+  var DIR = { y: 0.923, z: 0.386 };            /* 约 67° 俯视：看得到坡面，也看得到台阶 */
+
+  function fitD(w, h) {
+    var t = Math.tan(Math.PI / 180 * 16);
+    return Math.max(1.62 / t, 1.46 / (t * (w / h)));
+  }
+
+  function place(cam, w, h) {
+    var d = fitD(w, h);
+    cam.position.set(0, DIR.y * d, DIR.z * d);
+    cam.lookAt(0, 0.18, 0);
+  }
+
+  function init() {
+    if (!window.THREE) return false;
+    var THREE = window.THREE;
+    var w = host.clientWidth, h = host.clientHeight;
+    if (!w || !h) return false;
+
+    var scene = new THREE.Scene();
+    var cam = new THREE.PerspectiveCamera(32, w / h, 0.1, 100);
+    place(cam, w, h);
+
+    var renderer;
+    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
+    catch (e) { return false; }
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setSize(w, h);
+    host.appendChild(renderer.domElement);
+
+    var group = new THREE.Group();
+    scene.add(group);
+
+    var grid = new THREE.GridHelper(3.1, 12, 0x20304a, 0x121b2b);
+    grid.position.y = -0.01;
+    group.add(grid);
+
+    var geo = new THREE.BoxGeometry(0.118, 1, 0.118);
+    geo.translate(0, 0.5, 0);
+    var mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95 });
+    var mesh = new THREE.InstancedMesh(geo, mat, N);
+    group.add(mesh);
+
+    var base = [], sx = [], sz = [];
+    for (var r = 0; r < ROWS; r++) {
+      for (var c = 0; c < COLS; c++) {
+        var x = (c / (COLS - 1) - 0.5) * SX;
+        var z = (r / (ROWS - 1) - 0.5) * SZ;
+        sx.push(x); sz.push(z);
+        var v = 0.5
+          + 0.27 * Math.sin(x * 1.35 + 0.5)
+          + 0.16 * Math.sin(z * 2.1 - 0.4)
+          + 0.10 * Math.sin((x + z) * 1.6);
+        base.push(Math.max(0.02, Math.min(1, v)));
+      }
+    }
+
+    st = {
+      scene: scene, cam: cam, renderer: renderer, group: group, mesh: mesh,
+      base: base, sx: sx, sz: sz, t: 0, dummy: new THREE.Object3D(),
+      tmp: new THREE.Color()
+    };
+    return true;
+  }
+
+  var CYCLE = 13.0;
+  function levels(t) {
+    var p = t % CYCLE;
+    if (p < 2.2) return 64;
+    if (p < 3.4) return 64 - (64 - 8) * ((p - 2.2) / 1.2);
+    if (p < 7.0) return 8;
+    if (p < 8.2) return 8 - (8 - 4) * ((p - 7.0) / 1.2);
+    if (p < 11.0) return 4;
+    return 4 + (64 - 4) * Math.min(1, (p - 11.0) / 1.6);
+  }
+
+  function visible() {
+    var r = host.getBoundingClientRect();
+    return r.bottom > 0 && r.top < innerHeight;
+  }
+
+  var last = 0;
+  function tick(now) {
+    if (st && visible()) {
+      var dt = Math.min(0.05, (now - last) / 1000 || 0.016);
+      last = now;
+      st.t += dt;
+
+      var n = Math.max(4, Math.round(levels(st.t)));
+      var coarse = 1 - Math.min(1, (n - 4) / 60);
+
+      for (var i = 0; i < N; i++) {
+        var v = st.base[i];
+        var q = Math.round(v * n) / n;
+        st.dummy.position.set(st.sx[i], 0, st.sz[i]);
+        st.dummy.scale.set(1, 0.07 + q * 0.56, 1);
+        st.dummy.updateMatrix();
+        st.mesh.setMatrixAt(i, st.dummy.matrix);
+
+        var hh = 0.52 - 0.42 * q;
+        hh = Math.max(0.004, hh - coarse * 0.085);
+        st.tmp.setHSL(hh, 0.86, 0.35 + 0.13 * q);
+        st.mesh.setColorAt(i, st.tmp);
+      }
+      st.mesh.instanceMatrix.needsUpdate = true;
+      if (st.mesh.instanceColor) st.mesh.instanceColor.needsUpdate = true;
+
+      st.group.rotation.y = Math.sin(st.t * 0.2) * 0.11;
+      st.renderer.render(st.scene, st.cam);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function boot() {
+    if (!init()) {
+      host.style.background = 'radial-gradient(58% 44% at 50% 52%, rgba(251,191,36,.13), transparent 70%)';
+    }
+    requestAnimationFrame(tick);
+  }
+
+  var rz;
+  addEventListener('resize', function () {
+    clearTimeout(rz);
+    rz = setTimeout(function () {
+      if (!st) return;
+      var w = host.clientWidth, h = host.clientHeight;
+      if (!w || !h) return;
+      st.cam.aspect = w / h;
+      place(st.cam, w, h);
+      st.cam.updateProjectionMatrix();
+      st.renderer.setSize(w, h);
+    }, 150);
+  });
+
+  if (document.readyState === 'complete') boot();
+  else addEventListener('load', boot);
+})();
+</script>
+
+</body>
+</html>
