@@ -363,6 +363,43 @@
 </style>
 </head>
 <body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="hermes-14-distributed-animation.html" aria-label="上一集" title="上一集：分布式 Agent">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="hermes-16-sandbox-internals-animation.html" aria-label="下一集" title="下一集：沙箱机制深入">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
 
 <nav class="dots" id="dots" aria-label="屏幕导航">
   <button class="on" title="封面" aria-label="封面"></button>

@@ -115,6 +115,74 @@
     font-size: 11px; color: var(--dim); line-height: 1.8;
   }
   footer code { font-family: var(--mono); color: var(--cyan); }
+
+  [hidden] { display: none !important; }
+
+  /* 搜索 */
+  .finder {
+    margin-top: 22px; display: flex; align-items: center; gap: 10px;
+  }
+  .finder input {
+    flex: 1 1 auto; min-width: 0;
+    font: inherit; font-size: 13px; color: var(--ink);
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 12px; padding: 11px 14px; outline: none;
+    transition: border-color .2s ease, box-shadow .2s ease;
+  }
+  .finder input::placeholder { color: #61708c; }
+  .finder input:focus {
+    border-color: rgba(34,211,238,.55);
+    box-shadow: 0 0 0 3px rgba(34,211,238,.09);
+  }
+  .finder-n {
+    flex: 0 0 auto; font-family: var(--mono); font-size: 11px;
+    color: var(--dim); letter-spacing: .04em; min-width: 58px; text-align: right;
+  }
+
+  /* 知识地图 / 推荐路径 */
+  .board {
+    margin-top: 20px; border: 1px solid var(--line); border-radius: 16px;
+    background: rgba(255,255,255,.03); padding: 15px 17px 13px;
+  }
+  .board-h {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .board-h b { font-size: 11.5px; letter-spacing: .16em; color: #c3cde2; }
+  .board-h span { font-size: 11px; color: var(--dim); }
+  .layer {
+    display: flex; align-items: center; gap: 12px;
+    padding: 9px 0; border-top: 1px dashed rgba(255,255,255,.07);
+  }
+  .layer:first-of-type { border-top: none; }
+  .layer-l { flex: 0 0 104px; font-family: var(--mono); font-size: 11.5px; color: #c3cde2; }
+  .layer-l b { color: var(--cyan); letter-spacing: .06em; margin-right: 7px; }
+  .layer-d { flex: 1 1 auto; font-size: 11.5px; color: var(--dim); line-height: 1.6; }
+  .layer-t {
+    flex: 0 0 auto; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;
+    max-width: 340px;
+  }
+  .layer-t a, .chain a {
+    font-size: 11px; color: #aab6cf; text-decoration: none;
+    border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px;
+    white-space: nowrap; transition: color .18s ease, border-color .18s ease;
+  }
+  .layer-t a:hover, .chain a:hover { color: var(--cyan); border-color: rgba(34,211,238,.5); }
+  .layer-n { flex: 0 0 44px; text-align: right; font-family: var(--mono); font-size: 10px; color: #61708c; }
+  .path {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 9px 0; border-top: 1px dashed rgba(255,255,255,.07);
+  }
+  .path:first-of-type { border-top: none; }
+  .path > b { flex: 0 0 116px; font-size: 11.5px; color: #c3cde2; }
+  .chain { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .chain i { font-style: normal; font-size: 10px; color: #46536b; }
+
+  @media (max-width: 620px) {
+    .layer, .path { flex-wrap: wrap; }
+    .layer-t { max-width: none; justify-content: flex-start; }
+    .layer-n { flex: 0 0 auto; }
+  }
   @media (prefers-reduced-motion: reduce) {
     a.card { transition: none; }
     a.card:hover { transform: none; }
@@ -126,6 +194,90 @@
   <span class="kicker">AI-INSIGHT · DOCS</span>
   <h1>运作动画<span class="grad">演示索引</span></h1>
   <p class="sub">82 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
+
+  <div class="finder">
+    <input id="q" type="search" placeholder="搜索 82 集 · 试试「KV」「注入」「MoE」「缓存」" aria-label="搜索动画" autocomplete="off">
+    <span class="finder-n" id="qn">82 集</span>
+  </div>
+
+  <section class="board" id="map">
+    <div class="board-h"><b>知识地图</b><span>自下而上是因果链：训练 → 模型 → 推理 → Agent · 右侧标签可直接进入</span></div>
+    <div class="layer">
+      <div class="layer-l"><b>L4</b>Agent 工程</div>
+      <div class="layer-d">模型怎么被用起来：循环、工具、记忆、权限、多智能体</div>
+      <div class="layer-t">
+        <a href="agent-loop-animation.html">Agent 循环</a>
+        <a href="hermes-04-loop-animation.html">消息流</a>
+        <a href="pat-01-plan-execute-animation.html">规划</a>
+        <a href="dev-05-injection-animation.html">注入防御</a>
+        <a href="hermes-19-cua-animation.html">CUA</a>
+      </div>
+      <div class="layer-n">39 集</div>
+    </div>
+    <div class="layer">
+      <div class="layer-l"><b>L3</b>推理服务</div>
+      <div class="layer-d">模型怎么跑起来：协议、调度、显存、解码策略</div>
+      <div class="layer-t">
+        <a href="inf-01-overview-animation.html">token 旅程</a>
+        <a href="inf-04-two-phase-animation.html">两阶段</a>
+        <a href="inf-07-kv-tier-animation.html">三级 KV</a>
+        <a href="inf-09-dspark-animation.html">投机解码</a>
+        <a href="ai-15-kv-cache-animation.html">KV 深入</a>
+      </div>
+      <div class="layer-n">16 集</div>
+    </div>
+    <div class="layer">
+      <div class="layer-l"><b>L2</b>模型原理</div>
+      <div class="layer-d">模型是什么：结构、注意力、稀疏、生成与多模态</div>
+      <div class="layer-t">
+        <a href="ai-13-transformer-animation.html">Transformer</a>
+        <a href="ai-11-attention-animation.html">注意力</a>
+        <a href="ai-14-moe-animation.html">MoE</a>
+        <a href="ai-12-sampling-animation.html">采样</a>
+        <a href="ai-20-multimodal-animation.html">多模态</a>
+      </div>
+      <div class="layer-n">18 集</div>
+    </div>
+    <div class="layer">
+      <div class="layer-l"><b>L1</b>训练</div>
+      <div class="layer-d">模型怎么来的：预训练、梯度、强化学习、微调 <b style="color:#fbbf24">← 当前最薄</b></div>
+      <div class="layer-t">
+        <a href="ai-01-training-animation.html">预训练</a>
+        <a href="llm-02-loss-animation.html">梯度与损失</a>
+        <a href="ai-17-rlvr-animation.html">RLVR</a>
+        <a href="ai-18-finetune-animation.html">LoRA</a>
+      </div>
+      <div class="layer-n">4 集</div>
+    </div>
+  </section>
+
+  <section class="board" id="paths">
+    <div class="board-h"><b>三条推荐路径</b><span>第一次来按路径走，其余按需检索</span></div>
+    <div class="path"><b>零基础 · 半天</b><span class="chain">
+      <a href="ai-01-training-animation.html">模型怎么炼成</a><i>→</i>
+      <a href="ai-13-transformer-animation.html">Transformer</a><i>→</i>
+      <a href="ai-11-attention-animation.html">注意力</a><i>→</i>
+      <a href="ai-12-sampling-animation.html">采样</a><i>→</i>
+      <a href="llm-prompt-animation.html">提示词交互</a><i>→</i>
+      <a href="agent-loop-animation.html">Agent 循环</a>
+    </span></div>
+    <div class="path"><b>后端 / 服务端</b><span class="chain">
+      <a href="inf-01-overview-animation.html">token 旅程</a><i>→</i>
+      <a href="inf-04-two-phase-animation.html">两阶段</a><i>→</i>
+      <a href="inf-05-disaggregation-animation.html">E-P-D</a><i>→</i>
+      <a href="inf-07-kv-tier-animation.html">三级 KV</a><i>→</i>
+      <a href="inf-09-dspark-animation.html">投机解码</a><i>→</i>
+      <a href="ai-15-kv-cache-animation.html">KV 深入</a>
+    </span></div>
+    <div class="path"><b>Agent 开发者</b><span class="chain">
+      <a href="llm-prompt-animation.html">提示词</a><i>→</i>
+      <a href="agent-loop-animation.html">循环</a><i>→</i>
+      <a href="hermes-04-loop-animation.html">消息流</a><i>→</i>
+      <a href="pat-01-plan-execute-animation.html">规划</a><i>→</i>
+      <a href="pat-05-mcp-discovery-animation.html">MCP 发现</a><i>→</i>
+      <a href="dev-05-injection-animation.html">注入防御</a>
+    </span></div>
+  </section>
 
   <div class="series">
     <div class="series-head"><b>HERMES AGENT 对象拆解</b></div>
@@ -679,8 +831,52 @@
 
   <footer>
     每个演示均为单文件零依赖页面，可直接分享 · 播放时上滑逐屏观看，右侧圆点可跳转 ·
+    左上角 <code>‹ 目录 ›</code> 或键盘 <code>←</code> <code>→</code> 可在集间切换 ·
+    本页按 <code>/</code> 聚焦搜索 ·
     本地预览：<code>python -m http.server 8899 --directory docs</code>
   </footer>
 </div>
+<script>
+(function () {
+  var q = document.getElementById('q');
+  var qn = document.getElementById('qn');
+  var cards = [].slice.call(document.querySelectorAll('a.card'));
+  var series = [].slice.call(document.querySelectorAll('div.series'));
+  var boards = [document.getElementById('map'), document.getElementById('paths')];
+  var total = cards.length;
+
+  cards.forEach(function (c) {
+    c.dataset.k = (c.textContent + ' ' + (c.getAttribute('href') || '')).toLowerCase();
+  });
+
+  function run() {
+    var v = (q.value || '').trim().toLowerCase();
+    if (!v) {
+      cards.forEach(function (c) { c.hidden = false; });
+      series.forEach(function (s) { s.hidden = false; });
+      boards.forEach(function (b) { b.hidden = false; });
+      qn.textContent = total + ' 集';
+      return;
+    }
+    var hit = 0;
+    cards.forEach(function (c) {
+      var ok = c.dataset.k.indexOf(v) >= 0;
+      c.hidden = !ok;
+      if (ok) hit++;
+    });
+    series.forEach(function (s) { s.hidden = !s.querySelector('a.card:not([hidden])'); });
+    boards.forEach(function (b) { b.hidden = true; });
+    qn.textContent = hit ? '命中 ' + hit + ' 集' : '无匹配';
+  }
+
+  q.addEventListener('input', run);
+  q.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { q.value = ''; run(); }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === '/' && document.activeElement !== q) { e.preventDefault(); q.focus(); }
+  });
+})();
+</script>
 </body>
 </html>

@@ -68,37 +68,46 @@ Frontend (run from `frontend/`):
 - Trained models persist as individual JSON files under
   `backend/app/data/saved_models/` (no database). The directory is git-ignored and
   created at runtime by `services/model_store.py`; don't commit model files.
-- `docs/` holds a self-contained animated demo series with an index page
-  (`index.html` links all 82 of them — none are orphaned): HERMES AGENT 对象拆解
-  ·01–18 (08 跨会话记忆篇 is 前瞻演绎/designed extrapolation), HERMES AGENT
-  进阶机制 ·01–07 (thinking budget wired into the main loop, Skills progressive
-  disclosure, Hooks lifecycle slots, MCP 2026 transport evolution, A2A &
-  multi-agent sobering, Harness scaffold/checkpoint/background tasks, CUA), AI
-  运作原理拆解 ·01–15, AI 运作原理 · 深入篇 ·01–08 (Transformer skeleton, MoE
-  gating, KV cache + GQA + paging, embedding & two-stage retrieval,
-  chain-of-thought as an effort spectrum, RLVR & distillation, LoRA
-  fine-tuning, multimodal), LLM 模型算法原理 ·01–05
-  (embedding/loss/position-encoding/residual
-  algorithm internals + a worked vector-attention poem example), AGENT
-  开发避坑指南 ·01–05 (developer-facing pitfalls, incl. 05 tool-poisoning
-  injection), AGENT 实战工坊
-  ·01–06 (knowledge-QA RAG build walkthrough, project-selection guide, Agentic
-  RAG, GraphRAG), and
-  AGENT 模式进阶 ·01–06 (pat- prefix: Plan-and-Execute, Reflection, CoALA
-  memory extraction/routing, sliding-window/summarization compression, MCP
-  Host/Client/Server + tools/list discovery, soft-vs-hard guardrails), and
-  推理原理 ·01–12 (inf- prefix: the serving/system layer — protocol
-  normalisation, special-token identity, prefill/decode, E-P-D disaggregation,
-  async scheduling, three-tier KV cache, SWA bounded replay, speculative
-  decoding, EPLB, constrained decoding, streaming parse). The
-  `docs/research/` subfolder holds protocol/spec research reports and the
-  inference-series plan (`inference-principles-series-plan.md`), not demos.
-  None
-  are part of the Vite app — each demo is a single
-  file (no build step) using full-screen CSS scroll-snap
-  sections where one animation segment plays per screen. Keep new demos in this
-  same self-contained pattern and add them to the index; editing frontend code
-  does not affect them.
+- `docs/` holds the animation collection; `index.html` is the only entry point
+  and links all 82 episodes (none orphaned). Nine series, in index order:
+  HERMES AGENT 对象拆解 ·01–18 (08 跨会话记忆篇 is 前瞻演绎/designed
+  extrapolation); HERMES AGENT 进阶机制 ·01–07 (thinking budget wired into the
+  main loop, Skills progressive disclosure, Hooks lifecycle slots, MCP 2026
+  transport evolution, A2A & multi-agent sobering, Harness
+  scaffold/checkpoint/background tasks, CUA); AI 运作原理拆解 ·01–15; AI 运作
+  原理 · 深入篇 ·01–08 (Transformer skeleton, MoE gating, KV cache + GQA +
+  paging, embedding & two-stage retrieval, chain-of-thought as an effort
+  spectrum, RLVR & distillation, LoRA fine-tuning, multimodal); LLM 模型算法
+  原理 ·01–05 (embedding/loss/position-encoding/residual internals + a worked
+  vector-attention poem); 推理原理 ·01–12 (`inf-` prefix: the serving layer —
+  protocol normalisation, special-token identity, prefill/decode, E-P-D
+  disaggregation, async scheduling, three-tier KV cache, SWA bounded replay,
+  speculative decoding, EPLB, constrained decoding, streaming parse); AGENT
+  开发避坑指南 ·01–05 (incl. 05 tool-poisoning injection); AGENT 实战工坊
+  ·01–06 (knowledge-QA RAG walkthrough, project-selection guide, Agentic RAG,
+  GraphRAG); AGENT 模式进阶 ·01–06 (`pat-` prefix: Plan-and-Execute,
+  Reflection, CoALA memory extraction/routing, window/summary compression, MCP
+  Host/Client/Server + tools/list, soft-vs-hard guardrails).
+  Each demo is one self-contained file (no build step) using full-screen CSS
+  scroll-snap, one animation per screen; they are not part of the Vite app and
+  frontend changes do not affect them. Subfolders: `research/` (reports and the
+  inference-series plan, not demos), `tools/` (maintenance scripts), `vendor/`
+  (vendored libraries).
+- **Episode navigation is generated, not hand-written.** Index card order *is*
+  the reading order. Every episode carries a `<!-- epnav:start --> …
+  <!-- epnav:end -->` block — a fixed top-left pill (`‹ 目录 ›`) plus ←/→
+  keyboard shortcuts, positioned to stay clear of the right-side `.dots` and
+  the bottom `.scr-foot`. It is injected by `python docs/tools/nav-gen.py`,
+  which is idempotent. After adding, removing or reordering an episode,
+  re-run it (`--check` reports drift without writing). Never hand-edit the
+  block — it is replaced wholesale on the next run, and it is what keeps the
+  episodes from being 82 dead ends.
+- **Index affordances.** `index.html` also has a client-side search (`/`
+  focuses, `Esc` clears; matches `a.card` on text + href), a static 知识地图
+  (L1 训练 → L2 模型原理 → L3 推理服务 → L4 Agent 工程) and three recommended
+  paths. Links inside the map and paths are deliberately plain `<a>`, not
+  `a.card`, so they don't pollute nav-gen's ordering; when a series grows,
+  update the per-layer counts in the map.
 - **3D in docs demos**: `docs/vendor/three.global.js` is three.js r160 with its
   ES-module `export{}` rewritten to `window.THREE` (so it loads from `file://`
   without a server). The `inf-` series is the only place that uses it — load it
