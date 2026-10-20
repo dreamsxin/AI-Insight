@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#070b14">
-<meta name="description" content="AI 运作原理拆解 · 13 推理模型与思维链：reasoning tokens 工作机制、测试时算力第二条曲线（AIME 13.4%→83.3%）、思考预算旋钮、交替思考、该用才用与计费细节，逐屏动画演示">
+<meta name="description" content="AI 运作原理拆解 · 13 推理模型与思维链：思考 token 工作机制、思考链内部的试错与回退、测试时算力第二条曲线（AIME 13.4%→83.3%）、effort 档位光谱、该用才用与交替思考、打表计费，逐屏动画演示">
 <title>推理模型与思维链 · 逐屏动画演示</title>
 <style>
   :root {
@@ -17,6 +17,7 @@
     --green: #34d399;
     --amber: #fbbf24;
     --red: #fb7185;
+    --pink: #f472b6;
     --card: rgba(255,255,255,.05);
     --line: rgba(255,255,255,.12);
     --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
@@ -58,24 +59,27 @@
     height: 100vh; height: 100svh;
     scroll-snap-align: start; scroll-snap-stop: always;
     overflow: hidden;
-    display: flex; flex-direction: column; align-items: center;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
     padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
   }
   .screen::before {
     content: ""; position: absolute; inset: -20%; pointer-events: none;
     background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%);
   }
-  .s-hero   { --glow: rgba(34,211,238,.10); }
-  .s-mech   { --glow: rgba(167,139,250,.11); }
-  .s-scale  { --glow: rgba(52,211,153,.11); }
-  .s-knobs  { --glow: rgba(34,211,238,.11); }
-  .s-when   { --glow: rgba(251,191,36,.09); }
-  .s-cost   { --glow: rgba(251,113,133,.09); }
-  .s-sum    { --glow: rgba(244,114,182,.08); }
+  .s-hero  { --glow: rgba(34,211,238,.10); }
+  .s-two   { --glow: rgba(251,191,36,.08); }
+  .s-chain { --glow: rgba(167,139,250,.12); }
+  .s-axis  { --glow: rgba(34,211,238,.09); }
+  .s-proof { --glow: rgba(52,211,153,.10); }
+  .s-dial  { --glow: rgba(167,139,250,.11); }
+  .s-use   { --glow: rgba(52,211,153,.09); }
+  .s-cost  { --glow: rgba(251,113,133,.09); }
+  .s-sum   { --glow: rgba(244,114,182,.08); }
 
   .scr-head {
     width: 100%; max-width: 640px; text-align: center;
     display: flex; flex-direction: column; align-items: center; gap: 8px;
+    flex: 0 0 auto; margin-bottom: clamp(10px, 2.6vh, 22px);
   }
   .step-badge {
     display: inline-flex; align-items: center; gap: 8px;
@@ -84,7 +88,7 @@
     padding: 4px 13px; border-radius: 999px;
   }
   .step-badge b { color: #fff; font-weight: 800; }
-  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  h2 { font-size: clamp(20px, 5.2vw, 29px); font-weight: 800; letter-spacing: .02em; }
   .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
   .scr-desc code {
     color: var(--cyan); font-size: .92em;
@@ -100,14 +104,15 @@
   .code-chip::-webkit-scrollbar { display: none; }
   .code-chip b { color: var(--cyan); font-weight: 600; }
   .stage {
-    position: relative; z-index: 1; flex: 1; min-height: 0;
+    position: relative; z-index: 1; flex: 0 1 auto; min-height: 0;
     width: 100%; max-width: 640px;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 13px;
+    gap: clamp(8px, 1.6vh, 13px);
   }
   .scr-foot {
-    width: 100%; max-width: 640px; text-align: center;
-    font-size: 12px; line-height: 1.65; color: var(--dim);
+    position: absolute; left: 20px; right: 20px;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    text-align: center; font-size: 12px; line-height: 1.65; color: var(--dim);
   }
   .scr-foot b { color: #c3cde2; }
 
@@ -117,94 +122,173 @@
   .screen.active .d1 { animation-delay: .1s; }
   .screen.active .d2 { animation-delay: .3s; }
   .screen.active .d3 { animation-delay: .5s; }
-  .screen.active .d4 { animation-delay: .7s; }
-  .screen.active .d5 { animation-delay: .9s; }
-  .screen.active .d6 { animation-delay: 1.15s; }
-  .screen.active .d7 { animation-delay: 1.4s; }
+  .screen.active .d4 { animation-delay: .72s; }
+  .screen.active .d5 { animation-delay: .95s; }
+  .screen.active .d6 { animation-delay: 1.18s; }
+  .screen.active .d7 { animation-delay: 1.42s; }
   @keyframes rise { to { opacity: 1; transform: translateY(0); } }
 
-  /* ===== 通用小组件 ===== */
-  .meta-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.65; }
   @keyframes msgIn {
     from { opacity: 0; transform: translateY(16px) scale(.97); }
     to { opacity: 1; transform: none; }
   }
-  @keyframes glowGood { 0%,100% { box-shadow: 0 0 0 rgba(52,211,153,0) } 50% { box-shadow: 0 0 22px rgba(52,211,153,.3) } }
   @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
   @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
 
-  /* ============ 屏1 · 封面 ============ */
+  /* ============ 屏1 · 封面（3D 搜索树） ============ */
   .s-hero { justify-content: center; text-align: center; }
+  .hero-wrap {
+    position: relative; width: 100%; max-width: 640px; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .c3d { position: relative; z-index: 0; flex: 1 1 auto; width: 100%; min-height: 0; margin-top: 2px; }
+  .c3d canvas { display: block; width: 100% !important; height: 100% !important; }
+  .hero-inner {
+    position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center;
+    flex: 0 0 auto; padding-top: 2vh;
+  }
   .hero-kicker {
     font-size: 10px; letter-spacing: .28em; color: var(--dim);
-    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    border: 1px solid var(--line); background: rgba(7,11,20,.55);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
     padding: 6px 16px; border-radius: 999px;
   }
-  h1 { font-size: clamp(34px, 9vw, 54px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  h1 {
+    font-size: clamp(28px, 7.6vw, 44px); line-height: 1.14; font-weight: 800;
+    margin: 14px 0 10px; letter-spacing: .02em;
+    text-shadow: 0 4px 30px rgba(7,11,20,.92);
+  }
   .grad {
     background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%);
     -webkit-background-clip: text; background-clip: text; color: transparent;
   }
-  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
-  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
-  .hc-node {
-    font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px;
-    background: var(--card); border: 1px solid var(--line); white-space: nowrap;
+  .hero-sub {
+    font-size: clamp(12px, 3.5vw, 15px); color: #c3cde2; letter-spacing: .05em;
+    max-width: 360px; line-height: 1.7; text-shadow: 0 2px 18px rgba(7,11,20,.95);
   }
-  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
-  .hc-arrow i {
-    position: absolute; top: 50%; transform: translateY(-50%); left: 0;
-    width: 6px; height: 6px; border-radius: 50%; background: var(--cyan);
-    box-shadow: 0 0 8px var(--cyan); opacity: 0;
+  .hero-quote {
+    margin-top: 12px; font-size: 11.5px; color: var(--dim); letter-spacing: .04em;
+    text-shadow: 0 2px 14px rgba(7,11,20,.95);
   }
-  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
-  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
-  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .hero-legend {
+    position: absolute; left: 0; right: 0; bottom: calc(48px + env(safe-area-inset-bottom));
+    display: flex; justify-content: center; gap: 14px;
+    font-size: 10px; color: var(--dim); font-family: var(--mono); z-index: 3;
+  }
+  .hero-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .hero-legend i { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+  .lg-probe i { background: var(--cyan); box-shadow: 0 0 7px var(--cyan); }
+  .lg-dead  i { background: var(--red); box-shadow: 0 0 7px var(--red); }
+  .lg-ok    i { background: var(--green); box-shadow: 0 0 7px var(--green); }
   .next-hint {
-    position: absolute; bottom: calc(16px + env(safe-area-inset-bottom));
-    left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em;
+    position: absolute; bottom: calc(14px + env(safe-area-inset-bottom));
+    left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim);
+    letter-spacing: .1em; z-index: 3;
   }
   .chev { display: inline-block; margin-left: 6px; }
   .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
 
-  /* ============ 屏2 · STEP 1 工作机制 ============ */
-  .mech-box {
-    width: 100%; max-width: 520px;
-    border-radius: 14px; overflow: hidden;
-    border: 1px solid var(--line); background: var(--card);
+  /* ============ 屏2 · 两种答法 ============ */
+  .two-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .ans {
+    flex: 1; border-radius: 14px; padding: 13px;
+    background: var(--card); border: 1px solid var(--line);
     opacity: 0;
   }
-  .mech-think {
-    padding: 12px 15px; border-bottom: 1px dashed rgba(167,139,250,.5);
-    background: rgba(167,139,250,.06);
+  .ans.fast { border-color: rgba(251,191,36,.4); }
+  .ans.deep { border-color: rgba(167,139,250,.55); box-shadow: 0 0 22px rgba(167,139,250,.12); }
+  .ans h4 { font-size: 12.5px; margin-bottom: 9px; display: flex; align-items: center; gap: 6px; }
+  .ans.fast h4 { color: #fde68a; }
+  .ans.deep h4 { color: #c4b5fd; }
+  .path-line {
+    font-family: var(--mono); font-size: 10px; color: var(--dim); line-height: 1.7;
+    background: rgba(0,0,0,.25); border-radius: 9px; padding: 8px 10px; margin-bottom: 8px;
   }
-  .mech-think .t-label {
-    font-family: var(--mono); font-size: 9.5px; color: #c4b5fd; letter-spacing: .1em; margin-bottom: 6px;
+  .path-line .hot { color: #c4b5fd; }
+  .path-line .dir { color: #fde68a; }
+  .ans p { font-size: 10.6px; color: var(--dim); line-height: 1.6; }
+  .s-two.active .ans.fast { animation: msgIn .5s ease .4s both; }
+  .s-two.active .ans.deep { animation: msgIn .5s ease .85s both; }
+  .tl-line {
+    width: 100%; max-width: 560px; font-size: 11px; color: var(--dim);
+    text-align: center; line-height: 1.7; opacity: 0;
   }
-  .mech-think .t-lines i {
-    display: block; height: 7px; border-radius: 3px; margin-bottom: 4px;
-    background: rgba(167,139,250,.35);
-  }
-  .mech-ans { padding: 12px 15px; }
-  .mech-ans .a-label {
-    font-family: var(--mono); font-size: 9.5px; color: #6ee7b7; letter-spacing: .1em; margin-bottom: 6px;
-  }
-  .mech-ans .a-body { font-size: 13px; line-height: 1.8; color: #c3cde2; }
-  .s-mech.active .mech-box { animation: msgIn .55s ease .4s both; }
-  .s-mech.active .mech-think .t-lines i { animation: thinkWave 1.6s ease-in-out infinite; }
-  .s-mech.active .mech-think .t-lines i:nth-child(1) { animation-delay: 0s; width: 92%; }
-  .s-mech.active .mech-think .t-lines i:nth-child(2) { animation-delay: .2s; width: 78%; }
-  .s-mech.active .mech-think .t-lines i:nth-child(3) { animation-delay: .4s; width: 85%; }
-  .s-mech.active .mech-think .t-lines i:nth-child(4) { animation-delay: .6s; width: 60%; }
-  @keyframes thinkWave { 0%,100% { opacity: .35 } 50% { opacity: .9 } }
-  .mech-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
-  .mech-note b { color: #c4b5fd; }
-  .s-mech.active .mech-note { animation: rise .6s ease 2.1s both; }
+  .tl-line b { color: #c3cde2; }
+  .tl-line .yr { font-family: var(--mono); color: var(--cyan); }
+  .s-two.active .tl-line { animation: rise .6s ease 1.6s both; }
 
-  /* ============ 屏3 · STEP 2 第二条曲线 ============ */
-  .scale-pairs { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  /* ============ 屏3 · 思考链内部 ============ */
+  .think-term {
+    width: 100%; max-width: 560px;
+    border-radius: 13px; overflow: hidden;
+    border: 1px solid rgba(167,139,250,.45);
+    background: rgba(10,15,28,.9);
+  }
+  .tt-head {
+    display: flex; align-items: center; gap: 7px;
+    padding: 8px 13px; font-size: 10.5px; color: var(--dim);
+    border-bottom: 1px solid var(--line); background: rgba(255,255,255,.03);
+  }
+  .tt-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--purple); box-shadow: 0 0 8px var(--purple); }
+  .tt-body { padding: 10px 14px; font-family: var(--mono); font-size: 10.6px; line-height: 1.8; color: #c4b5fd; }
+  .tt-body .ln { display: block; opacity: 0; }
+  .tt-body .ln.bad { color: #ffb9c4; }
+  .tt-body .ln.ok { color: #6ee7b7; }
+  .tt-body .ln.dim { color: var(--dim); }
+  .s-chain.active .ln { animation: lineIn .4s ease both; }
+  .s-chain.active .ln:nth-child(1) { animation-delay: .35s; }
+  .s-chain.active .ln:nth-child(2) { animation-delay: .85s; }
+  .s-chain.active .ln:nth-child(3) { animation-delay: 1.35s; }
+  .s-chain.active .ln:nth-child(4) { animation-delay: 1.9s; }
+  .s-chain.active .ln:nth-child(5) { animation-delay: 2.45s; }
+  @keyframes lineIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+  .answer-bubble {
+    max-width: 560px; width: 100%; text-align: center;
+    font-size: 12px; color: #a7f3d0;
+    background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.4);
+    border-radius: 12px; padding: 8px 13px;
+    opacity: 0;
+  }
+  .s-chain.active .answer-bubble { animation: msgIn .5s ease 2.95s both; }
+  .chain-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.65; opacity: 0; }
+  .s-chain.active .chain-note { animation: rise .6s ease 3.35s both; }
+
+  /* ============ 屏4 · 第二条轴 ============ */
+  .axes-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
+  .axis {
+    flex: 1; border-radius: 13px; padding: 11px 13px;
+    background: var(--card); border: 1px solid var(--line);
+    opacity: 0;
+  }
+  .axis h4 { font-size: 11.5px; margin-bottom: 7px; }
+  .axis.train h4 { color: #67e8f9; }
+  .axis.test h4 { color: #c4b5fd; }
+  .axis p { font-size: 10.5px; color: var(--dim); line-height: 1.6; margin-bottom: 7px; }
+  .axis .ax-vis { height: 7px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .axis .ax-vis i { display: block; height: 100%; width: 0; border-radius: 99px; }
+  .axis.train .ax-vis i { background: var(--cyan); }
+  .axis.test .ax-vis i { background: var(--purple); }
+  .s-axis.active .axis.train { animation: msgIn .5s ease .3s both; }
+  .s-axis.active .axis.test { animation: msgIn .5s ease .6s both; }
+  .s-axis.active .axis.train .ax-vis i { animation: grow1 .9s ease .7s forwards; }
+  .s-axis.active .axis.test .ax-vis i { animation: grow2 .9s ease 1s forwards; }
+  @keyframes grow1 { to { width: 82%; } }
+  @keyframes grow2 { to { width: 64%; } }
+  .curve-box {
+    width: 100%; max-width: 560px; padding: 10px 12px 6px;
+    border-radius: 13px; border: 1px solid var(--line); background: var(--card);
+    opacity: 0;
+  }
+  .curve-box svg { display: block; width: 100%; height: auto; }
+  .s-axis.active .curve-box { animation: msgIn .55s ease 1.15s both; }
+  .curve-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.65; opacity: 0; }
+  .curve-note b { color: #fde68a; }
+  .s-axis.active .curve-note { animation: rise .55s ease 1.75s both; }
+
+  /* ============ 屏5 · 证据 ============ */
+  .scale-pairs { display: flex; flex-direction: column; gap: 9px; width: 100%; max-width: 560px; }
   .sp {
-    display: grid; grid-template-columns: 110px 1fr 92px; gap: 10px; align-items: center;
+    display: grid; grid-template-columns: 96px 1fr 74px; gap: 10px; align-items: center;
     padding: 9px 13px; border-radius: 12px;
     background: var(--card); border: 1px solid var(--line);
     opacity: 0;
@@ -212,70 +296,99 @@
   .sp .n { font-size: 11.5px; font-weight: 700; color: #c3cde2; }
   .sp .bars { display: flex; flex-direction: column; gap: 3px; }
   .sp .bars .row { display: flex; align-items: center; gap: 6px; }
-  .sp .bars .lbl { font-family: var(--mono); font-size: 9px; color: var(--dim); width: 34px; flex: none; }
+  .sp .bars .lbl { font-family: var(--mono); font-size: 9px; color: var(--dim); width: 50px; flex: none; }
   .sp .bars .track { flex: 1; height: 8px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
   .sp .bars .fill { display: block; height: 100%; width: 0; border-radius: 99px; }
   .f-before { background: rgba(148,163,184,.6); }
   .f-after { background: linear-gradient(90deg, var(--cyan), var(--green)); }
   .sp .delta { font-family: var(--mono); font-size: 10px; color: #6ee7b7; text-align: right; }
-  .s-scale.active .sp { animation: msgIn .5s ease both; }
-  .s-scale.active .sp:nth-child(1) { animation-delay: .4s; }
-  .s-scale.active .sp:nth-child(2) { animation-delay: .85s; }
-  .s-scale.active .sp:nth-child(3) { animation-delay: 1.3s; }
-  .s-scale.active .sp .fill { animation: barGrow 1s cubic-bezier(.25,1,.4,1) both; }
-  .s-scale.active .sp:nth-child(1) .fill { animation-delay: 1s; }
-  .s-scale.active .sp:nth-child(2) .fill { animation-delay: 1.45s; }
-  .s-scale.active .sp:nth-child(3) .fill { animation-delay: 1.9s; }
+  .s-proof.active .sp { animation: msgIn .5s ease both; }
+  .s-proof.active .sp:nth-child(1) { animation-delay: .4s; }
+  .s-proof.active .sp:nth-child(2) { animation-delay: .8s; }
+  .s-proof.active .sp:nth-child(3) { animation-delay: 1.2s; }
+  .s-proof.active .sp .fill { animation: barGrow 1s cubic-bezier(.25,1,.4,1) both; }
+  .s-proof.active .sp:nth-child(1) .fill { animation-delay: 1s; }
+  .s-proof.active .sp:nth-child(2) .fill { animation-delay: 1.4s; }
+  .s-proof.active .sp:nth-child(3) .fill { animation-delay: 1.8s; }
   @keyframes barGrow { to { width: var(--w); } }
   .scale-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
   .scale-note b { color: #6ee7b7; }
-  .s-scale.active .scale-note { animation: rise .6s ease 2.6s both; }
+  .s-proof.active .scale-note { animation: rise .55s ease 2.05s both; }
 
-  /* ============ 屏4 · STEP 3 旋钮 ============ */
-  .knob-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
-  .knob {
-    display: flex; gap: 13px; align-items: flex-start;
-    padding: 12px 15px; border-radius: 14px;
+  /* ============ 屏6 · 档位光谱 ============ */
+  .dial-box { width: 100%; max-width: 560px; opacity: 0; }
+  .s-dial.active .dial-box { animation: msgIn .55s ease .4s both; }
+  .effort-row { display: flex; gap: 6px; margin-bottom: 9px; }
+  .ef {
+    flex: 1; text-align: center; border-radius: 11px; padding: 8px 4px;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 10px; color: var(--dim);
+  }
+  .ef .eico { font-size: 14px; display: block; margin-bottom: 2px; }
+  .ef b { display: block; font-size: 10.5px; color: #aab6cf; }
+  .ef.on { border-color: rgba(167,139,250,.6); background: rgba(167,139,250,.1); color: #c4b5fd; }
+  .ef.on b { color: #c4b5fd; }
+  .ef-lines { display: flex; flex-direction: column; gap: 5px; }
+  .efl {
+    display: grid; grid-template-columns: 62px 1fr; gap: 9px; align-items: center;
+    font-size: 10px; color: var(--dim); font-family: var(--mono);
+  }
+  .efl .eb { height: 8px; border-radius: 99px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .efl .eb i { display: block; height: 100%; width: 0; border-radius: 99px; }
+  .s-dial.active .eb i { animation: efGrow .9s ease 1s forwards; }
+  @keyframes efGrow { to { width: var(--w); } }
+  .api-row { display: flex; gap: 8px; width: 100%; max-width: 560px; }
+  .api {
+    flex: 1; border-radius: 11px; padding: 9px 11px;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 10px; color: var(--dim); line-height: 1.55;
+    opacity: 0;
+  }
+  .api b { display: block; font-size: 10.5px; color: #c3cde2; margin-bottom: 2px; }
+  .api code { color: #7dd3fc; font-size: .95em; }
+  .s-dial.active .api { animation: msgIn .5s ease both; }
+  .s-dial.active .api:nth-child(1) { animation-delay: 1.35s; }
+  .s-dial.active .api:nth-child(2) { animation-delay: 1.6s; }
+  .s-dial.active .api:nth-child(3) { animation-delay: 1.85s; }
+  .dial-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.7; opacity: 0; }
+  .s-dial.active .dial-note { animation: rise .55s ease 2.15s both; }
+  .dial-note code { color: var(--cyan); background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px; font-size: .92em; }
+  .dial-note b { color: #c4b5fd; }
+
+  /* ============ 屏7 · 什么时候用 ============ */
+  .use-cards { display: flex; gap: 8px; width: 100%; max-width: 560px; }
+  .uc {
+    flex: 1; border-radius: 12px; padding: 10px 11px;
     background: var(--card); border: 1px solid var(--line);
     opacity: 0;
   }
-  .knob .t-ico { font-size: 21px; flex: none; }
-  .knob b { font-size: 13.5px; display: block; }
-  .knob code { color: #7dd3fc; font-size: .9em; }
-  .knob p { font-size: 11.5px; color: var(--dim); line-height: 1.65; margin-top: 3px; }
-  .k1 { border-color: rgba(34,211,238,.4); }
-  .k2 { border-color: rgba(52,211,153,.4); }
-  .k3 { border-color: rgba(167,139,250,.45); }
-  .s-knobs.active .knob { animation: msgIn .5s ease both; }
-  .s-knobs.active .k1 { animation-delay: .4s; }
-  .s-knobs.active .k2 { animation-delay: .95s; }
-  .s-knobs.active .k3 { animation-delay: 1.5s; }
-  .s-knobs.active .knob-note { animation: rise .6s ease 2.2s both; }
-  .knob-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
-  .knob-note b { color: #67e8f9; }
-
-  /* ============ 屏5 · STEP 4 该用才用 ============ */
-  .when-row { display: flex; gap: 10px; width: 100%; max-width: 560px; }
-  .when {
-    flex: 1; padding: 12px 14px; border-radius: 14px;
-    background: var(--card); border: 1px solid var(--line);
-    opacity: 0;
+  .uc h4 { font-size: 11px; margin-bottom: 4px; }
+  .uc p { font-size: 10.2px; color: var(--dim); line-height: 1.55; }
+  .uc.on-t { border-color: rgba(52,211,153,.45); }
+  .uc.on-t h4 { color: #a7f3d0; }
+  .uc.off-t { border-color: rgba(251,113,133,.42); }
+  .uc.off-t h4 { color: #ffb9c4; }
+  .uc.mid-t { border-color: rgba(251,191,36,.45); }
+  .uc.mid-t h4 { color: #fde68a; }
+  .s-use.active .uc { animation: msgIn .5s ease both; }
+  .s-use.active .uc:nth-child(1) { animation-delay: .4s; }
+  .s-use.active .uc:nth-child(2) { animation-delay: .7s; }
+  .s-use.active .uc:nth-child(3) { animation-delay: 1s; }
+  .interleave {
+    display: flex; align-items: center; gap: 5px; flex-wrap: wrap; justify-content: center;
+    font-size: 10px; font-family: var(--mono); opacity: 0;
   }
-  .when b { font-size: 13px; display: block; margin-bottom: 7px; }
-  .when p { font-size: 11.5px; color: var(--dim); line-height: 1.75; }
-  .when p i { font-style: normal; display: block; }
-  .w-use { border-color: rgba(52,211,153,.45); }
-  .w-use b { color: #a7f3d0; }
-  .w-skip { border-color: rgba(251,113,133,.45); }
-  .w-skip b { color: #ffb9c4; }
-  .s-when.active .when { animation: msgIn .55s ease both; }
-  .s-when.active .w-use { animation-delay: .4s; }
-  .s-when.active .w-skip { animation-delay: 1.1s; }
-  .s-when.active .when-note { animation: rise .6s ease 2s both; }
-  .when-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
-  .when-note b { color: #6ee7b7; }
+  .interleave i { color: var(--dim); font-style: normal; }
+  .st { padding: 5px 9px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+  .st.th { color: #c4b5fd; border-color: rgba(167,139,250,.45); background: rgba(167,139,250,.08); }
+  .st.tl { color: #67e8f9; border-color: rgba(34,211,238,.4); background: rgba(34,211,238,.07); }
+  .st.ans { color: #6ee7b7; border-color: rgba(52,211,153,.45); background: rgba(52,211,153,.08); }
+  .s-use.active .interleave { animation: rise .6s ease 1.5s both; }
+  .use-note { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.65; opacity: 0; }
+  .use-note b { color: #c3cde2; }
+  .s-use.active .use-note { animation: rise .55s ease 1.6s both; }
 
-  /* ============ 屏6 · STEP 5 计费细节 ============ */
+  /* ============ 屏8 · 计费 ============ */
   .cost-list { display: flex; flex-direction: column; gap: 9px; width: 100%; max-width: 560px; }
   .cost {
     display: flex; gap: 12px; align-items: flex-start;
@@ -283,10 +396,11 @@
     background: var(--card); border: 1px solid var(--line);
     opacity: 0;
   }
-  .cost .c-ico { font-size: 19px; flex: none; }
-  .cost b { font-size: 13px; display: block; }
+  .cost .c-ico { font-size: 18px; flex: none; }
+  .cost > div { flex: 1; min-width: 0; }
+  .cost b { font-size: 12.5px; display: block; }
   .cost code { color: #7dd3fc; font-size: .9em; }
-  .cost p { font-size: 11.5px; color: var(--dim); line-height: 1.65; margin-top: 3px; }
+  .cost p { font-size: 11px; color: var(--dim); line-height: 1.6; margin-top: 3px; }
   .c1 { border-color: rgba(251,113,133,.4); }
   .c2 { border-color: rgba(251,191,36,.4); }
   .c3 { border-color: rgba(52,211,153,.4); }
@@ -294,11 +408,11 @@
   .s-cost.active .c1 { animation-delay: .4s; }
   .s-cost.active .c2 { animation-delay: .95s; }
   .s-cost.active .c3 { animation-delay: 1.5s; }
-  .s-cost.active .cost-note { animation: rise .6s ease 2.1s both; }
   .cost-note { font-size: 11px; color: var(--dim); text-align: center; opacity: 0; line-height: 1.7; }
   .cost-note b { color: #6ee7b7; }
+  .s-cost.active .cost-note { animation: rise .6s ease 2.1s both; }
 
-  /* ============ 屏7 · 总结 ============ */
+  /* ============ 屏9 · 总结 ============ */
   .sum-flow {
     display: flex; gap: 4px; align-items: center; justify-content: center;
     flex-wrap: wrap; font-size: 10px; color: var(--dim);
@@ -308,15 +422,15 @@
     padding: 3px 8px; border-radius: 999px; white-space: nowrap;
   }
   .sum-flow i { color: var(--cyan); font-style: normal; }
-  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv-grid { display: flex; flex-direction: column; gap: 9px; width: 100%; max-width: 560px; }
   .adv {
     display: flex; gap: 13px; align-items: flex-start;
     background: var(--card); border: 1px solid var(--line);
-    border-radius: 14px; padding: 12px 15px;
+    border-radius: 14px; padding: 11px 15px;
   }
-  .adv-ico { font-size: 22px; line-height: 1.2; }
-  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
-  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .adv-ico { font-size: 21px; line-height: 1.2; }
+  .adv b { font-size: 13px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11px; color: var(--dim); line-height: 1.6; }
   .sum-quote {
     font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center;
     line-height: 1.65; letter-spacing: .04em;
@@ -334,24 +448,26 @@
     font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em;
   }
 
-  /* ============ 通用关键帧 ============ */
-  @keyframes bob2 { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
-
   /* ============ 兜底与无障碍 ============ */
-  @media (max-height: 560px) {
+  @media (max-height: 620px) {
     .screen { overflow-y: auto; justify-content: flex-start; }
-    .stage { flex: 0 0 auto; padding: 14px 0; }
+    .stage { flex: 0 0 auto; padding: 12px 0; }
+    .hero-legend { display: none; }
   }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
       animation-duration: .01ms !important; animation-iteration-count: 1 !important;
       transition: none !important; scroll-behavior: auto !important;
     }
-    .rv, .mech-box, .mech-note, .sp, .scale-note, .knob, .knob-note,
-    .when, .when-note, .cost, .cost-note {
+    .rv, .ans, .tl-line, .answer-bubble, .chain-note, .axis, .curve-box, .curve-note,
+    .sp, .scale-note, .dial-box, .api, .dial-note, .uc, .interleave, .use-note,
+    .cost, .cost-note {
       opacity: 1 !important; transform: none !important; filter: none !important;
     }
     .sp .fill { width: var(--w) !important; }
+    .efl .eb i { width: var(--w) !important; }
+    .axis.train .ax-vis i { width: 82% !important; }
+    .axis.test .ax-vis i { width: 64% !important; }
   }
 </style>
 </head>
@@ -394,65 +510,133 @@ addEventListener("keydown", function (e) {
 </script>
 <!-- epnav:end -->
 
-<nav class="dots" id="dots" aria-label="屏幕导航">
-  <button class="on" title="封面" aria-label="封面"></button>
-  <button title="STEP 1 工作机制" aria-label="工作机制"></button>
-  <button title="STEP 2 第二条曲线" aria-label="第二条曲线"></button>
-  <button title="STEP 3 旋钮" aria-label="旋钮"></button>
-  <button title="STEP 4 该用才用" aria-label="该用才用"></button>
-  <button title="STEP 5 计费细节" aria-label="计费细节"></button>
-  <button title="总结" aria-label="总结"></button>
-</nav>
+<nav class="dots" id="dots" aria-label="屏幕导航"></nav>
 
 <!-- 屏1 · 封面 -->
-<section class="screen s-hero active">
-  <div class="hero-inner">
-    <div class="hero-kicker rv d1">AI 运作原理拆解 · 13</div>
-    <h1 class="rv d2">推理模型<br><span class="grad">先打草稿再交卷</span></h1>
-    <p class="hero-sub rv d3">思维链 · 测试时算力 · 逐屏动画演示</p>
-    <div class="hero-chain rv d4">
-      <span class="hc-node">🤔 思考 token</span>
-      <span class="hc-arrow"><i></i></span>
-      <span class="hc-node">⏱️ 多想一步</span>
-      <span class="hc-arrow hc-arrow-2"><i></i></span>
-      <span class="hc-node">🎯 该用才用</span>
+<section class="screen s-hero active" id="s1">
+  <div class="hero-wrap">
+    <div class="hero-inner">
+      <div class="hero-kicker rv d1">AI 运作原理拆解 · 13</div>
+      <h1 class="rv d2">先打草稿<br><span class="grad">再交卷</span></h1>
+      <p class="hero-sub rv d3">思考 token · 测试时算力 · 思考预算 · 档位光谱</p>
+      <p class="hero-quote rv d4">「想得越久，答得越对 —— 直到边际开始递减」</p>
     </div>
-    <p class="hero-quote rv d5">「竞赛数学 13.4% → 83.3%：多想一步，胜过更大的模型」</p>
+    <div class="c3d" id="c3d-hero"></div>
+  </div>
+  <div class="hero-legend rv d5">
+    <span class="lg-probe"><i></i>正在试</span>
+    <span class="lg-dead"><i></i>走不通</span>
+    <span class="lg-ok"><i></i>找到解</span>
   </div>
   <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
 </section>
 
-<!-- 屏2 · STEP 1 工作机制 -->
-<section class="screen s-mech">
+<!-- 屏2 · STEP 1 两种答法 -->
+<section class="screen s-two">
   <header class="scr-head">
-    <div class="step-badge rv d1"><b>STEP 1</b>工作机制</div>
-    <h2 class="rv d1">回答之前，先写一页草稿</h2>
-    <p class="scr-desc rv d2">推理模型先生成「思考 token」：拆问题、比方案、发现走不通就回头 —— 你看不见，但它真实存在</p>
-    <div class="code-chip rv d2">reasoning tokens：拆解 · 权衡 · <b>换思路</b></div>
+    <div class="step-badge rv d1"><b>STEP 1</b>两种答法</div>
+    <h2 class="rv d1">直接交卷，还是先列草稿</h2>
+    <p class="scr-desc rv d2">普通模型把全部本事用在「第一反应」；推理模型被允许先生成一段用户通常看不到的思考，再作答</p>
   </header>
   <div class="stage">
-    <div class="mech-box">
-      <div class="mech-think">
-        <div class="t-label">🫥 思考中……（用户看不见）</div>
-        <div class="t-lines"><i></i><i></i><i></i><i></i></div>
+    <div class="two-row">
+      <div class="ans fast">
+        <h4>⚡ 普通模型</h4>
+        <div class="path-line">问题 ──▶ <span class="dir">答案</span></div>
+        <p>快、便宜、日常问题够用；遇到多步推导容易一步错步步错</p>
       </div>
-      <div class="mech-ans">
-        <div class="a-label">📝 最终回答（可见）</div>
-        <div class="a-body">设速度为 x…… 所以答案是 36 km/h。</div>
+      <div class="ans deep">
+        <h4>📝 推理模型</h4>
+        <div class="path-line">问题 ──▶ <span class="hot">思考…（隐藏）</span> ──▶ <span class="dir">答案</span></div>
+        <p>数学、代码、复杂规划显著更强，代价是更慢、更贵、输出更长</p>
       </div>
     </div>
-    <div class="mech-note rv d5">思考 token <b>占窗口、按输出计费</b> —— 像出租车打表：想得越久，答案再短也越贵</div>
+    <div class="tl-line"><span class="yr">2024-09</span> OpenAI 发布 <b>o1</b>，把「思考链」做成了产品　·　<span class="yr">2025-01</span> <b>DeepSeek-R1</b> 开源引爆全行业<br>此后 Qwen、GLM、Claude、Gemini 全线进入「会思考」时代</div>
   </div>
-  <footer class="scr-foot rv d6">💡 普通模型直接开口 —— <b>推理模型先把草稿纸写满</b></footer>
+  <footer class="scr-foot rv d4">💡 它不是换了个更大的模型 —— <b>是学会了把推理过程显式写出来，再据此作答</b></footer>
 </section>
 
-<!-- 屏3 · STEP 2 第二条曲线 -->
-<section class="screen s-scale">
+<!-- 屏3 · STEP 2 思考链内部 -->
+<section class="screen s-chain">
   <header class="scr-head">
-    <div class="step-badge rv d1"><b>STEP 2</b>第二条曲线</div>
+    <div class="step-badge rv d1"><b>STEP 2</b>草稿纸内部</div>
+    <h2 class="rv d1">草稿纸上发生了什么</h2>
+    <p class="scr-desc rv d2">没有神来之笔 —— 思考链里是一次次「试一条路 → 发现矛盾 → 回退 → 换法 → 验算」，<b style="color:#c4b5fd">和封面那棵搜索树是同一件事</b></p>
+  </header>
+  <div class="stage">
+    <div class="think-term">
+      <div class="tt-head"><span class="tt-dot"></span>thinking（默认不展示给用户，但会计费）</div>
+      <div class="tt-body">
+        <span class="ln">&gt; 题目要求 x 的范围，先按通常做法设 t = √x …</span>
+        <span class="ln dim">&gt; 代入后得到 t²+t−6=0，解得 t=2 或 t=−3 …</span>
+        <span class="ln bad">&gt; 等等，t 是算术平方根，不可能为负，−3 要舍去</span>
+        <span class="ln">&gt; 换个方法验证：t=2 → x=4，代回原式成立 ✓</span>
+        <span class="ln ok">&gt; 结论：x = 4，负根舍去，准备作答</span>
+      </div>
+    </div>
+    <div class="answer-bubble">答案：x = 4（舍去 t = −3，因为算术平方根非负）</div>
+    <div class="chain-note">这段草稿本身就是 12 期采样机制逐 token 生成的 —— <b style="color:#c3cde2">只是它现在拿思考 token 当推理空间</b></div>
+  </div>
+  <footer class="scr-foot rv d5">💡 回退与自我纠错不稀奇，稀奇的是：<b>这些动作是训练后自发长出来的，没人逐条教</b></footer>
+</section>
+
+<!-- 屏4 · STEP 3 第二条轴 -->
+<section class="screen s-axis">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>test-time compute</div>
+    <h2 class="rv d1">第二条变强的轴：多想一想</h2>
+    <p class="scr-desc rv d2">过去变强只靠训练时堆规模；推理模型打开了第二条轴 —— 在回答时投入更多计算</p>
+  </header>
+  <div class="stage">
+    <div class="axes-row">
+      <div class="axis train">
+        <h4>🏋️ 训练时投入</h4>
+        <p>更多数据、更大参数 —— 一次投入，所有回答共享</p>
+        <div class="ax-vis"><i></i></div>
+      </div>
+      <div class="axis test">
+        <h4>🧠 推理时投入</h4>
+        <p>每个难题单独多想一会儿 —— 按题计费，随时可调</p>
+        <div class="ax-vis"><i></i></div>
+      </div>
+    </div>
+    <div class="curve-box">
+      <svg viewBox="0 0 520 142" role="img" aria-label="正确率随思考 token 增长的对数曲线">
+        <defs>
+          <linearGradient id="cg" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#34d399"/><stop offset="55%" stop-color="#22d3ee"/><stop offset="100%" stop-color="#a78bfa"/>
+          </linearGradient>
+          <linearGradient id="cga" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#22d3ee" stop-opacity=".20"/><stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <line x1="52" y1="18" x2="52" y2="112" stroke="rgba(255,255,255,.18)" stroke-width="1"/>
+        <line x1="52" y1="112" x2="502" y2="112" stroke="rgba(255,255,255,.18)" stroke-width="1"/>
+        <path d="M52,104 C120,52 172,36 240,30 C320,23 400,20 498,18 L498,112 L52,112 Z" fill="url(#cga)"/>
+        <path d="M52,104 C120,52 172,36 240,30 C320,23 400,20 498,18" fill="none" stroke="url(#cg)" stroke-width="7" stroke-linecap="round" opacity=".22"/>
+        <path d="M52,104 C120,52 172,36 240,30 C320,23 400,20 498,18" fill="none" stroke="url(#cg)" stroke-width="2.6" stroke-linecap="round"/>
+        <circle cx="240" cy="30" r="3.6" fill="#22d3ee"/>
+        <circle cx="498" cy="18" r="3.6" fill="#a78bfa"/>
+        <text x="8" y="20" fill="#b7c3d8" font-size="10.5" font-family="monospace">正确率 ↑</text>
+        <text x="56" y="132" fill="#b7c3d8" font-size="10.5" font-family="monospace">少想</text>
+        <text x="452" y="132" fill="#b7c3d8" font-size="10.5" font-family="monospace">多想 →</text>
+        <text x="112" y="34" fill="#7f8ea6" font-size="10" font-family="monospace">收益陡增</text>
+        <text x="352" y="46" fill="#7f8ea6" font-size="10" font-family="monospace">边际递减</text>
+        <line x1="240" y1="30" x2="240" y2="112" stroke="rgba(34,211,238,.35)" stroke-width="1" stroke-dasharray="3 4"/>
+      </svg>
+    </div>
+    <div class="curve-note">这就是「思考预算」：<b>思考不是免费的内心戏，是真金白银的输出 token</b> —— 难题值得，简单题浪费</div>
+  </div>
+  <footer class="scr-foot rv d4">💡 新的权衡观：<b>同一道题，可以花一分钱快答，也可以花一块钱深思</b></footer>
+</section>
+
+<!-- 屏5 · STEP 4 证据 -->
+<section class="screen s-proof">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>证据</div>
     <h2 class="rv d1">想得越久，答得越对</h2>
-    <p class="scr-desc rv d2">训练靠算力、推理也靠算力 —— 「测试时算力」是第二条换性能的曲线</p>
-    <div class="code-chip rv d2">o1 发布时对比（<b>AIME 竞赛数学</b>）</div>
+    <p class="scr-desc rv d2">o1 发布时的对照 —— 同一量级的模型，区别只是「允许它先想」</p>
+    <div class="code-chip rv d2">o1 发布对比（<b>GPT-4o → o1</b>）</div>
   </header>
   <div class="stage">
     <div class="scale-pairs">
@@ -467,8 +651,8 @@ addEventListener("keydown", function (e) {
       <div class="sp">
         <span class="n">Codeforces</span>
         <div class="bars">
-          <div class="row"><span class="lbl">GPT-4o</span><span class="track"><i class="fill f-before" style="--w:11%"></i></span><span class="lbl">11 百分位</span></div>
-          <div class="row"><span class="lbl">o1</span><span class="track"><i class="fill f-after" style="--w:89%"></i></span><span class="lbl">89 百分位</span></div>
+          <div class="row"><span class="lbl">GPT-4o</span><span class="track"><i class="fill f-before" style="--w:11%"></i></span><span class="lbl">11 分位</span></div>
+          <div class="row"><span class="lbl">o1</span><span class="track"><i class="fill f-after" style="--w:89%"></i></span><span class="lbl">89 分位</span></div>
         </div>
         <span class="delta">↑ 78pt</span>
       </div>
@@ -481,72 +665,74 @@ addEventListener("keydown", function (e) {
         <span class="delta">↑ 22pt</span>
       </div>
     </div>
-    <div class="scale-note rv d5">同一道题，同一个量级的模型 —— <b>差别只是「让它先想」</b><br>准确率随思考 token 数对数提升：想得越久越对，但边际递减</div>
+    <div class="scale-note">收益最高的是<b>多步推导</b>类任务（数学、竞赛编程），<b>知识问答</b>提升最小 —— 思考买的是「推理链长度」，不是「知识量」</div>
   </div>
-  <footer class="scr-foot rv d6">💡 「先打草稿再交卷」—— <b>比换更大的模型便宜得多</b></footer>
+  <footer class="scr-foot rv d4">💡 「先打草稿再交卷」—— <b>比换更大的模型便宜得多</b></footer>
 </section>
 
-<!-- 屏4 · STEP 3 旋钮 -->
-<section class="screen s-knobs">
+<!-- 屏6 · STEP 5 档位光谱 -->
+<section class="screen s-dial">
   <header class="scr-head">
-    <div class="step-badge rv d1"><b>STEP 3</b>旋钮</div>
-    <h2 class="rv d1">思考时间，是个可调参数</h2>
-    <p class="scr-desc rv d2">各家叫法不同，本质一样：给模型多少「草稿纸」</p>
-    <div class="code-chip rv d2">reasoning_effort · <b>thinking_budget</b> · low/medium/high</div>
+    <div class="step-badge rv d1"><b>STEP 5</b>effort 光谱</div>
+    <h2 class="rv d1">一个模型，变成一条光谱</h2>
+    <p class="scr-desc rv d2">2025 年起，旗舰模型不再只有「思考开关」，而是按思考深度分档计价</p>
   </header>
   <div class="stage">
-    <div class="knob-grid">
-      <div class="knob k1">
-        <div class="t-ico">🎚️</div>
-        <div><b>OpenAI o 系列 <code>reasoning_effort</code></b>
-        <p>low / medium / high 三档起 —— 档位越高想得越久；模型还会自动「简单题少想、难题多想」</p></div>
+    <div class="dial-box">
+      <div class="effort-row">
+        <div class="ef"><span class="eico">🗯️</span><b>非思考</b>闲聊改写</div>
+        <div class="ef"><span class="eico">🌗</span><b>low</b>简单推理</div>
+        <div class="ef on"><span class="eico">🌓</span><b>medium</b>日常默认</div>
+        <div class="ef"><span class="eico">🌕</span><b>high / max</b>硬题攻坚</div>
       </div>
-      <div class="knob k2">
-        <div class="t-ico">💰</div>
-        <div><b>Claude <code>thinking budget</code></b>
-        <p>同一个模型，开发者直接给思考预算（token 上限）—— DeepSeek R1 开源 MIT 可自由商用，Gemini 可设 0 关闭</p></div>
-      </div>
-      <div class="knob k3">
-        <div class="t-ico">🔁</div>
-        <div><b>交替思考 <code>interleaved thinking</code></b>
-        <p>思考 → 调工具 → 吸收结果 → 再思考；OSWorld 计算机操作从 42.2% 提到 <b>61.4%</b> —— 考场上允许边翻书边打草稿</p></div>
+      <div class="ef-lines">
+        <div class="efl"><span>非思考</span><span class="eb"><i style="--w:12%;background:#34d399"></i></span></div>
+        <div class="efl"><span>low</span><span class="eb"><i style="--w:34%;background:#a78bfa"></i></span></div>
+        <div class="efl"><span>medium</span><span class="eb"><i style="--w:60%;background:#a78bfa"></i></span></div>
+        <div class="efl"><span>high/max</span><span class="eb"><i style="--w:92%;background:#fb7185"></i></span></div>
       </div>
     </div>
-    <div class="knob-note rv d5">蒸馏也成了路线：R1 开源 6 个小模型（32B/70B ≈ o1-mini）—— <b>把「会思考」压进小模型</b></div>
+    <div class="api-row">
+      <div class="api"><b>OpenAI</b><code>reasoning_effort</code><br>low / medium / high</div>
+      <div class="api"><b>Claude</b><code>thinking budget</code><br>直接给 token 上限</div>
+      <div class="api"><b>Qwen / GPT-5</b>档位切换<br><code>minimal → high</code> 四档</div>
+    </div>
+    <div class="dial-note">Qwen3（2025-04）率先做成可切换的思考 / 非思考双模式；GPT-5（2025-08）给出 <code>minimal→high</code> 四档<br><b>调的不是智商，是这道题允许它想多久</b></div>
   </div>
-  <footer class="scr-foot rv d6">💡 思考量可调 —— <b>预算就是新的温度旋钮</b></footer>
+  <footer class="scr-foot rv d4">💡 非思考档也回来了 —— <b>简单任务不烧思考钱，这才是产品化的样子</b></footer>
 </section>
 
-<!-- 屏5 · STEP 4 该用才用 -->
-<section class="screen s-when">
+<!-- 屏7 · STEP 6 什么时候用 -->
+<section class="screen s-use">
   <header class="scr-head">
-    <div class="step-badge rv d1"><b>STEP 4</b>该用才用</div>
-    <h2 class="rv d1">不是所有问题都值得想半天</h2>
-    <p class="scr-desc rv d2">简单问题开高档 = 白烧钱 —— 两种场景分开对待</p>
-    <div class="code-chip rv d2">数学 / 规划 / 调试 → 高档 · 分类 / 检索 → <b>普通档</b></div>
+    <div class="step-badge rv d1"><b>STEP 6</b>什么时候该思考</div>
+    <h2 class="rv d1">Agent 时代：思考与动手交替</h2>
+    <p class="scr-desc rv d2">工程共识已经成型 —— 思考能力内置后，架构师的工作变成配置「何时想、想多久、在哪一步停下来想」</p>
   </header>
   <div class="stage">
-    <div class="when-row">
-      <div class="when w-use">
-        <b>✓ 值得开高档</b>
-        <p><i>📐 数学与科学计算</i><i>🧭 多步规划</i><i>🐞 复杂调试</i><i>🤖 Agent 长任务</i><i>📑 多文档比对</i></p>
-      </div>
-      <div class="when w-skip">
-        <b>✕ 别浪费思考</b>
-        <p><i>🏷️ 分类与打标签</i><i>🔎 简单检索</i><i>🎙️ 语音等低延迟场景</i><i>💬 寒暄与格式转换</i><i>……直接用普通模型</i></p>
-      </div>
+    <div class="use-cards">
+      <div class="uc on-t"><h4>✓ 开思考</h4><p>数学证明、代码调试、多约束规划、长链路决策 —— 错一步代价大的题</p></div>
+      <div class="uc off-t"><h4>✕ 关思考</h4><p>闲聊、格式转换、分类打标签、彼此无依赖的并行小调用 —— 只增成本不增成功率</p></div>
+      <div class="uc mid-t"><h4>～ 交替思考</h4><p>长工具链：拿到结果先停下来核对，再决定下一步 —— 草稿与动作穿插</p></div>
     </div>
-    <div class="when-note rv d5">prompt 也有差异：推理模型<b>不需要</b>你写「一步步思考」——<br>给清晰目标、硬约束和输出格式就好，别替它规定中间步骤</div>
+    <div class="interleave">
+      <span class="st th">think 规划</span><i>→</i>
+      <span class="st tl">tool 调用</span><i>→</i>
+      <span class="st th">think 核对结果</span><i>→</i>
+      <span class="st tl">tool 再调用</span><i>→</i>
+      <span class="st ans">answer</span>
+    </div>
+    <div class="use-note">prompt 也要改：推理模型<b>不需要</b>你写「一步步思考」—— 给清晰目标、硬约束和输出格式就好。<br>交替思考已被验证有效：OSWorld 计算机操作 42.2% → <b>61.4%</b></div>
   </div>
-  <footer class="scr-foot rv d6">💡 判断标准：<b>问题值得几秒钟思考？值得就开，不值得就关</b></footer>
+  <footer class="scr-foot rv d4">💡 思考模型不是处处高档位 —— <b>把预算花在真正的岔路口</b>，才是会用</footer>
 </section>
 
-<!-- 屏6 · STEP 5 计费细节 -->
+<!-- 屏8 · STEP 7 计费 -->
 <section class="screen s-cost">
   <header class="scr-head">
-    <div class="step-badge rv d1"><b>STEP 5</b>计费细节</div>
+    <div class="step-badge rv d1"><b>STEP 7</b>计费细节</div>
     <h2 class="rv d1">打表计费的三条须知</h2>
-    <p class="scr-desc rv d2">思考 token 看不见，但账单上都在 —— 用之前立好预算</p>
+    <p class="scr-desc rv d2">思考 token 看不见，但账单上都在 —— 用之前先立好预算</p>
     <div class="code-chip rv d2">建议预留 <b>~25,000 token</b>（推理 + 输出）</div>
   </header>
   <div class="stage">
@@ -554,7 +740,7 @@ addEventListener("keydown", function (e) {
       <div class="cost c1">
         <div class="c-ico">🧾</div>
         <div><b>思考 token 按输出价计费</b>
-        <p>藏在哪里看不见，账单上都在 —— R1 输出 $2.19/M、缓存命中输入 $0.14/M（是普通未命中的 1/4）</p></div>
+        <p>藏在哪里看不见，账单上都在 —— R1 输出 $2.19/M，缓存命中输入 $0.14/M，只有未命中的四分之一</p></div>
       </div>
       <div class="cost c2">
         <div class="c-ico">⚠️</div>
@@ -564,70 +750,391 @@ addEventListener("keydown", function (e) {
       <div class="cost c3">
         <div class="c-ico">📉</div>
         <div><b>收益是对数曲线</b>
-        <p>想 2 倍久，正确率只多一小截 —— 定个预算上限，<b>够用就收</b></p></div>
+        <p>想 2 倍久，正确率只多一小截 —— 定个上限，够用就收</p></div>
       </div>
     </div>
-    <div class="cost-note rv d5">Agent 场景配模型路由：<b>工具循环里的关键规划用高档，周边杂活用普通模型</b>（dev-02 期）</div>
+    <div class="cost-note">Agent 场景配模型路由：<b>工具循环里的关键规划用高档，周边杂活用普通模型</b>（dev-02 期）</div>
   </div>
-  <footer class="scr-foot rv d6">💡 思考是付费的 —— <b>为难题买时间，别为寒暄买单</b></footer>
+  <footer class="scr-foot rv d4">💡 思考是付费的 —— <b>为难题买时间，别为寒暄买单</b></footer>
 </section>
 
-<!-- 屏7 · 总结 -->
+<!-- 屏9 · 总结 -->
 <section class="screen s-sum">
   <header class="scr-head">
     <div class="step-badge rv d1"><b>RECAP</b>全景</div>
-    <h2 class="rv d1">先打草稿，再交卷</h2>
-    <p class="scr-desc rv d2">思考 token → 第二条曲线 → 预算旋钮 → 该用才用 → 打表计费</p>
+    <h2 class="rv d1">变强的第二条轴</h2>
+    <p class="scr-desc rv d2">思考链是试错回退的可见草稿，预算按题计费，effort 档位把它做成产品旋钮</p>
   </header>
   <div class="stage">
-    <div class="sum-flow rv d2"><span>先生成思考 token</span><i>→</i><span>测试时算力换性能</span><i>→</i><span>预算可调</span><i>→</i><span>难题才开</span><i>→</i><span>按输出计费</span></div>
+    <div class="sum-flow rv d2"><span>普通直答</span><i>→</i><span>思考链草稿</span><i>→</i><span>预算换正确率</span><i>→</i><span>effort 分档</span><i>→</i><span>交替思考</span></div>
     <div class="adv-grid">
       <div class="adv rv d3">
-        <div class="adv-ico">🫥</div>
-        <div><b>看不见的草稿纸</b><p>思考 token 不展示但真实消耗窗口与费用 —— 打表计费，用前立预算</p></div>
+        <div class="adv-ico">📝</div>
+        <div><b>草稿即推理空间</b><p>思考链内部是试错、发现矛盾、回退、验算 —— 训练后自发涌现，逐 token 生成，默认隐藏但会计费</p></div>
       </div>
       <div class="adv rv d4">
         <div class="adv-ico">📈</div>
-        <div><b>第二条曲线</b><p>AIME 13.4% → 83.3% —— 「多想」比「更大」划算，但对数递减，够用即收</p></div>
+        <div><b>第二条曲线</b><p>AIME 13.4% → 83.3% —— 「多想」比「更大」划算；但对数递减，够用即收</p></div>
       </div>
       <div class="adv rv d5">
-        <div class="adv-ico">🎚️</div>
-        <div><b>档位配场景</b><p>规划调试开高档，分类检索用普通档 —— 思考量是新温度旋钮</p></div>
+        <div class="adv-ico">🔀</div>
+        <div><b>在 Agent 里穿插使用</b><p>硬题开、简单关、长工具链交替思考 —— 模型内化了思考，人负责配置在哪一步想</p></div>
       </div>
     </div>
-    <blockquote class="sum-quote rv d6">“先打草稿再交卷——<br>多想一步，胜过更大的模型。”</blockquote>
+    <blockquote class="sum-quote rv d6">“训练决定它能想多深，<br>预算决定它这一次想多久。”</blockquote>
     <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
   </div>
   <div class="series-badge">AI 运作原理拆解 · 13 / 推理模型篇</div>
 </section>
 
+<script src="vendor/three.global.js"></script>
 <script>
-  const secs = Array.from(document.querySelectorAll('.screen'));
-  const dots = Array.from(document.querySelectorAll('.dots button'));
+(function () {
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  var btns = [];
+
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    b.title = ['封面', '两种答法', '草稿纸内部', '第二条轴', '证据', '档位光谱', '什么时候用', '计费', '总结'][i] || '';
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    dots.appendChild(b);
+    btns.push(b);
+  });
 
   if ('IntersectionObserver' in window) {
-    const io = new IntersectionObserver((entries) => {
-      entries.forEach((en) => {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
         if (en.isIntersecting && en.intersectionRatio >= 0.45) {
-          const idx = secs.indexOf(en.target);
-          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
-          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+          var idx = screens.indexOf(en.target);
+          screens.forEach(function (s, i) { s.classList.toggle('active', i === idx); });
+          btns.forEach(function (b, i) { b.classList.toggle('on', i === idx); });
         }
       });
     }, { threshold: [0.45] });
-    secs.forEach((s) => io.observe(s));
+    screens.forEach(function (s) { io.observe(s); });
   } else {
-    secs.forEach((s) => s.classList.add('active'));
+    screens.forEach(function (s) { s.classList.add('active'); });
   }
 
-  dots.forEach((d, i) => d.addEventListener('click', () => {
-    secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }));
-
-  const replayBtn = document.getElementById('replayBtn');
-  if (replayBtn) replayBtn.addEventListener('click', () => {
+  var replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', function () {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
+
+  /* ---------------- 封面 3D：推理搜索树 ---------------- */
+  var hero = document.getElementById('c3d-hero');
+  var st = null;
+  var OK_PATH = [0, 3, 9, 12];
+  var OK_PAIRS = [[0, 3], [3, 9], [9, 12]];
+
+  // 树横跨 x∈[-2.2,2.5]、y∈[-0.35,2.05]。
+  // 相机距离决定树在屏幕上的高度；横向放不下时，把坐标按比例压窄（不缩放 group，
+  // 否则节点球会被压成椭圆）。
+  function fitZ(w, h) {
+    return 2.0 / Math.tan(Math.PI / 180 * 21);
+  }
+  function fitScaleX(w, h) {
+    var t = Math.tan(Math.PI / 180 * 21);
+    var halfW = fitZ(w, h) * t * (w / h);
+    return Math.max(0.40, Math.min(1, halfW * 0.92 / 2.7));
+  }
+
+  function initHero3D() {
+    if (!window.THREE || !hero) return false;
+    var THREE = window.THREE;
+    var w = hero.clientWidth, h = hero.clientHeight;
+    if (!w || !h) return false;
+
+    var scene = new THREE.Scene();
+    var cam = new THREE.PerspectiveCamera(42, w / h, 0.1, 100);
+    cam.position.set(0, 0.82, fitZ(w, h));
+    cam.lookAt(0, 0.34, 0);
+
+    var renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    } catch (e) { return false; }
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setSize(w, h);
+    hero.appendChild(renderer.domElement);
+
+    var group = new THREE.Group();
+    group.position.y = -0.52;
+    group.rotation.y = -0.06;
+    scene.add(group);
+
+    // 节点坐标：根在上，三层向下展开
+    var P = [
+      [0.00, 2.05,  0.00],  // 0 根
+      [-1.62, 1.28,  0.26], // 1 A
+      [0.04, 1.22, -0.16],  // 2 B
+      [1.64, 1.30,  0.28],  // 3 C
+      [-2.20, 0.52,  0.72], // 4 A1（死路）
+      [-1.04, 0.46,  0.50], // 5 A2
+      [-0.52, 0.46, -0.76], // 6 B1
+      [0.56, 0.42, -0.58],  // 7 B2
+      [1.16, 0.52,  0.80],  // 8 C1
+      [2.10, 0.46,  0.32],  // 9 C2
+      [0.16, -0.32, -1.02], // 10 B2a
+      [0.98, -0.28, -0.88], // 11 B2b（死路）
+      [1.62, -0.26, 0.86],  // 12 C2a（解）
+      [2.50, -0.32, 0.16]   // 13 C2b
+    ];
+    var SX = fitScaleX(w, h);
+    P = P.map(function (q) { return [q[0] * SX, q[1], q[2]]; });
+
+    var EDGES = [
+      [0, 1], [0, 2], [0, 3],
+      [1, 4], [1, 5],
+      [2, 6], [2, 7],
+      [3, 8], [3, 9],
+      [7, 10], [7, 11],
+      [9, 12], [9, 13]
+    ];
+
+    var nodes = [], edges = [];
+    P.forEach(function (p, i) {
+      var isRoot = i === 0;
+      var geo = new THREE.SphereGeometry(isRoot ? 0.085 : 0.062, 16, 12);
+      var mat = new THREE.MeshBasicMaterial({ color: isRoot ? 0x22d3ee : 0x5b6b85, transparent: true, opacity: 0.95 });
+      var m = new THREE.Mesh(geo, mat);
+      m.position.set(p[0], p[1], p[2]);
+      group.add(m);
+      nodes.push({ mesh: m, mat: mat, base: 0x5b6b85, pulse: 0 });
+    });
+
+    EDGES.forEach(function (e) {
+      var g = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(P[e[0]][0], P[e[0]][1], P[e[0]][2]),
+        new THREE.Vector3(P[e[1]][0], P[e[1]][1], P[e[1]][2])
+      ]);
+      var mat = new THREE.LineBasicMaterial({ color: 0x2c3a52, transparent: true, opacity: 0.5 });
+      var line = new THREE.Line(g, mat);
+      group.add(line);
+      edges.push({ a: e[0], b: e[1], mat: mat, cur: 0x2c3a52, cop: 0.5, dead: false, ok: false });
+    });
+    // 背光的树冠轮廓由节点自身承担，避免额外网格
+
+    var cursor = new THREE.Mesh(
+      new THREE.SphereGeometry(0.1, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.95 })
+    );
+    group.add(cursor);
+
+    var halo = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.14 })
+    );
+    group.add(halo);
+
+    // 漂浮微粒
+    var N = 42;
+    var arr = new Float32Array(N * 3);
+    var seeds = [];
+    for (var i = 0; i < N; i++) {
+      seeds.push({
+        x: (Math.random() - 0.5) * 5.4,
+        y: Math.random() * 2.9 - 1.0,
+        z: (Math.random() - 0.5) * 2.4,
+        s: 0.12 + Math.random() * 0.22
+      });
+    }
+    var pGeo = new THREE.BufferGeometry();
+    pGeo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    var pMat = new THREE.PointsMaterial({
+      color: 0xa5f3fc, size: 0.045, transparent: true, opacity: 0.5,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    scene.add(new THREE.Points(pGeo, pMat));
+
+    // 编排：试 A → 撞墙 → 回退 → 试 B → 撞墙 → 回退 → 试 C → 成功
+    var script = [
+      { k: 'f', a: 0, b: 1, d: 0.85 },
+      { k: 'f', a: 1, b: 4, d: 0.80 },
+      { k: 'h', at: 4, d: 0.70, act: 'dead' },
+      { k: 'b', a: 4, b: 1, d: 0.50 },
+      { k: 'b', a: 1, b: 0, d: 0.50 },
+      { k: 'f', a: 0, b: 2, d: 0.55 },
+      { k: 'f', a: 2, b: 7, d: 0.60 },
+      { k: 'f', a: 7, b: 11, d: 0.60 },
+      { k: 'h', at: 11, d: 0.70, act: 'dead' },
+      { k: 'b', a: 11, b: 7, d: 0.45 },
+      { k: 'b', a: 7, b: 2, d: 0.45 },
+      { k: 'b', a: 2, b: 0, d: 0.45 },
+      { k: 'f', a: 0, b: 3, d: 0.58 },
+      { k: 'f', a: 3, b: 9, d: 0.58 },
+      { k: 'f', a: 9, b: 12, d: 0.58 },
+      { k: 'h', at: 12, d: 1.90, act: 'ok' },
+      { k: 'h', at: 12, d: 0.85, act: 'reset' }
+    ];
+    var TOTAL = script.reduce(function (s, x) { return s + x.d; }, 0);
+    var CUM = [];
+    var acc = 0;
+    script.forEach(function (x) { CUM.push(acc); acc += x.d; });
+
+    st = {
+      scene: scene, cam: cam, renderer: renderer, group: group,
+      nodes: nodes, edges: edges, cursor: cursor, halo: halo, coords: P,
+      seeds: seeds, pGeo: pGeo, script: script, CUM: CUM, TOTAL: TOTAL,
+      t: 0, alive: true
+    };
+    paint(0);
+    return true;
+  }
+
+  function edgeOf(a, b) {
+    for (var i = 0; i < st.edges.length; i++) {
+      var e = st.edges[i];
+      if ((e.a === a && e.b === b) || (e.a === b && e.b === a)) return e;
+    }
+    return null;
+  }
+
+  function paint(time) {
+    if (!st) return;
+    var t = ((time % st.TOTAL) + st.TOTAL) % st.TOTAL;
+    var i = 0;
+    while (i < st.CUM.length - 1 && t >= st.CUM[i + 1]) i++;
+    var p = Math.min(1, (t - st.CUM[i]) / st.script[i].d);
+
+    // 重放状态
+    var es = {};   // edge 状态：probe | dead | ok
+    var ns = {};   // node 状态：dead | ok
+    var j;
+    for (j = 0; j < i; j++) applyStep(es, ns, st.script[j], 1);
+    var cur = st.script[i];
+    applyStep(es, ns, cur, p);
+
+    // 边着色
+    st.edges.forEach(function (e) {
+      var key = e.a + '-' + e.b, key2 = e.b + '-' + e.a;
+      var s = es[key] || es[key2] || '';
+      var c = 0x2c3a52, o = 0.5, w = 1;
+      if (s === 'probe') { c = 0x22d3ee; o = 0.95; }
+      else if (s === 'dead') { c = 0xfb7185; o = 0.55; }
+      else if (s === 'ok') { c = 0x34d399; o = 1; }
+      e.mat.color.setHex(c);
+      e.mat.opacity = o;
+      e.mat.linewidth = w;
+    });
+
+    // 节点着色
+    st.nodes.forEach(function (n, idx) {
+      var s = ns[idx] || '';
+      var c = idx === 0 ? 0x22d3ee : 0x5b6b85, sc = 1;
+      if (s === 'dead') { c = 0xfb7185; sc = 1.28; }
+      else if (s === 'ok') { c = 0x34d399; sc = 1.35; }
+      n.mat.color.setHex(c);
+      n.mesh.scale.setScalar(sc);
+      if (s === 'ok' || idx === 0) n.mat.opacity = 0.95; else n.mat.opacity = 0.9;
+    });
+
+    // 光标
+    if (cur.k === 'f' || cur.k === 'b') {
+      var e = easeInOut(p);
+      var pa = st.coords[cur.a], pb = st.coords[cur.b];
+      st.cursor.position.set(
+        pa[0] + (pb[0] - pa[0]) * e,
+        pa[1] + (pb[1] - pa[1]) * e,
+        pa[2] + (pb[2] - pa[2]) * e
+      );
+    } else {
+      var ph = st.coords[cur.at];
+      st.cursor.position.set(ph[0], ph[1], ph[2]);
+    }
+    st.halo.position.copy(st.cursor.position);
+    var pulse = 0.5 + 0.5 * Math.sin(time * 4);
+    st.halo.scale.setScalar(1 + pulse * 0.35);
+    st.halo.material.opacity = 0.1 + pulse * 0.12;
+    var okNow = ns[12] === 'ok';
+    st.cursor.material.color.setHex(okNow ? 0x34d399 : 0x67e8f9);
+  }
+
+  function applyStep(es, ns, s, p) {
+    if (p <= 0 && s.k !== 'h') return;
+    var key = s.a + '-' + s.b, key2 = s.b + '-' + s.a;
+    if (s.k === 'f') {
+      es[key] = 'probe';
+    } else if (s.k === 'b') {
+      delete es[key]; delete es[key2];
+    } else if (s.k === 'h') {
+      if (s.act === 'dead') {
+        // 通向该节点的边标红，节点标红
+        st.edges.forEach(function (e) {
+          if (e.b === s.at || e.a === s.at) {
+            var k1 = e.a + '-' + e.b, k2 = e.b + '-' + e.a;
+            if (es[k1] === 'probe') es[k1] = 'dead';
+            else if (es[k2] === 'probe') es[k2] = 'dead';
+          }
+        });
+        ns[s.at] = 'dead';
+      } else if (s.act === 'ok') {
+        for (var m = 0; m < OK_PAIRS.length; m++) {
+          es[OK_PAIRS[m][0] + '-' + OK_PAIRS[m][1]] = 'ok';
+        }
+        for (var q = 0; q < OK_PATH.length; q++) ns[OK_PATH[q]] = 'ok';
+      }
+    }
+  }
+
+  function easeInOut(x) {
+    return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+  }
+
+  var lastT = 0;
+  function tick(now) {
+    if (st && st.alive && visible()) {
+      var dt = Math.min(0.05, (now - lastT) / 1000 || 0.016);
+      lastT = now;
+      st.t += dt;
+      paint(st.t);
+      st.group.rotation.y = -0.06 + Math.sin(st.t * 0.22) * 0.1;
+      var p2 = st.pGeo.attributes.position.array;
+      st.seeds.forEach(function (s, i) {
+        s.y -= s.s * dt * 0.55;
+        if (s.y < -1.1) { s.y = 2.4; s.x = (Math.random() - 0.5) * 5.4; s.z = (Math.random() - 0.5) * 2.4; }
+        p2[i * 3] = s.x; p2[i * 3 + 1] = s.y; p2[i * 3 + 2] = s.z;
+      });
+      st.pGeo.attributes.position.needsUpdate = true;
+      st.renderer.render(st.scene, st.cam);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function visible() {
+    if (!hero) return false;
+    var r = hero.getBoundingClientRect();
+    return r.bottom > 0 && r.top < innerHeight;
+  }
+
+  function boot() {
+    if (!initHero3D()) {
+      if (hero) hero.style.background =
+        'radial-gradient(60% 46% at 50% 46%, rgba(34,211,238,.12), transparent 70%)';
+    }
+    requestAnimationFrame(tick);
+  }
+
+  var rz;
+  addEventListener('resize', function () {
+    clearTimeout(rz);
+    rz = setTimeout(function () {
+      if (!st) return;
+      var w = hero.clientWidth, h = hero.clientHeight;
+      if (!w || !h) return;
+      st.cam.aspect = w / h;
+      st.cam.position.z = fitZ(w, h);
+      st.cam.updateProjectionMatrix();
+      st.renderer.setSize(w, h);
+    }, 150);
+  });
+
+  if (document.readyState === 'complete') boot();
+  else addEventListener('load', boot);
+})();
 </script>
 </body>
 </html>

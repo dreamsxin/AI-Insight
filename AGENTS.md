@@ -69,15 +69,18 @@ Frontend (run from `frontend/`):
   `backend/app/data/saved_models/` (no database). The directory is git-ignored and
   created at runtime by `services/model_store.py`; don't commit model files.
 - `docs/` holds the animation collection; `index.html` is the only entry point
-  and links all 82 episodes (none orphaned). Nine series, in index order:
+  and links all 81 episodes (none orphaned). Nine series, in index order:
   HERMES AGENT 对象拆解 ·01–18 (08 跨会话记忆篇 is 前瞻演绎/designed
   extrapolation); HERMES AGENT 进阶机制 ·01–07 (thinking budget wired into the
   main loop, Skills progressive disclosure, Hooks lifecycle slots, MCP 2026
   transport evolution, A2A & multi-agent sobering, Harness
-  scaffold/checkpoint/background tasks, CUA); AI 运作原理拆解 ·01–15; AI 运作
-  原理 · 深入篇 ·01–08 (Transformer skeleton, MoE gating, KV cache + GQA +
-  paging, embedding & two-stage retrieval, chain-of-thought as an effort
-  spectrum, RLVR & distillation, LoRA fine-tuning, multimodal); LLM 模型算法
+  scaffold/checkpoint/background tasks, CUA); AI 运作原理拆解 ·01–15 (13 推理
+  模型与思维链 is the merged episode: thinking-token mechanism, trial-and-error
+  chain, test-time compute, effort spectrum, billing — it absorbed the old
+  深入篇 思考链 episode, and its hero is a 3D search tree that backtracks); AI
+  运作原理 · 深入篇 ·01–07 (Transformer skeleton, MoE gating, KV cache + GQA +
+  paging, embedding & two-stage retrieval, RLVR & distillation, LoRA
+  fine-tuning, multimodal); LLM 模型算法
   原理 ·01–05 (embedding/loss/position-encoding/residual internals + a worked
   vector-attention poem); 推理原理 ·01–12 (`inf-` prefix: the serving layer —
   protocol normalisation, special-token identity, prefill/decode, E-P-D
@@ -101,7 +104,7 @@ Frontend (run from `frontend/`):
   which is idempotent. After adding, removing or reordering an episode,
   re-run it (`--check` reports drift without writing). Never hand-edit the
   block — it is replaced wholesale on the next run, and it is what keeps the
-  episodes from being 82 dead ends.
+  episodes from being 81 dead ends.
 - **Index affordances.** `index.html` also has a client-side search (`/`
   focuses, `Esc` clears; matches `a.card` on text + href), a static 知识地图
   (L1 训练 → L2 模型原理 → L3 推理服务 → L4 Agent 工程) and three recommended
@@ -110,10 +113,15 @@ Frontend (run from `frontend/`):
   update the per-layer counts in the map.
 - **3D in docs demos**: `docs/vendor/three.global.js` is three.js r160 with its
   ES-module `export{}` rewritten to `window.THREE` (so it loads from `file://`
-  without a server). The `inf-` series is the only place that uses it — load it
-  with a plain `<script src="vendor/three.global.js">`, build scenes with
-  `MeshBasicMaterial` + `EdgesGeometry` (flat, no lights, matching the dark
-  palette), and gate rendering on an `IntersectionObserver`/visibility check so
-  off-screen canvases don't burn battery. Every 3D screen must degrade to a CSS
-  glow when `window.THREE` or WebGL is unavailable.
+  without a server). Users are: `inf-` 01/05/07/10/11, plus `ai-13-thinking`
+  (search tree with backtracking), `ai-19-embedding` (points on the unit sphere,
+  angle = cosine similarity) and `ai-15-diffusion` (noise cloud settling into a
+  grid). Load it with a plain `<script src="vendor/three.global.js">` *before*
+  the inline script that uses it, build scenes with `MeshBasicMaterial` (+
+  `EdgesGeometry` / `LineBasicMaterial` for flat wireframe, no lights, matching
+  the dark palette), and gate rendering on a `getBoundingClientRect`
+  visibility check so off-screen canvases don't burn battery. Fit the camera
+  from the container aspect ratio rather than hard-coding a z — the hero canvas
+  is tall and narrow on phones. Every 3D screen must degrade to a CSS glow when
+  `window.THREE` or WebGL is unavailable.
 

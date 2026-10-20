@@ -134,6 +134,26 @@
 
   /* ============ 屏1 · 封面 ============ */
   .s-hero { justify-content: center; text-align: center; }
+  .hero-wrap {
+    position: relative; width: 100%; max-width: 640px; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .c3d { position: relative; z-index: 0; flex: 1 1 auto; width: 100%; min-height: 0; margin-top: 2px; }
+  .c3d canvas { display: block; width: 100% !important; height: 100% !important; }
+  .hero-inner {
+    position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center;
+    flex: 0 0 auto; padding-top: 2vh;
+  }
+  .hero-legend {
+    position: absolute; left: 0; right: 0; bottom: calc(46px + env(safe-area-inset-bottom));
+    display: flex; justify-content: center; gap: 14px;
+    font-size: 10px; color: var(--dim); font-family: var(--mono); z-index: 3;
+  }
+  .hero-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .hero-legend i { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+  .lg-noise i { background: #94a3b8; }
+  .lg-mid i { background: #fbbf24; box-shadow: 0 0 7px #fbbf24; }
+  .lg-img i { background: #34d399; box-shadow: 0 0 7px #34d399; }
   .hero-kicker {
     font-size: 10px; letter-spacing: .28em; color: var(--dim);
     border: 1px solid var(--line); background: rgba(255,255,255,.03);
@@ -396,8 +416,8 @@ addEventListener("keydown", function (e) {
 </nav>
 
 <!-- 屏1 · 封面 -->
-<section class="screen s-hero active">
-  <div class="hero-inner">
+<section class="screen s-hero active" id="s1">
+  <div class="hero-wrap"><div class="hero-inner">
     <div class="hero-kicker rv d1">AI 运作原理拆解 · 15</div>
     <h1 class="rv d2">扩散模型<br><span class="grad">把噪声雕成图</span></h1>
     <p class="hero-sub rv d3">图像生成原理 · 逐屏动画演示</p>
@@ -409,6 +429,11 @@ addEventListener("keydown", function (e) {
       <span class="hc-node">📝 提示词引导</span>
     </div>
     <p class="hero-quote rv d5">「雕像本来就在大理石里 —— 生成只是凿掉噪声」</p>
+  </div><div class="c3d" id="c3d-hero"></div></div>
+  <div class="hero-legend rv d6">
+    <span class="lg-noise"><i></i>纯噪声</span>
+    <span class="lg-mid"><i></i>去噪中</span>
+    <span class="lg-img"><i></i>结构浮现</span>
   </div>
   <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
 </section>
@@ -726,6 +751,217 @@ addEventListener("keydown", function (e) {
   if (replayBtn) replayBtn.addEventListener('click', () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
+</script>
+<script src="vendor/three.global.js"></script>
+<script>
+/* ===== 封面 3D：一团噪声，被一步步「雕」成规整的结构 ===== */
+(function () {
+  var hero = document.getElementById('c3d-hero');
+  if (!hero) return;
+  var st = null;
+
+  var COLS = 16, ROWS = 12;
+  var W = 2.66, H = 1.92;
+  var CYCLE = 11.5;
+
+  function fitZ(w, h, halfW, halfH) {
+    var t = Math.tan(Math.PI / 180 * 20);
+    var byH = halfH / t;
+    var byW = halfW / (t * (w / h));
+    return Math.max(byH, byW) * 1.1;
+  }
+
+  function dotTex(THREE) {
+    var c = document.createElement('canvas');
+    c.width = c.height = 64;
+    var g = c.getContext('2d');
+    var gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,255,1)');
+    gr.addColorStop(.35, 'rgba(255,255,255,.8)');
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    var t = new THREE.CanvasTexture(c);
+    t.needsUpdate = true;
+    return t;
+  }
+
+  function init() {
+    if (!window.THREE) return false;
+    var THREE = window.THREE;
+    var w = hero.clientWidth, h = hero.clientHeight;
+    if (!w || !h) return false;
+
+    var scene = new THREE.Scene();
+    var cam = new THREE.PerspectiveCamera(40, w / h, 0.1, 100);
+    cam.position.set(0, 0.42, fitZ(w, h, 1.55, 1.3));
+    cam.lookAt(0, 0, 0);
+
+    var renderer;
+    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
+    catch (e) { return false; }
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setSize(w, h);
+    hero.appendChild(renderer.domElement);
+
+    var group = new THREE.Group();
+    scene.add(group);
+
+    // 目标「画布」：一张很淡的网格，结构成形时浮现
+    var plane = new THREE.Mesh(
+      new THREE.PlaneGeometry(W + 0.14, H + 0.14, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0x2b3d57, wireframe: true, transparent: true, opacity: 0 })
+    );
+    group.add(plane);
+
+    var N = COLS * ROWS;
+    var pos = new Float32Array(N * 3);
+    var col = new Float32Array(N * 3);
+    var start = [], target = [], cs = [], ct = [];
+
+    var cTop = new THREE.Color(0x22d3ee);
+    var cMid = new THREE.Color(0x7dd3fc);
+    var cBot = new THREE.Color(0xa78bfa);
+    var cNoise = new THREE.Color(0x64748b);
+    var tmp = new THREE.Color();
+
+    for (var r = 0; r < ROWS; r++) {
+      for (var c = 0; c < COLS; c++) {
+        var i = r * COLS + c;
+        var tx = (c / (COLS - 1) - 0.5) * W;
+        var ty = (0.5 - r / (ROWS - 1)) * H;
+        // 噪声起点：一团随机球
+        var a = Math.random() * Math.PI * 2;
+        var b = Math.acos(2 * Math.random() - 1);
+        var rr = 0.55 + Math.random() * 0.95;
+        start.push(new THREE.Vector3(
+          Math.sin(b) * Math.cos(a) * rr,
+          Math.sin(b) * Math.sin(a) * rr * 0.8,
+          Math.cos(b) * rr
+        ));
+        target.push(new THREE.Vector3(tx, ty, 0));
+
+        var up = (ty / H) + 0.5;           // 0 = 底部, 1 = 顶部
+        if (up > 0.5) tmp.copy(cMid).lerp(cTop, (up - 0.5) * 2);
+        else tmp.copy(cBot).lerp(cMid, up * 2);
+        cs.push(cNoise.clone());
+        ct.push(tmp.clone().multiplyScalar(0.85 + Math.random() * 0.25));
+      }
+    }
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    var pts = new THREE.Points(geo, new THREE.PointsMaterial({
+      size: 0.1, map: dotTex(THREE), vertexColors: true, transparent: true,
+      opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true
+    }));
+    group.add(pts);
+
+    // 环境尘埃
+    var DN = 40, dArr = new Float32Array(DN * 3), seeds = [];
+    for (var k = 0; k < DN; k++) {
+      seeds.push({ x: (Math.random() - 0.5) * 6, y: (Math.random() - 0.5) * 4.4, z: (Math.random() - 0.5) * 3.6, s: 0.1 + Math.random() * 0.2 });
+    }
+    var dGeo = new THREE.BufferGeometry();
+    dGeo.setAttribute('position', new THREE.BufferAttribute(dArr, 3));
+    var dust = new THREE.Points(dGeo, new THREE.PointsMaterial({
+      color: 0x8fb6d6, size: 0.045, transparent: true, opacity: 0.4,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    scene.add(dust);
+
+    st = {
+      scene: scene, cam: cam, renderer: renderer, group: group, plane: plane,
+      geo: geo, pts: pts, start: start, target: target, cs: cs, ct: ct,
+      N: N, dust: dust, dGeo: dGeo, seeds: seeds, t: 0, phase: 0
+    };
+    return true;
+  }
+
+  function ease(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
+
+  function level(t) {
+    // 0 → 噪声，1 → 结构成形
+    var p = t % CYCLE;
+    if (p < 1.2) return 0;
+    if (p < 5.0) return ease((p - 1.2) / 3.8);
+    if (p < 8.6) return 1;
+    if (p < 10.2) return 1 - ease((p - 8.6) / 1.6);
+    return 0;
+  }
+
+  function visible() {
+    var r = hero.getBoundingClientRect();
+    return r.bottom > 0 && r.top < innerHeight;
+  }
+
+  var last = 0;
+  function tick(now) {
+    if (st && visible()) {
+      var dt = Math.min(0.05, (now - last) / 1000 || 0.016);
+      last = now;
+      st.t += dt;
+
+      var L = level(st.t);
+      var pos = st.geo.attributes.position.array;
+      var col = st.geo.attributes.color.array;
+      var breathe = 1 + Math.sin(st.t * 0.8) * 0.012 * (1 - L);
+
+      for (var i = 0; i < st.N; i++) {
+        var a = st.start[i], b = st.target[i];
+        pos[i * 3]     = (a.x + (b.x - a.x) * L) * breathe;
+        pos[i * 3 + 1] = (a.y + (b.y - a.y) * L) * breathe;
+        pos[i * 3 + 2] = a.z * (1 - L);
+        var s0 = st.cs[i], s1 = st.ct[i];
+        col[i * 3]     = s0.r + (s1.r - s0.r) * L;
+        col[i * 3 + 1] = s0.g + (s1.g - s0.g) * L;
+        col[i * 3 + 2] = s0.b + (s1.b - s0.b) * L;
+      }
+      st.geo.attributes.position.needsUpdate = true;
+      st.geo.attributes.color.needsUpdate = true;
+
+      st.plane.material.opacity = Math.max(0, (L - 0.55)) * 0.9;
+      st.plane.position.z = -0.02;
+
+      st.group.rotation.y = Math.sin(st.t * 0.24) * 0.26 * (0.5 + 0.5 * (1 - L));
+      st.group.rotation.x = 0.14 + Math.sin(st.t * 0.3) * 0.04;
+
+      var d = st.dGeo.attributes.position.array;
+      st.seeds.forEach(function (sd, j) {
+        sd.y += sd.s * dt * 0.3;
+        if (sd.y > 2.2) { sd.y = -2.2; sd.x = (Math.random() - 0.5) * 6; }
+        d[j * 3] = sd.x; d[j * 3 + 1] = sd.y; d[j * 3 + 2] = sd.z;
+      });
+      st.dGeo.attributes.position.needsUpdate = true;
+
+      st.renderer.render(st.scene, st.cam);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function boot() {
+    if (!init()) {
+      hero.style.background = 'radial-gradient(58% 44% at 50% 50%, rgba(167,139,250,.14), transparent 70%)';
+    }
+    requestAnimationFrame(tick);
+  }
+
+  var rz;
+  addEventListener('resize', function () {
+    clearTimeout(rz);
+    rz = setTimeout(function () {
+      if (!st) return;
+      var w = hero.clientWidth, h = hero.clientHeight;
+      if (!w || !h) return;
+      st.cam.aspect = w / h;
+      st.cam.position.z = fitZ(w, h, 1.55, 1.3);
+      st.cam.updateProjectionMatrix();
+      st.renderer.setSize(w, h);
+    }, 150);
+  });
+
+  if (document.readyState === 'complete') boot();
+  else addEventListener('load', boot);
+})();
 </script>
 </body>
 </html>
