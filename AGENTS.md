@@ -69,7 +69,7 @@ Frontend (run from `frontend/`):
   `backend/app/data/saved_models/` (no database). The directory is git-ignored and
   created at runtime by `services/model_store.py`; don't commit model files.
 - `docs/` holds the animation collection; `index.html` is the only entry point
-  and links all 102 episodes (none orphaned). Twelve series, in index order:
+  and links all 103 episodes (none orphaned). Twelve series, in index order:
   训练原理 ·01–06 (`tr-` prefix, the L1 layer that used to hold only four
   episodes: corpus pipeline & dedup & mixture, parallel sharding
   DP/TP/PP/EP/CP with the
@@ -85,9 +85,10 @@ Frontend (run from `frontend/`):
   模型与思维链 is the merged episode: thinking-token mechanism, trial-and-error
   chain, test-time compute, effort spectrum, billing — it absorbed the old
   深入篇 思考链 episode, and its hero is a 3D search tree that backtracks); AI
-  运作原理 · 深入篇 ·01–07 (Transformer skeleton, MoE gating, KV cache + GQA +
+  运作原理 · 深入篇 ·01–08 (Transformer skeleton, MoE gating, KV cache + GQA +
   paging, embedding & two-stage retrieval, RLVR & distillation, LoRA
-  fine-tuning, multimodal); LLM 模型算法
+  fine-tuning, multimodal, and how MoE routing is balanced during training —
+  collapse, CV² aux loss, the aux-loss-free correction bias, EPLB at serve time); LLM 模型算法
   原理 ·01–05 (embedding/loss/position-encoding/residual internals + a worked
   vector-attention poem); 推理原理 ·01–36 (`inf-` prefix, three seasons: S1
   01–12 is the serving layer — protocol normalisation, special-token identity,
@@ -120,7 +121,7 @@ Frontend (run from `frontend/`):
   which is idempotent. After adding, removing or reordering an episode,
   re-run it (`--check` reports drift without writing). Never hand-edit the
   block — it is replaced wholesale on the next run, and it is what keeps the
-  episodes from being 102 dead ends.
+  episodes from being 103 dead ends.
 - **Index affordances.** `index.html` also has a client-side search (`/`
   focuses, `Esc` clears; matches `a.card` on text + href), a static 知识地图
   (L1 训练 → L2 模型原理 → L3 推理服务 → L4 Agent 工程) and three recommended

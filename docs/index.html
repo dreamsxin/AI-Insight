@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#070b14">
-<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-18 + Hermes 进阶机制 01-07 + AI 运作原理拆解 01-14 + AI 深入篇 01-07 + LLM 模型算法原理 01-05 + Agent 开发避坑指南 01-05 + AGENT 实战工坊 01-06 + AGENT 模式进阶 01-06 + 训练原理 01-06 + 推理原理 01-24（两季）+ 第三季 25/30/31，共 102 个自包含逐屏动画">
+<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-18 + Hermes 进阶机制 01-07 + AI 运作原理拆解 01-14 + AI 深入篇 01-08 + LLM 模型算法原理 01-05 + Agent 开发避坑指南 01-05 + AGENT 实战工坊 01-06 + AGENT 模式进阶 01-06 + 训练原理 01-06 + 推理原理 01-24（两季）+ 第三季 25/30/31，共 103 个自包含逐屏动画">
 <title>AI 运作原理 · 动画演示索引</title>
 <style>
   :root {
@@ -193,11 +193,11 @@
 <div class="wrap">
   <span class="kicker">AI-INSIGHT · DOCS</span>
   <h1>运作动画<span class="grad">演示索引</span></h1>
-  <p class="sub">102 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
+  <p class="sub">103 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
 
   <div class="finder">
-    <input id="q" type="search" placeholder="搜索 102 集 · 试试「KV」「注入」「MoE」「缓存」" aria-label="搜索动画" autocomplete="off">
-    <span class="finder-n" id="qn">102 集</span>
+    <input id="q" type="search" placeholder="搜索 103 集 · 试试「KV」「注入」「MoE」「缓存」" aria-label="搜索动画" autocomplete="off">
+    <span class="finder-n" id="qn">103 集</span>
   </div>
 
   <section class="board" id="map">
@@ -233,10 +233,11 @@
         <a href="ai-13-transformer-animation.html">Transformer</a>
         <a href="ai-11-attention-animation.html">注意力</a>
         <a href="ai-14-moe-animation.html">MoE</a>
+        <a href="ai-21-moe-routing-animation.html">专家分工</a>
         <a href="ai-12-sampling-animation.html">采样</a>
         <a href="ai-20-multimodal-animation.html">多模态</a>
       </div>
-      <div class="layer-n">17 集</div>
+      <div class="layer-n">18 集</div>
     </div>
     <div class="layer">
       <div class="layer-l"><b>L1</b>训练</div>
@@ -584,7 +585,7 @@
 
   <div class="series">
     <div class="series-head"><b>AI 运作原理 · 深入篇</b></div>
-    <div class="series-note">🎬 深入 7 集：主系列是一屏一个概念的<b>总览</b>，这组把其中几句话摊开看 —— Transformer 骨架怎么拼、MoE 怎么挂号、KV 怎么分页、向量怎么分工，以及 RLVR、LoRA、多模态三条训练侧的路。与主系列第 10–12、14–15 集是「总览 ↔ 深入」的对照关系；原来的「思考链：一条光谱」已并入主系列第 13 集。</div>
+    <div class="series-note">🎬 深入 8 集：主系列是一屏一个概念的<b>总览</b>，这组把其中几句话摊开看 —— Transformer 骨架怎么拼、MoE 怎么挂号、KV 怎么分页、向量怎么分工，以及 RLVR、LoRA、多模态三条训练侧的路，最后补上 MoE 的路由是怎么在训练里被拉平的。与主系列第 10–12、14–15 集是「总览 ↔ 深入」的对照关系；原来的「思考链：一条光谱」已并入主系列第 13 集。</div>
     <div class="grid">
       <a class="card" href="ai-13-transformer-animation.html">
         <div class="card-top"><span class="card-ico">🧱</span><span class="num n-h1">· 01</span></div>
@@ -626,6 +627,12 @@
         <div class="card-top"><span class="card-ico">👁️</span><span class="num n-h2">· 07</span></div>
         <b>多模态：眼睛与画笔</b>
         <p>图片先被切成小方格 · 不是外接插件，是一起长大 · 认出按钮 ≠ 会点按钮</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="ai-21-moe-routing-animation.html">
+        <div class="card-top"><span class="card-ico">⚖️</span><span class="num n-h3">· 08</span></div>
+        <b>专家是被逼着分工的</b>
+        <p>一次打分选八个 · 富者愈富会塌缩 · CV² 拉住它太贵，改用偏置只改「选谁」 · 训练管路由，推理管摆放</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
     </div>

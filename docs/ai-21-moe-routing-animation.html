@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="MoE 路由是怎么学出来的：门控打分与 top-8、富者愈富的塌缩、辅助损失 CV² 与 α=1e-4、noaux_tc 偏置修正（只改选谁不改给多少）、推理侧 EPLB 冗余放置。">
+<title>专家是被逼着分工的 · AI 运作原理</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#fb7185;--acc2:#fda4af;--accSoft:rgba(251,113,133,.34);
+    --accBg:rgba(251,113,133,.08);--accBd:rgba(251,113,133,.34);--accGl:rgba(251,113,133,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1,.s2,.s3,.s4,.s5,.s6,.s7,.s8,.s9{--glow:var(--accGl)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:1 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--acc2) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .bigcmp{display:flex;align-items:flex-end;gap:18px;margin-top:26px;justify-content:center;flex-wrap:wrap}
+  .bignum{text-align:center}
+  .bignum .v{font-family:var(--mono);font-size:clamp(23px,6.2vw,34px);font-weight:800;line-height:1}
+  .bignum .k{font-size:9.5px;color:var(--dim);margin-top:6px}
+  .bignum.old .v{color:#94a3b8;text-decoration:line-through;text-decoration-thickness:1px;opacity:.75}
+  .bignum.new .v{color:var(--acc)}
+  .bignum.mid .v{color:var(--acc2)}
+  .bignum.dim .v{color:#64748b}
+  .bigcmp .ar{font-size:18px;color:var(--dim);padding-bottom:12px}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 通用组件 */
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .stack{display:flex;flex-direction:column;gap:11px;width:100%;max-width:540px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:540px}
+  .cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;width:100%;max-width:540px}
+  .tag{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.07);color:#c3cde2}
+  .tag.acc{background:var(--accBg);color:var(--acc);border:1px solid var(--accBd)}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+  .big{font-family:var(--mono);font-size:clamp(20px,5vw,26px);font-weight:800;color:var(--acc);line-height:1}
+
+  .bars{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .bar{display:flex;align-items:center;gap:8px}
+  .bar .lbl{width:56px;flex:none;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .bar .track{flex:1;height:10px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .bar .fill{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accSoft),var(--acc))}
+  .screen.active .bar .fill{animation:grow .9s cubic-bezier(.2,1,.3,1) both}
+  @keyframes grow{to{width:var(--w,50%)}}
+  .bar .val{width:52px;flex:none;font-family:var(--mono);font-size:9.5px;color:#c3cde2}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .chartbox{width:100%;max-width:560px}
+  .chartbox canvas{width:100%;height:clamp(176px,34vh,236px);display:block}
+
+  /* 横向流程：节点 + 箭头 */
+  .flow{display:flex;align-items:stretch;width:100%;max-width:560px;gap:0}
+  .flow .n{flex:1;border:1px solid var(--line);border-radius:11px;background:var(--card);padding:12px 8px;text-align:center;
+    display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:0}
+  .flow .n .t{font-size:12px;font-weight:700}
+  .flow .n .s{font-family:var(--mono);font-size:9px;color:var(--dim);line-height:1.5}
+  .flow .n.hi{border-color:var(--accBd);background:var(--accBg)}
+  .flow .a{flex:none;width:20px;display:flex;align-items:center;justify-content:center;color:var(--acc);font-size:11px}
+
+  /* 概率轴：填充 + 参考线 */
+  .axis{position:relative;width:100%;max-width:520px;height:14px;border-radius:99px;background:rgba(255,255,255,.07);margin:22px 0 4px}
+  .axis .f{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accSoft),var(--acc))}
+  .screen.active .axis .f{animation:grow 1s cubic-bezier(.2,1,.3,1) both}
+  .axis .m{position:absolute;top:-6px;width:2px;height:26px;background:#94a3b8;border-radius:2px}
+  .axis .m span{position:absolute;top:-19px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:9px;color:var(--dim);white-space:nowrap}
+
+  /* 堆叠条：两段构成 */
+  .split{display:flex;width:100%;max-width:520px;height:24px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+  .split .a{background:var(--acc);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#0b1020;font-weight:700}
+  .split .b{flex:1;background:rgba(244,114,182,.72);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#2b0b18;font-weight:700}
+
+  /* 表格 */
+  .tbl{width:100%;max-width:540px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:rgba(7,11,20,.4)}
+  .tbl .r{display:grid;gap:6px;padding:9px 12px;font-size:11px;border-top:1px solid var(--line);align-items:center}
+  .tbl .r:first-child{border-top:none;background:rgba(255,255,255,.04);font-size:9px;letter-spacing:.1em;color:var(--dim);font-family:var(--mono)}
+  .tbl .r b{font-family:var(--mono);color:var(--acc);font-weight:700}
+
+  /* 点阵（一次 run 一条） */
+  .dots960{display:grid;grid-template-columns:repeat(60,1fr);gap:2px;width:100%;max-width:520px}
+  .dots960 i{aspect-ratio:1;border-radius:1px;background:rgba(96,165,250,.20);display:block}
+  .dots960 i.bad{background:#fb7185;box-shadow:0 0 9px rgba(251,113,133,.9)}
+
+  /* 字节尺 */
+  .bytebar{display:flex;width:100%;max-width:520px;height:34px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+  .bytebar .d{background:linear-gradient(180deg,var(--acc),var(--accSoft));display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:9.5px;color:#0b1020;font-weight:700}
+  .bytebar .s{background:rgba(244,114,182,.78);display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:9px;color:#2b0b18;font-weight:700}
+
+  .cells{display:grid;gap:3px;width:100%;max-width:520px}
+  .cells i{height:26px;border-radius:2px;background:rgba(255,255,255,.06);display:block}
+  .cells i.on{background:linear-gradient(180deg,var(--acc),var(--accSoft))}
+  .cells i.hot{background:linear-gradient(180deg,#fb7185,rgba(251,113,133,.35))}
+
+  /* 交互滑杆 */
+  .slider{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .slider .row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .slider .row b{color:var(--acc);font-size:12px}
+  .slider input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:99px;
+    background:rgba(255,255,255,.14);outline:none}
+  .slider input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+    background:var(--acc);border:2px solid #070b14;box-shadow:0 0 10px var(--accBd);cursor:pointer}
+  .slider input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--acc);
+    border:2px solid #070b14;cursor:pointer}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+:root{--acc:#e879f9;--acc2:#f0abfc;--accBg:rgba(232,121,249,.08);--accBd:rgba(232,121,249,.34);--accGl:rgba(232,121,249,.12);--accSoft:rgba(232,121,249,.34)}
+
+  /* 256 个专家的点阵（32 列 × 8 行） */
+  .heat{width:100%;max-width:320px;display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:4px}
+  .flow .n .s{white-space:nowrap}
+  .heat i{aspect-ratio:1;border-radius:1.5px;display:block;background:rgba(255,255,255,.075)}
+  .heat i.on{background:var(--acc);box-shadow:0 0 7px var(--accBd)}
+
+  .c3d{width:100%;max-width:540px;height:clamp(214px,42vh,300px);position:relative;
+    border:1px solid var(--line);border-radius:12px;background:rgba(7,11,20,.42);overflow:hidden}
+  .c3d canvas{display:block;width:100%;height:100%}
+  .pc{width:100%;max-width:540px;display:flex;justify-content:center}
+  .pc span{font-family:var(--mono);font-size:10px;color:var(--acc);border:1px solid var(--accBd);
+    background:var(--accBg);padding:3px 12px;border-radius:999px;white-space:nowrap}
+
+  /* α 的权衡尺 */
+  .trade{width:100%;max-width:520px;position:relative;padding-top:30px;margin:6px 0 4px}
+  .trade .rail{height:14px;border-radius:99px;
+    background:linear-gradient(90deg,#fb7185,rgba(232,121,249,.92) 34%,rgba(251,191,36,.92) 74%,#fbbf24)}
+  .trade .mk{position:absolute;top:12px;width:2px;height:22px;background:#fff;border-radius:2px;
+    box-shadow:0 0 8px rgba(255,255,255,.5)}
+  .trade .mk span{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);
+    font-family:var(--mono);font-size:10px;font-weight:800;color:var(--acc);white-space:nowrap}
+  .trade .ends{display:flex;justify-content:space-between;font-size:9.5px;color:var(--dim);margin-top:7px;gap:10px}
+  .trade .ends b{display:block;color:#c3cde2;font-size:10px;margin-bottom:1px}
+
+  .vs{display:flex;align-items:center;gap:16px;width:100%;max-width:420px;justify-content:center}
+  .vs .v{text-align:center}
+  .vs .v b{display:block;font-family:var(--mono);font-size:19px;font-weight:800;color:var(--acc)}
+  .vs .v span{font-size:9px;color:var(--dim)}
+  .vs .v.w{opacity:.55}
+  .vs .v.w b{color:#94a3b8}
+  .vs .x{font-family:var(--mono);font-size:9.5px;color:#5b657c;line-height:1.5;text-align:center}
+
+  /* 专家名额表 */
+  .pick{width:100%;max-width:520px;border:1px solid var(--line);border-radius:11px;
+    overflow:hidden;background:rgba(7,11,20,.4)}
+  .pick .r{display:grid;grid-template-columns:46px 1fr 1fr 1fr 76px;gap:4px;padding:8px 11px;
+    font-size:10.5px;border-top:1px solid var(--line);align-items:center}
+  .pick .r:first-child{border-top:none;background:rgba(255,255,255,.04);
+    font-family:var(--mono);font-size:8.5px;letter-spacing:.06em;color:var(--dim)}
+  .pick .r span{font-family:var(--mono);text-align:center}
+  .pick .r .nm{text-align:left;color:#c3cde2}
+  .pick .r .bs{color:var(--acc)}
+  .pick .r .win{color:#fff;font-weight:700}
+  .pick .r.out{opacity:.42}
+
+  /* GPU 槽位图 */
+  .place{width:100%;max-width:520px;display:flex;flex-direction:column;gap:5px}
+  .place .rk{display:flex;align-items:center;gap:5px}
+  .place .rk em{width:34px;flex:none;font-family:var(--mono);font-size:8.5px;font-style:normal;color:var(--dim)}
+  .place .rk i{flex:1;height:21px;border-radius:4px;background:rgba(255,255,255,.05);
+    border:1px solid var(--line);display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:8px;font-style:normal;color:#8f9bb3}
+  .place .rk i.hot{background:var(--accSoft);border-color:var(--accBd);color:#fff;font-weight:700}
+  .place .rk i.dup{background:rgba(251,113,133,.42);border-color:rgba(251,113,133,.62);color:#fff;font-weight:700}
+  .place .leg{display:flex;gap:14px;justify-content:center;font-size:9px;color:var(--dim);margin-top:3px}
+  .place .leg s{display:inline-block;width:9px;height:9px;border-radius:2px;text-decoration:none;
+    margin-right:4px;vertical-align:-1px}
+
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="ai-20-multimodal-animation.html" aria-label="上一集" title="上一集：多模态：眼睛与画笔">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="llm-01-embedding-animation.html" aria-label="下一集" title="下一集：词向量几何学">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1">
+  <div class="hero-kicker rv d1">MODEL · MoE 训练侧</div>
+  <h1 class="rv d2">专家是<br><span class="grad">被逼着分工</span>的</h1>
+  <p class="hero-sub rv d3">门控只是一层线性打分 —— 没人告诉它要分工</p>
+  <div class="bigcmp rv d4">
+    <div class="bignum new"><div class="v">256</div><div class="k">每层专家数</div></div>
+    <div class="bignum mid"><div class="v">8</div><div class="k">每个 token 选中</div></div>
+    <div class="bignum dim"><div class="v">2</div><div class="k">份修正偏置</div></div>
+  </div>
+  <div class="next-hint">向下滚动 · 看这 256 个怎么自己分出高下<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1">01 · <b>前向</b></div>
+    <h2 class="rv d2">一次打分，选八个</h2>
+    <p class="scr-desc rv d3">门控就是一层矩阵：给 256 个专家各打一分，取前 8 个，按分数加权求和。<br>分数怎么来的？<b>学出来的</b>。</p>
+  </div>
+  <div class="stage">
+    <div class="flow rv d4">
+      <div class="n"><span class="t">隐状态</span><span class="s">7168 维</span></div>
+      <div class="a">→</div>
+      <div class="n hi"><span class="t">Wgate</span><span class="s">bf16 矩阵</span></div>
+      <div class="a">→</div>
+      <div class="n"><span class="t">256 分</span><span class="s">sqrtsoftplus</span></div>
+      <div class="a">→</div>
+      <div class="n"><span class="t">top-8</span><span class="s">+ 归一化</span></div>
+    </div>
+    <div class="heat rv d5">
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i class="on"></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i class="on"></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i class="on"></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i class="on"></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i class="on"></i>
+        <i></i>
+        <i></i>
+        <i class="on"></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i class="on"></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i></i>
+        <i class="on"></i>
+    </div>
+    <p class="small rv d6">每个 token 只点亮 <b>8 / 256</b> 格 —— 这就是「稀疏」的全部含义</p>
+  </div>
+  <div class="scr-foot rv d7">所以「选谁」这件事，值得用<b>最高精度</b>去算：门控这一层不进 fp8 量化</div>
+</section>
+
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1">02 · <b>塌缩</b></div>
+    <h2 class="rv d2">谁先跑起来，谁就一直跑</h2>
+    <p class="scr-desc rv d3">柱高是每个专家分到的 token 量。刚开始几乎一样平；<br>一旦有人多拿一点，它学得更快、下次分更高 —— <b>正反馈</b>。</p>
+  </div>
+  <div class="stage">
+    <div class="c3d rv d4" id="c3d"></div>
+    <div class="pc rv d5"><span id="ph">第 0 步 · 几乎一样平</span></div>
+    <p class="small rv d6">塌到最后，真正干活的只剩一小撮 —— 剩下的参数<b>白占显存，不产生能力</b></p>
+  </div>
+  <div class="scr-foot rv d7">稀疏的前提是「大家都有活干」。一旦塌缩，MoE 就退化回一个小模型</div>
+</section>
+
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1">03 · <b>老办法</b></div>
+    <h2 class="rv d2">拿损失函数拉住它</h2>
+    <p class="scr-desc rv d3">数每个专家分到多少 token，算它们的离散程度，乘一个极小的系数加进总损失。</p>
+  </div>
+  <div class="stage">
+    <div class="codeblk rv d4">load<sub>e</sub> = 专家 e 这一步分到的 token 数
+
+CV²   = var(load) / mean(load)²      <i>越不均衡越大</i>
+
+L     = L<sub>lm</sub> + <em>α · CV²</em>                  α = 1e-4</div>
+    <div class="trade rv d5">
+      <div class="rail"></div>
+      <div class="mk" style="left:34%"><span>α = 1e-4</span></div>
+      <div class="ends">
+        <div><b>太小</b>专家塌缩</div>
+        <div style="text-align:right"><b>太大</b>语言建模变差</div>
+      </div>
+    </div>
+    <div class="vs rv d6">
+      <div class="v"><b>2.0</b><span>语言建模 loss</span></div>
+      <div class="x">相差<br>≈ 2 万倍</div>
+      <div class="v w"><b>0.0001</b><span>均衡项（CV²=1）</span></div>
+    </div>
+    <p class="small rv d7">所以它只是「轻推」，不是「重压」—— 想靠它把负载彻底掰平，<b>主目标就先变形了</b></p>
+  </div>
+  <div class="scr-foot rv d7">能压住，但压的方式是「拽着走」：每一步都在和语言建模拔河</div>
+</section>
+
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1">04 · <b>换办法</b></div>
+    <h2 class="rv d2">只改「选谁」，不改「给多少」</h2>
+    <p class="scr-desc rv d3">给每个专家一个偏置 b，只在<b>挑前 8 个</b>的时候加上去；<br>真正加权求和，用的还是原来的分。</p>
+  </div>
+  <div class="stage">
+    <div class="pick rv d4">
+      <div class="r"><span class="nm">专家</span><span>s(x)</span><span>b</span><span>s+b</span><span>结果</span></div>
+      <div class="r"><span class="nm">E88</span><span>0.398</span><span class="bs">+0.03</span><span class="win">0.428</span><span class="win">选中 50%</span></div>
+      <div class="r"><span class="nm">E31</span><span>0.405</span><span class="bs">−0.01</span><span class="win">0.395</span><span class="win">选中 50%</span></div>
+      <div class="r out"><span class="nm">E12</span><span>0.412</span><span class="bs">−0.02</span><span>0.392</span><span>落选</span></div>
+      <div class="r out"><span class="nm">E07</span><span>0.301</span><span class="bs">+0.01</span><span>0.311</span><span>落选</span></div>
+    </div>
+    <div class="codeblk rv d5">b<sub>e</sub> ← b<sub>e</sub> + <em>γ · sign(mean − load<sub>e</sub>)</em>      γ = 0.001</div>
+    <p class="small rv d6">E12 的分本来最高，被 −0.02 挤掉了。注意：<b>入选后权重仍按 0.398 算，偏置不参与加权</b></p>
+  </div>
+  <div class="scr-foot rv d7">b 不进梯度，所以不污染主目标 —— 模型照常学「该给谁」，只被轻轻推一下</div>
+</section>
+
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1">05 · <b>证据</b></div>
+    <h2 class="rv d2">偏置跟着权重一起发布</h2>
+    <p class="scr-desc rv d3">这不是推理时的临时技巧 —— 它是训练留下的状态，写在权重文件里。</p>
+  </div>
+  <div class="stage">
+    <div class="codeblk rv d4"><i># 门控：打分用 sqrtsoftplus，选 top-k 用 noaux_tc</i>
+class TopKGate(nn.Module):
+    self.e_score_correction_bias    = Parameter(zeros(256))  <i># 文本</i>
+    self.e_score_correction_bias_vl = Parameter(zeros(256))  <i># 图像</i>
+    self.Wgate = ReplicatedLinear(..., <em>use_fp8_gemm=False</em>)</div>
+    <div class="facts rv d5">
+      <div class="fact"><span class="i">🖼️</span><div><b>为什么要两份</b><p>文本 token 和图像 token 的专家偏好本来就不同。用一张表拉平两种分布，等于把图像往文本的均衡目标上拽。</p></div></div>
+      <div class="fact"><span class="i">🎯</span><div><b>门控为什么不量化</b><p>它只算一次矩阵乘，却决定后面 8 个专家、几十层 FFN 的算力去向。这里省精度，省错了地方。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d7">「均衡」被固化进了权重文件：<b>训练时算出来的表，推理时直接用</b></div>
+</section>
+
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1">06 · <b>推理侧</b></div>
+    <h2 class="rv d2">训练调平了，请求不让</h2>
+    <p class="scr-desc rv d3">同一个专家，代码请求里热、闲聊请求里冷。<br>这个不平衡只能<b>在线</b>补：给热点专家多放几个副本，再摊到各卡。</p>
+  </div>
+  <div class="stage">
+    <div class="place rv d4">
+      <div class="rk"><em>GPU0</em><i>E3</i><i>E9</i><i class="hot">E17</i><i>E44</i><i>E88</i><i>E120</i></div>
+      <div class="rk"><em>GPU1</em><i class="dup">E17′</i><i>E21</i><i>E55</i><i>E90</i><i>E130</i><i>E131</i></div>
+      <div class="rk"><em>GPU2</em><i>E7</i><i>E33</i><i>E60</i><i>E97</i><i>E140</i><i class="dup">E17″</i></div>
+      <div class="rk"><em>GPU3</em><i>E11</i><i>E38</i><i>E66</i><i class="dup">E17‴</i><i>E150</i><i>E201</i></div>
+      <div class="leg"><span><s style="background:rgba(232,121,249,.5)"></s>原位置</span><span><s style="background:rgba(251,113,133,.55)"></s>冗余副本</span></div>
+    </div>
+    <div class="tbl rv d5">
+      <div class="r" style="grid-template-columns:1fr 1fr"><span>统计窗口</span><span>默认 100 步</span></div>
+      <div class="r" style="grid-template-columns:1fr 1fr"><span>首次重排</span><span>提前到 1/4 周期</span></div>
+      <div class="r" style="grid-template-columns:1fr 1fr"><span>线上指标</span><span>(avg, max) 两个数</span></div>
+    </div>
+    <p class="small rv d6">贪心目标不是「平均」，而是<b>让历史上最忙那张卡的负载最小</b> —— 木桶看短板</p>
+  </div>
+  <div class="scr-foot rv d7">训练管「路由」，推理管「摆放」：同一个均衡，两个时刻，两套办法</div>
+</section>
+
+
+<section class="screen s8">
+  <div class="scr-head">
+    <div class="step-badge rv d1">收束</div>
+    <h2 class="rv d2">均衡是个不变量</h2>
+  </div>
+  <div class="stage">
+    <div class="facts rv d4">
+      <div class="fact"><span class="i">⚖️</span><div><b>训练侧付两次</b><p>一次是 CV² 掺进去的干扰（万分之一），一次是每步更新偏置的符号运算 —— 都得算力，也都有代价。</p></div></div>
+      <div class="fact"><span class="i">📦</span><div><b>推理侧付搬运</b><p>加副本要显存，重排要搬权重。副本放对了是收益，放错了就是白占一份 HBM。</p></div></div>
+      <div class="fact"><span class="i">🔁</span><div><b>本质上是一直在维护</b><p>稀疏省下的是算力，买来的是一个必须持续盯着的约束 —— 它不会自己保持不变。</p></div></div>
+    </div>
+    <p class="small rv d5">回看第 02 集那个「挂号台」：<br>现在它不光会挂号，还会<b>自己调整每个窗口的队伍长度</b>。</p>
+  </div>
+  <div class="scr-foot rv d6">所以 MoE 的稀疏不是免费的午餐，是一份<b>要一直续费</b>的订阅</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  var HOOK = null;
+  /* ---------- episode ---------- */
+
+  var HOOK = null;
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (HOOK) { try { HOOK(i); } catch (e) {} }
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+<script src="vendor/three.global.js"></script>
+<script>
+(function () {
+  var host = document.getElementById('c3d');
+  if (!host) return;
+  var st = null, cap = document.getElementById('ph');
+
+  var N = 16, SUM = N * N;
+  var STEP = 0.205, S = 0.125;
+
+  function fitD(w, h) {
+    var span = 3.45;
+    var vfov = 32 * Math.PI / 180;
+    var d = span / (2 * Math.tan(vfov / 2));
+    var byW = span / (2 * Math.tan(vfov / 2) * (w / h));
+    return Math.max(d, byW) * 1.30;
+  }
+  var DIR = { y: 0.80, z: 0.46 };
+
+  function rnd(seed) {
+    var s = seed;
+    return function () { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  }
+
+  function init() {
+    if (!window.THREE) return false;
+    var THREE = window.THREE;
+    var w = host.clientWidth, h = host.clientHeight;
+    if (!w || !h) return false;
+
+    var scene = new THREE.Scene();
+    var cam = new THREE.PerspectiveCamera(32, w / h, 0.1, 100);
+    var D = fitD(w, h);
+    cam.position.set(0, D * DIR.y, D * DIR.z);
+    cam.lookAt(0, 0.18, 0);
+
+    var renderer;
+    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
+    catch (e) { return false; }
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setSize(w, h);
+    host.appendChild(renderer.domElement);
+
+    var geo = new THREE.BoxGeometry(S, 1, S);
+    geo.translate(0, 0.5, 0);
+    var mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 });
+    var mesh = new THREE.InstancedMesh(geo, mat, SUM);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    var m4 = new THREE.Matrix4();
+    var col = new THREE.Color();
+
+    var R = rnd(20261021);
+    var hot = [], i;
+    for (i = 0; i < SUM; i++) {
+      var b = 0.03 + 0.10 * R();
+      hot.push(b);
+    }
+    /* 6 个专家先跑起来，然后越跑越远 */
+    var HOT = [37, 74, 108, 141, 190, 223];
+    for (i = 0; i < HOT.length; i++) hot[HOT[i]] = 0.62 + 0.30 * R();
+
+    var flat = [], peak = [];
+    var maxH = 1.52;
+    for (i = 0; i < SUM; i++) {
+      flat.push(maxH * (0.050 + 0.018 * R()));
+      peak.push(maxH * hot[i]);
+    }
+
+    var xi = [], zi = [];
+    for (var r = 0; r < N; r++) {
+      for (var c = 0; c < N; c++) {
+        xi.push((c - (N - 1) / 2) * STEP);
+        zi.push((r - (N - 1) / 2) * STEP);
+      }
+    }
+
+    var group = new THREE.Group();
+    group.add(mesh);
+    var grid = new THREE.GridHelper(3.5, 16, 0x1e293b, 0x141d2e);
+    group.add(grid);
+    scene.add(group);
+
+    st = {
+      scene: scene, cam: cam, renderer: renderer, group: group,
+      t: 0, q: -1, mesh: mesh, flat: flat, peak: peak, xi: xi, zi: zi,
+      m4: m4, col: col, THREE: THREE
+    };
+    return true;
+  }
+
+  function smooth(v) { return v * v * (3 - 2 * v); }
+
+  /* 0 → 平的，1 → 尖的，再回到 0 */
+  function phase(t) {
+    var C = 15.0, x = (t % C) / C;
+    if (x < 0.34) return smooth(x / 0.34);
+    if (x < 0.52) return 1;
+    if (x < 0.86) return 1 - smooth((x - 0.52) / 0.34);
+    return 0;
+  }
+
+  function label(x) {
+    if (x < 0.10) return '第 0 步 · 几乎一样平';
+    if (x < 0.34) return '训练中 · 差距越拉越大';
+    if (x < 0.52) return '第 N 步 · 少数专家吃掉大部分 token';
+    if (x < 0.86) return '加了修正 · 正在压回去';
+    return '压回平面 · 但每步都得重新压';
+  }
+
+  function draw(q, x) {
+    var i, hgt, T = st.THREE;
+    for (i = 0; i < SUM; i++) {
+      hgt = st.flat[i] + (st.peak[i] - st.flat[i]) * q;
+      st.m4.makeScale(1, hgt, 1);
+      st.m4.setPosition(st.xi[i], 0, st.zi[i]);
+      st.mesh.setMatrixAt(i, st.m4);
+      var n = Math.min(1, hgt / 1.42);
+      /* 色相只走紫→洋红→粉红这一小段，避免穿过绿/黄变得花 */
+      st.col.setHSL(0.70 + 0.25 * n, 0.78, 0.34 + 0.26 * n);
+      st.mesh.setColorAt(i, st.col);
+    }
+    st.mesh.instanceMatrix.needsUpdate = true;
+    if (st.mesh.instanceColor) st.mesh.instanceColor.needsUpdate = true;
+
+    if (cap) {
+      var txt = label(x);
+      if (cap.textContent !== txt) cap.textContent = txt;
+    }
+  }
+
+  function visible() {
+    var r = host.getBoundingClientRect();
+    return r.bottom > 0 && r.top < innerHeight;
+  }
+
+  var last = 0;
+  function tick(now) {
+    requestAnimationFrame(tick);
+    if (!st) return;
+    var dt = Math.min((now - last) / 1000 || 0, 0.05);
+    last = now;
+    if (!visible()) return;
+    st.t += dt;
+    var q = phase(st.t);
+    if (Math.abs(q - st.q) > 0.0015) { st.q = q; draw(q, (st.t % 15.0) / 15.0); }
+    st.group.rotation.y = Math.sin(st.t * 0.22) * 0.11;
+    st.renderer.render(st.scene, st.cam);
+  }
+
+  function boot() {
+    if (!init()) {
+      host.style.background = 'radial-gradient(58% 44% at 50% 54%, rgba(232,121,249,.14), transparent 70%)';
+      if (cap) cap.textContent = '（此设备不支持 WebGL，图表省略）';
+    } else {
+      draw(0, 0);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  var rz;
+  addEventListener('resize', function () {
+    clearTimeout(rz);
+    rz = setTimeout(function () {
+      if (!st) return;
+      var w = host.clientWidth, h = host.clientHeight;
+      if (!w || !h) return;
+      st.cam.aspect = w / h;
+      var D = fitD(w, h);
+      st.cam.position.set(0, D * DIR.y, D * DIR.z);
+      st.cam.lookAt(0, 0, 0);
+      st.cam.updateProjectionMatrix();
+      st.renderer.setSize(w, h);
+    }, 150);
+  });
+
+  if (document.readyState === 'complete') boot();
+  else addEventListener('load', boot);
+})();
+</script>
+
+</body>
+</html>
