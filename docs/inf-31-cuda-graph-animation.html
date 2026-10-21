@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="CUDA Graph 的桶化策略：发射开销、按 interval 铺桶、bisect 向上取整、padding 与 num_reqs 的陷阱、共享内存池的反序捕获。">
+<title>一百次发射 · 推理原理 第三季</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#fb7185;--acc2:#fda4af;--accSoft:rgba(251,113,133,.34);
+    --accBg:rgba(251,113,133,.08);--accBd:rgba(251,113,133,.34);--accGl:rgba(251,113,133,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1,.s2,.s3,.s4,.s5,.s6,.s7,.s8,.s9{--glow:var(--accGl)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--acc2) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .bigcmp{display:flex;align-items:flex-end;gap:18px;margin-top:26px;justify-content:center;flex-wrap:wrap}
+  .bignum{text-align:center}
+  .bignum .v{font-family:var(--mono);font-size:clamp(23px,6.2vw,34px);font-weight:800;line-height:1}
+  .bignum .k{font-size:9.5px;color:var(--dim);margin-top:6px}
+  .bignum.old .v{color:#94a3b8;text-decoration:line-through;text-decoration-thickness:1px;opacity:.75}
+  .bignum.new .v{color:var(--acc)}
+  .bignum.mid .v{color:var(--acc2)}
+  .bignum.dim .v{color:#64748b}
+  .bigcmp .ar{font-size:18px;color:var(--dim);padding-bottom:12px}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 通用组件 */
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .stack{display:flex;flex-direction:column;gap:11px;width:100%;max-width:540px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:540px}
+  .cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;width:100%;max-width:540px}
+  .tag{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.07);color:#c3cde2}
+  .tag.acc{background:var(--accBg);color:var(--acc);border:1px solid var(--accBd)}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+  .big{font-family:var(--mono);font-size:clamp(20px,5vw,26px);font-weight:800;color:var(--acc);line-height:1}
+
+  .bars{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .bar{display:flex;align-items:center;gap:8px}
+  .bar .lbl{width:56px;flex:none;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .bar .track{flex:1;height:10px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .bar .fill{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accSoft),var(--acc))}
+  .screen.active .bar .fill{animation:grow .9s cubic-bezier(.2,1,.3,1) both}
+  @keyframes grow{to{width:var(--w,50%)}}
+  .bar .val{width:52px;flex:none;font-family:var(--mono);font-size:9.5px;color:#c3cde2}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .chartbox{width:100%;max-width:560px}
+  .chartbox canvas{width:100%;height:clamp(176px,34vh,236px);display:block}
+
+  /* 横向流程：节点 + 箭头 */
+  .flow{display:flex;align-items:stretch;width:100%;max-width:560px;gap:0}
+  .flow .n{flex:1;border:1px solid var(--line);border-radius:11px;background:var(--card);padding:12px 8px;text-align:center;
+    display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:0}
+  .flow .n .t{font-size:12px;font-weight:700}
+  .flow .n .s{font-family:var(--mono);font-size:9px;color:var(--dim);line-height:1.5}
+  .flow .n.hi{border-color:var(--accBd);background:var(--accBg)}
+  .flow .a{flex:none;width:20px;display:flex;align-items:center;justify-content:center;color:var(--acc);font-size:11px}
+
+  /* 概率轴：填充 + 参考线 */
+  .axis{position:relative;width:100%;max-width:520px;height:14px;border-radius:99px;background:rgba(255,255,255,.07);margin:22px 0 4px}
+  .axis .f{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accSoft),var(--acc))}
+  .screen.active .axis .f{animation:grow 1s cubic-bezier(.2,1,.3,1) both}
+  .axis .m{position:absolute;top:-6px;width:2px;height:26px;background:#94a3b8;border-radius:2px}
+  .axis .m span{position:absolute;top:-19px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:9px;color:var(--dim);white-space:nowrap}
+
+  /* 堆叠条：两段构成 */
+  .split{display:flex;width:100%;max-width:520px;height:24px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+  .split .a{background:var(--acc);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#0b1020;font-weight:700}
+  .split .b{flex:1;background:rgba(244,114,182,.72);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#2b0b18;font-weight:700}
+
+  /* 表格 */
+  .tbl{width:100%;max-width:540px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:rgba(7,11,20,.4)}
+  .tbl .r{display:grid;gap:6px;padding:9px 12px;font-size:11px;border-top:1px solid var(--line);align-items:center}
+  .tbl .r:first-child{border-top:none;background:rgba(255,255,255,.04);font-size:9px;letter-spacing:.1em;color:var(--dim);font-family:var(--mono)}
+  .tbl .r b{font-family:var(--mono);color:var(--acc);font-weight:700}
+
+  /* 点阵（一次 run 一条） */
+  .dots960{display:grid;grid-template-columns:repeat(60,1fr);gap:2px;width:100%;max-width:520px}
+  .dots960 i{aspect-ratio:1;border-radius:1px;background:rgba(96,165,250,.20);display:block}
+  .dots960 i.bad{background:#fb7185;box-shadow:0 0 9px rgba(251,113,133,.9)}
+
+  /* 字节尺 */
+  .bytebar{display:flex;width:100%;max-width:520px;height:34px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+  .bytebar .d{background:linear-gradient(180deg,var(--acc),var(--accSoft));display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:9.5px;color:#0b1020;font-weight:700}
+  .bytebar .s{background:rgba(244,114,182,.78);display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:9px;color:#2b0b18;font-weight:700}
+
+  .cells{display:grid;gap:3px;width:100%;max-width:520px}
+  .cells i{height:26px;border-radius:2px;background:rgba(255,255,255,.06);display:block}
+  .cells i.on{background:linear-gradient(180deg,var(--acc),var(--accSoft))}
+  .cells i.hot{background:linear-gradient(180deg,#fb7185,rgba(251,113,133,.35))}
+
+  /* 交互滑杆 */
+  .slider{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .slider .row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .slider .row b{color:var(--acc);font-size:12px}
+  .slider input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:99px;
+    background:rgba(255,255,255,.14);outline:none}
+  .slider input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+    background:var(--acc);border:2px solid #070b14;box-shadow:0 0 10px var(--accBd);cursor:pointer}
+  .slider input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--acc);
+    border:2px solid #070b14;cursor:pointer}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+:root{--acc:#2dd4bf;--acc2:#7dd3fc;--accBg:rgba(45,212,191,.08);--accBd:rgba(45,212,191,.34);--accGl:rgba(45,212,191,.12);--accSoft:rgba(45,212,191,.34)}
+
+  .launch{width:100%;max-width:520px;display:flex;flex-direction:column;gap:9px}
+  .launch .lbl{font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:.06em}
+  .launch .run{display:flex;gap:3px;align-items:flex-end;height:26px}
+  .launch .run i{flex:1;height:100%;border-radius:1px;background:var(--accSoft);display:block}
+  .launch .run i.k{background:var(--acc);height:60%}
+  .launch .one{height:14px;border-radius:99px;background:linear-gradient(90deg,var(--accSoft),var(--acc))}
+  .launch .cap{font-family:var(--mono);font-size:9px;color:var(--dim)}
+
+  /* 桶化尺 */
+  .ruler{position:relative;width:100%;max-width:520px;height:64px;margin-top:6px}
+  .ruler .base{position:absolute;left:0;right:0;top:26px;height:2px;border-radius:2px;background:rgba(255,255,255,.16)}
+  .ruler .tk{position:absolute;top:18px;width:2px;height:18px;background:rgba(255,255,255,.34);border-radius:1px;
+    font-style:normal;transform:translateX(-1px)}
+  .ruler .tk.big{height:26px;top:14px;background:rgba(255,255,255,.55)}
+  .ruler .tk span{position:absolute;top:-15px;left:50%;transform:translateX(-50%);
+    font-family:var(--mono);font-size:8.5px;color:var(--dim);white-space:nowrap}
+  .ruler .tk.first span{left:0;transform:none}
+  .ruler .tk.end span{left:auto;right:0;transform:none}
+  .ruler .waste{position:absolute;top:20px;height:10px;background:rgba(251,113,133,.20);
+    border-left:1px solid rgba(251,113,133,.6);border-right:1px solid rgba(251,113,133,.6)}
+  .ruler .cur{position:absolute;top:-2px;width:2px;height:40px;background:var(--acc);border-radius:2px;
+    box-shadow:0 0 10px var(--accBd);transition:left .12s linear}
+  .ruler .cur::after{content:"";position:absolute;top:-4px;left:50%;transform:translateX(-50%);
+    width:8px;height:8px;border-radius:50%;background:var(--acc)}
+
+  .readout{display:flex;gap:8px;width:100%;max-width:520px;margin-top:2px}
+  .readout .c{flex:1;border:1px solid var(--line);border-radius:9px;background:var(--card);padding:8px 6px;text-align:center}
+  .readout .c .v{font-family:var(--mono);font-size:15px;font-weight:800;color:var(--acc);line-height:1.1}
+  .readout .c .t{font-size:9px;color:var(--dim);margin-top:2px}
+  .readout .c.bad .v{color:#fb7185}
+
+  .pool{width:100%;max-width:520px;position:relative;padding:12px;border:1px dashed rgba(255,255,255,.20);border-radius:10px}
+  .pool .pl{position:absolute;left:12px;top:-9px;background:var(--bg0);padding:0 6px;
+    font-family:var(--mono);font-size:8.5px;color:var(--dim)}
+  .pool .b{height:11px;border-radius:3px;margin:5px 0;background:linear-gradient(90deg,var(--accSoft),var(--acc))}
+  .pool .r{display:flex;align-items:center;gap:8px}
+  .pool .r em{font-family:var(--mono);font-size:8.5px;font-style:normal;color:var(--dim);width:58px;flex:none;white-space:nowrap}
+
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;max-width:520px}
+  .g2 .p{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:10px}
+  .g2 .p .t{font-size:10.5px;color:var(--dim);margin-top:6px;text-align:center}
+
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="inf-30-cache-bytes-animation.html" aria-label="上一集" title="上一集：一个 token 的账">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="dev-01-tools-animation.html" aria-label="下一集" title="下一集：工具设计">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1">
+  <div class="hero-kicker rv d1">SEASON 3 · 07 · 幕 C 时延</div>
+  <h1 class="rv d2">一百次<br><span class="grad">发射</span></h1>
+  <p class="hero-sub rv d3">同样一份活，可以是三百个 kernel<br>也可以是一次重放</p>
+  <div style="margin-top:22px" class="rv d4">
+    <svg viewBox="0 0 520 120" width="100%" style="max-width:460px" xmlns="http://www.w3.org/2000/svg">
+      <g stroke="rgba(45,212,191,.55)" stroke-width=".8" fill="none">
+        <path d="M30 60 L90 30 M30 60 L90 60 M30 60 L90 90
+                 M90 30 L150 20 M90 30 L150 40
+                 M90 60 L150 55 M90 60 L150 70
+                 M90 90 L150 82 M90 90 L150 100
+                 M150 20 L210 20 M150 40 L210 40 M150 55 L210 55 M150 70 L210 70 M150 82 L210 82 M150 100 L210 100"/>
+      </g>
+      <g fill="rgba(45,212,191,.85)">
+        <circle cx="30" cy="60" r="4"/>
+        <circle cx="90" cy="30" r="3"/><circle cx="90" cy="60" r="3"/><circle cx="90" cy="90" r="3"/>
+        <circle cx="150" cy="20" r="2.4"/><circle cx="150" cy="40" r="2.4"/>
+        <circle cx="150" cy="55" r="2.4"/><circle cx="150" cy="70" r="2.4"/>
+        <circle cx="150" cy="82" r="2.4"/><circle cx="150" cy="100" r="2.4"/>
+        <circle cx="210" cy="20" r="2.4"/><circle cx="210" cy="40" r="2.4"/>
+        <circle cx="210" cy="55" r="2.4"/><circle cx="210" cy="70" r="2.4"/>
+        <circle cx="210" cy="82" r="2.4"/><circle cx="210" cy="100" r="2.4"/>
+      </g>
+      <rect x="290" y="42" width="90" height="36" rx="7" fill="rgba(45,212,191,.14)" stroke="rgba(45,212,191,.7)" stroke-width=".8"/>
+      <text x="335" y="65" text-anchor="middle" font-family="ui-monospace,Consolas,monospace" font-size="10" fill="#7dd3fc">graph</text>
+      <path d="M400 60 L440 60" stroke="rgba(45,212,191,.8)" stroke-width="1.2" fill="none"/>
+      <path d="M434 55 L441 60 L434 65" stroke="rgba(45,212,191,.8)" stroke-width="1.2" fill="none"/>
+      <text x="470" y="64" text-anchor="middle" font-family="ui-monospace,Consolas,monospace" font-size="10" fill="#7dd3fc">×1</text>
+    </svg>
+  </div>
+  <div class="next-hint">向下滚动 · 先看这三百次发射贵在哪<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1">01 · <b>固定成本</b></div>
+    <h2 class="rv d2">慢的不是算，是发号施令</h2>
+    <p class="scr-desc rv d3">每一个 kernel 都要从 CPU 派一次活。这一步的耗时是固定的，<br>和你让它算多少无关。</p>
+  </div>
+  <div class="stage">
+    <div class="launch rv d4">
+      <div class="lbl">一次 decode —— 44 个 kernel</div>
+      <div class="run"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="cap">每两根亮条之间的缝隙，就是一次发射</div>
+    </div>
+    <div class="launch rv d5">
+      <div class="lbl">同样的活 —— 一次发射</div>
+      <div class="one"></div>
+      <div class="cap">缝隙全部消失</div>
+    </div>
+    <div class="small rv d6">算的部分一点都没少，少的是"喊开始"的次数</div>
+  </div>
+  <div class="scr-foot rv d7">一个 token 几十毫秒，几百次发射就是其中不可忽视的一块。</div>
+</section>
+
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1">02 · <b>录下来</b></div>
+    <h2 class="rv d2">先录一遍，之后按下播放</h2>
+    <p class="scr-desc rv d3">CUDA Graph 把整段前向的执行序列录成一张图，<br>之后每步只调一次 <code>replay()</code>。</p>
+  </div>
+  <div class="stage">
+    <div class="flow rv d4">
+      <div class="n"><div class="t">capture</div><div class="s">跑一遍并记录</div></div>
+      <div class="a">→</div>
+      <div class="n"><div class="t">instantiate</div><div class="s">固化执行序列</div></div>
+      <div class="a">→</div>
+      <div class="n hi"><div class="t">replay</div><div class="s">每步一次</div></div>
+    </div>
+    <div class="g2 rv d5">
+      <div class="p">
+        <div class="big" style="text-align:center">数百</div>
+        <div class="t">每步 launch 次数</div>
+      </div>
+      <div class="p">
+        <div class="big" style="text-align:center">1</div>
+        <div class="t">每步 replay 次数</div>
+      </div>
+    </div>
+    <div class="small rv d6">录制发生在启动阶段，不是每个请求</div>
+  </div>
+  <div class="scr-foot rv d7">这是一次性的开销，换来每一 token 的收益 —— 所以它只对 decode 这种"同一段路走几千遍"的场景划算。</div>
+</section>
+
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1">03 · <b>桶化</b></div>
+    <h2 class="rv d2">不可能为每个 batch 都录一遍</h2>
+    <p class="scr-desc rv d3">先铺 1、2、4，之后每 8 个 batch 录一张。<br>拖动滑杆，看真实 batch 会落进哪个桶。</p>
+  </div>
+  <div class="stage">
+    <div class="ruler rv d4" id="ruler">
+      <div class="base"></div>
+      <i class="tk big first" style="left:1.56%"><span>1</span></i><i class="tk" style="left:3.12%"></i><i class="tk" style="left:6.25%"></i><i class="tk" style="left:12.50%"></i><i class="tk big" style="left:25.00%"><span>16</span></i><i class="tk" style="left:37.50%"></i><i class="tk big" style="left:50.00%"><span>32</span></i><i class="tk" style="left:62.50%"></i><i class="tk" style="left:75.00%"></i><i class="tk" style="left:87.50%"></i><i class="tk end" style="left:100.00%"></i>
+      <div class="waste" id="waste" style="left:1.56%;width:0"></div>
+      <div class="cur" id="cur" style="left:12.5%"></div>
+    </div>
+    <div class="slider rv d5">
+      <div class="row"><span>真实 batch</span><b id="out">1</b></div>
+      <input id="bs" type="range" min="1" max="64" value="8" step="1" aria-label="真实 batch size">
+    </div>
+    <div class="readout rv d6">
+      <div class="c"><div class="v" id="bkt">8</div><div class="t">实际跑的桶</div></div>
+      <div class="c" id="wcard"><div class="v" id="wst">0%</div><div class="t">白算的比例</div></div>
+      <div class="c"><div class="v">11</div><div class="t">总桶数</div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d7">尺子左边密、右边疏 —— 小 batch 变化快，值得多录几个；大 batch 差几个无所谓。</div>
+</section>
+
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1">04 · <b>代价</b></div>
+    <h2 class="rv d2">padding 会咬人</h2>
+    <p class="scr-desc rv d3">真实 batch 37 跑 40 的图，多出来的 3 行是空的。<br>更麻烦的是：有些地方必须知道"真正的请求数"。</p>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d4"><div class="i">🕳️</div><div><b>白算的 3 行</b><p>图只认识桶，不认识 37。多出来的行照样走完整前向，只是结果被丢掉。</p></div></div>
+      <div class="fact rv d5"><div class="i">🔢</div><div><b>num_reqs 必须记真实值</b><p>统计、以及上下文并行里非 driver 的 rank，都要靠它把 padding 摘出去。用桶大小当请求数，算出来的东西全错。</p></div></div>
+      <div class="fact rv d6"><div class="i">🧹</div><div><b>复用前要清理</b><p>有些字段在 forward 里会重算，复用图之前必须置空，否则拿到上一批的残留。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d7">图给你省了发射，也拿走了"每一行都是真数据"这个假设。</div>
+</section>
+
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1">05 · <b>共用</b></div>
+    <h2 class="rv d2">所有图共享一个内存池</h2>
+    <p class="scr-desc rv d3">11 张图不是 11 份显存 —— 它们共用同一个 pool。<br>所以捕获必须<b>从大到小</b>来。</p>
+  </div>
+  <div class="stage">
+    <div class="pool rv d4">
+      <div class="pl">graph_memory_pool</div>
+      <div class="r"><em>bucket 64</em><div class="b" style="width:100%"></div></div>
+      <div class="r"><em>bucket 48</em><div class="b" style="width:75%"></div></div>
+      <div class="r"><em>bucket 32</em><div class="b" style="width:50%"></div></div>
+      <div class="r"><em>bucket 8</em><div class="b" style="width:12.5%"></div></div>
+    </div>
+    <div class="small rv d5">先录最大的那张，pool 一次长到位；后面的小图直接复用里面现成的空洞</div>
+  </div>
+  <div class="scr-foot rv d6">如果从小到大录，pool 会被反复撑大、反复搬迁 —— 顺序在这里不是风格问题，是能不能跑起来的问题。</div>
+</section>
+
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1">06 · <b>收束</b></div>
+    <h2 class="rv d2">一笔很明确的买卖</h2>
+  </div>
+  <div class="stage">
+    <div class="tbl rv d4">
+      <div class="r" style="grid-template-columns:1.6fr 1fr">
+        <span>换来的</span><span>付出去的</span>
+      </div>
+      <div class="r" style="grid-template-columns:1.6fr 1fr">
+        <span>每步几百次发射 → 1 次</span><b>几十微秒 / 步</b>
+      </div>
+      <div class="r" style="grid-template-columns:1.6fr 1fr">
+        <span>最多 7% 的白算</span><b>padding 行</b>
+      </div>
+      <div class="r" style="grid-template-columns:1.6fr 1fr">
+        <span>启动时录 11 张图</span><b>秒级启动</b>
+      </div>
+      <div class="r" style="grid-template-columns:1.6fr 1fr">
+        <span>多一条必须守的约定</span><b>num_reqs</b>
+      </div>
+    </div>
+    <div class="small rv d5">下一集：这张图要能被正确地跑起来，先得有一张正确的装箱单</div>
+  </div>
+  <div class="scr-foot rv d6">数据出处：<b>worker/cuda_graph_runner.py</b>、<b>environ.py</b> 的 interval 默认值 8。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  var HOOK = null;
+  /* ---------- episode ---------- */
+
+  var BUCKETS = [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64];
+  var MAXB = 64;
+  var bs = document.getElementById('bs');
+  var out = document.getElementById('out');
+  var bkt = document.getElementById('bkt');
+  var wst = document.getElementById('wst');
+  var cur = document.getElementById('cur');
+  var waste = document.getElementById('waste');
+  var wcard = document.getElementById('wcard');
+
+  function pick(b) {
+    for (var i = 0; i < BUCKETS.length; i++) {
+      if (BUCKETS[i] >= b) return BUCKETS[i];
+    }
+    return BUCKETS[BUCKETS.length - 1];
+  }
+
+  function pct(v) { return (v * 100 / MAXB); }
+
+  function update() {
+    var b = parseInt(bs.value, 10);
+    var k = pick(b);
+    var p = Math.round((k - b) * 1000 / k) / 10;
+    out.textContent = b;
+    bkt.textContent = k;
+    wst.textContent = (p % 1 === 0 ? p.toFixed(0) : p.toFixed(1)) + '%';
+    wcard.className = p > 0 ? 'c bad' : 'c';
+    cur.style.left = pct(b) + '%';
+    waste.style.left = pct(b) + '%';
+    waste.style.width = Math.max(0, pct(k) - pct(b)) + '%';
+  }
+
+  if (bs) {
+    bs.addEventListener('input', update);
+    update();
+  }
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (HOOK) { try { HOOK(i); } catch (e) {} }
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+
+</body>
+</html>
