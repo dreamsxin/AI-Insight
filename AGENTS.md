@@ -69,7 +69,14 @@ Frontend (run from `frontend/`):
   `backend/app/data/saved_models/` (no database). The directory is git-ignored and
   created at runtime by `services/model_store.py`; don't commit model files.
 - `docs/` holds the animation collection; `index.html` is the only entry point
-  and links all 96 episodes (none orphaned). Eleven series, in index order:
+  and links all 102 episodes (none orphaned). Twelve series, in index order:
+  训练原理 ·01–06 (`tr-` prefix, the L1 layer that used to hold only four
+  episodes: corpus pipeline & dedup & mixture, parallel sharding
+  DP/TP/PP/EP/CP with the
+  400-vs-50 GB/s link gap, training stability — five memory copies, fp32 master
+  weights, Adam, warmup/cosine, loss-spike rollback — scaling law & MoE capacity
+  economics, post-training (SFT → reward model → PPO → DPO → RLVR), and a 90-day
+  timeline that ties it together);
   HERMES AGENT 对象拆解 ·01–18 (08 跨会话记忆篇 is 前瞻演绎/designed
   extrapolation); HERMES AGENT 进阶机制 ·01–07 (thinking budget wired into the
   main loop, Skills progressive disclosure, Hooks lifecycle slots, MCP 2026
@@ -113,7 +120,7 @@ Frontend (run from `frontend/`):
   which is idempotent. After adding, removing or reordering an episode,
   re-run it (`--check` reports drift without writing). Never hand-edit the
   block — it is replaced wholesale on the next run, and it is what keeps the
-  episodes from being 96 dead ends.
+  episodes from being 102 dead ends.
 - **Index affordances.** `index.html` also has a client-side search (`/`
   focuses, `Esc` clears; matches `a.card` on text + href), a static 知识地图
   (L1 训练 → L2 模型原理 → L3 推理服务 → L4 Agent 工程) and three recommended

@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="训练原理 05：后训练对齐的完整链路 —— 预训练模型的续写本能、SFT 教格式、奖励模型当人类替身、PPO 的四个模型与 KL 惩罚、DPO 的简化、RLVR 让程序当考官。">
+<title>从会接话到会做事 · 训练原理 05</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#fb7185;--acc2:#fda4af;--accSoft:rgba(251,113,133,.34);
+    --accBg:rgba(251,113,133,.08);--accBd:rgba(251,113,133,.34);--accGl:rgba(251,113,133,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1,.s2,.s3,.s4,.s5,.s6,.s7,.s8,.s9{--glow:var(--accGl)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:1 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--acc2) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .bigcmp{display:flex;align-items:flex-end;gap:18px;margin-top:26px;justify-content:center;flex-wrap:wrap}
+  .bignum{text-align:center}
+  .bignum .v{font-family:var(--mono);font-size:clamp(23px,6.2vw,34px);font-weight:800;line-height:1}
+  .bignum .k{font-size:9.5px;color:var(--dim);margin-top:6px}
+  .bignum.old .v{color:#94a3b8;text-decoration:line-through;text-decoration-thickness:1px;opacity:.75}
+  .bignum.new .v{color:var(--acc)}
+  .bignum.mid .v{color:var(--acc2)}
+  .bignum.dim .v{color:#64748b}
+  .bigcmp .ar{font-size:18px;color:var(--dim);padding-bottom:12px}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 通用组件 */
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .stack{display:flex;flex-direction:column;gap:11px;width:100%;max-width:540px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:540px}
+  .cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;width:100%;max-width:540px}
+  .tag{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.07);color:#c3cde2}
+  .tag.acc{background:var(--accBg);color:var(--acc);border:1px solid var(--accBd)}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+  .big{font-family:var(--mono);font-size:clamp(20px,5vw,26px);font-weight:800;color:var(--acc);line-height:1}
+
+  .bars{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .bar{display:flex;align-items:center;gap:8px}
+  .bar .lbl{width:56px;flex:none;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .bar .track{flex:1;height:10px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .bar .fill{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accSoft),var(--acc))}
+  .screen.active .bar .fill{animation:grow .9s cubic-bezier(.2,1,.3,1) both}
+  @keyframes grow{to{width:var(--w,50%)}}
+  .bar .val{width:52px;flex:none;font-family:var(--mono);font-size:9.5px;color:#c3cde2}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .chartbox{width:100%;max-width:560px}
+  .chartbox canvas{width:100%;height:clamp(176px,34vh,236px);display:block}
+
+  /* 横向流程：节点 + 箭头 */
+  .flow{display:flex;align-items:stretch;width:100%;max-width:560px;gap:0}
+  .flow .n{flex:1;border:1px solid var(--line);border-radius:11px;background:var(--card);padding:12px 8px;text-align:center;
+    display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:0}
+  .flow .n .t{font-size:12px;font-weight:700}
+  .flow .n .s{font-family:var(--mono);font-size:9px;color:var(--dim);line-height:1.5}
+  .flow .n.hi{border-color:var(--accBd);background:var(--accBg)}
+  .flow .a{flex:none;width:20px;display:flex;align-items:center;justify-content:center;color:var(--acc);font-size:11px}
+
+  /* 概率轴：填充 + 参考线 */
+  .axis{position:relative;width:100%;max-width:520px;height:14px;border-radius:99px;background:rgba(255,255,255,.07);margin:22px 0 4px}
+  .axis .f{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accSoft),var(--acc))}
+  .screen.active .axis .f{animation:grow 1s cubic-bezier(.2,1,.3,1) both}
+  .axis .m{position:absolute;top:-6px;width:2px;height:26px;background:#94a3b8;border-radius:2px}
+  .axis .m span{position:absolute;top:-19px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:9px;color:var(--dim);white-space:nowrap}
+
+  /* 堆叠条：两段构成 */
+  .split{display:flex;width:100%;max-width:520px;height:24px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+  .split .a{background:var(--acc);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#0b1020;font-weight:700}
+  .split .b{flex:1;background:rgba(244,114,182,.72);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#2b0b18;font-weight:700}
+
+  /* 表格 */
+  .tbl{width:100%;max-width:540px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:rgba(7,11,20,.4)}
+  .tbl .r{display:grid;gap:6px;padding:9px 12px;font-size:11px;border-top:1px solid var(--line);align-items:center}
+  .tbl .r:first-child{border-top:none;background:rgba(255,255,255,.04);font-size:9px;letter-spacing:.1em;color:var(--dim);font-family:var(--mono)}
+  .tbl .r b{font-family:var(--mono);color:var(--acc);font-weight:700}
+
+  /* 点阵（一次 run 一条） */
+  .dots960{display:grid;grid-template-columns:repeat(60,1fr);gap:2px;width:100%;max-width:520px}
+  .dots960 i{aspect-ratio:1;border-radius:1px;background:rgba(96,165,250,.20);display:block}
+  .dots960 i.bad{background:#fb7185;box-shadow:0 0 9px rgba(251,113,133,.9)}
+
+  /* 字节尺 */
+  .bytebar{display:flex;width:100%;max-width:520px;height:34px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+  .bytebar .d{background:linear-gradient(180deg,var(--acc),var(--accSoft));display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:9.5px;color:#0b1020;font-weight:700}
+  .bytebar .s{background:rgba(244,114,182,.78);display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:9px;color:#2b0b18;font-weight:700}
+
+  .cells{display:grid;gap:3px;width:100%;max-width:520px}
+  .cells i{height:26px;border-radius:2px;background:rgba(255,255,255,.06);display:block}
+  .cells i.on{background:linear-gradient(180deg,var(--acc),var(--accSoft))}
+  .cells i.hot{background:linear-gradient(180deg,#fb7185,rgba(251,113,133,.35))}
+
+  /* 交互滑杆 */
+  .slider{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .slider .row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .slider .row b{color:var(--acc);font-size:12px}
+  .slider input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:99px;
+    background:rgba(255,255,255,.14);outline:none}
+  .slider input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+    background:var(--acc);border:2px solid #070b14;box-shadow:0 0 10px var(--accBd);cursor:pointer}
+  .slider input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--acc);
+    border:2px solid #070b14;cursor:pointer}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+:root{--acc:#a3e635;--acc2:#bef264;--accBg:rgba(163,230,53,.08);--accBd:rgba(163,230,53,.34);--accGl:rgba(163,230,53,.12);--accSoft:rgba(163,230,53,.34)}
+
+  .demo{width:100%;max-width:520px;display:flex;flex-direction:column;gap:7px}
+  .demo .msg{border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:11px;line-height:1.6}
+  .demo .msg .who{font-family:var(--mono);font-size:8.5px;color:var(--dim);letter-spacing:.1em;margin-bottom:3px}
+  .demo .msg.u{background:rgba(255,255,255,.04);color:#c3cde2}
+  .demo .msg.bad{background:rgba(251,113,133,.07);border-color:rgba(251,113,133,.28);color:#fda4af}
+  .demo .msg.good{background:var(--accBg);border-color:var(--accBd);color:#e8eefc}
+  .demo .msg b{color:#fff}
+
+  .prob{width:100%;max-width:470px;display:flex;flex-direction:column;gap:5px;margin-top:2px}
+  .prob .p{display:flex;align-items:center;gap:8px;font-size:10px}
+  .prob .p .tk{width:132px;flex:none;color:#aab6cf;text-align:right;font-family:var(--mono);font-size:9.5px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .prob .p .tr{flex:1;height:11px;border-radius:99px;background:rgba(255,255,255,.06);overflow:hidden}
+  .prob .p .tr i{display:block;height:100%;width:0;border-radius:99px;background:rgba(251,113,133,.78)}
+  .screen.active .prob .p .tr i{animation:grow .8s cubic-bezier(.2,1,.3,1) both;animation-delay:calc(var(--i) * 110ms + .3s)}
+  .prob .p .pc{width:34px;flex:none;font-family:var(--mono);font-size:9.5px;color:#fb7185;text-align:right}
+
+  .rank{width:100%;max-width:520px;display:flex;flex-direction:column;gap:6px}
+  .rank .it{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:9px;
+    background:var(--card);border:1px solid var(--line);font-size:11px}
+  .rank .it .sc{font-family:var(--mono);font-size:11px;color:var(--acc);width:38px;flex:none;text-align:right}
+  .rank .it .tx{flex:1;color:#c3cde2;font-size:10.5px;line-height:1.5}
+  .rank .it.top{border-color:var(--accBd);background:var(--accBg)}
+
+  .four{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:520px}
+  .four .m{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:10px 11px}
+  .four .m .k{font-family:var(--mono);font-size:9px;color:var(--acc);margin-bottom:3px}
+  .four .m b{font-size:11.5px;display:block;margin-bottom:2px}
+  .four .m p{font-size:9.5px;color:var(--dim);line-height:1.55}
+
+  .fourbar{width:100%;max-width:520px;display:flex;flex-direction:column;gap:5px}
+  .fourbar .bx{display:flex;height:26px;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+  .fourbar .bx div{display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:8.5px;
+    border-right:1px solid rgba(7,11,20,.45)}
+  .fourbar .bx div:last-child{border-right:none}
+  .fourbar .cap{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--dim)}
+
+  .era{width:100%;max-width:520px;display:flex;flex-direction:column;gap:0}
+  .era .e{display:flex;gap:10px;align-items:stretch}
+  .era .e .ax{width:14px;flex:none;display:flex;flex-direction:column;align-items:center}
+  .era .e .ax i{width:9px;height:9px;border-radius:50%;background:var(--acc);margin-top:6px;flex:none}
+  .era .e .ax s{width:1px;flex:1;background:var(--line)}
+  .era .e:last-child .ax s{display:none}
+  .era .e .bd{padding:2px 0 14px;flex:1}
+  .era .e .bd b{font-size:12px;display:block;margin-bottom:2px}
+  .era .e .bd p{font-size:10px;color:var(--dim);line-height:1.55}
+  .era .e .bd em{font-style:normal;font-family:var(--mono);font-size:9px;color:var(--acc)}
+
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="tr-04-scaling-animation.html" aria-label="上一集" title="上一集：要多大才够">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="tr-06-ninety-days-animation.html" aria-label="下一集" title="下一集：九十天出厂">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1">
+  <div class="hero-kicker rv d1">TRAINING · 05 · 对齐</div>
+  <h1 class="rv d2">从会接话<br><span class="grad">到会做事</span></h1>
+  <p class="hero-sub rv d3">预训练完的模型只会续写，不会听指令</p>
+  <div class="bigcmp rv d4">
+    <div class="bignum new"><div class="v">1 人</div><div class="k">写 10 万条示范</div></div>
+    <div class="bignum mid"><div class="v">10 万</div><div class="k">次两两比较</div></div>
+    <div class="bignum dim"><div class="v">0 人</div><div class="k">可验证奖励</div></div>
+  </div>
+  <div class="next-hint">向下滚动 · 看人是怎么一步步退场的<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1">01 · <b>起点</b></div>
+    <h2 class="rv d2">它以为你在出题</h2>
+    <p class="scr-desc rv d3">预训练的模型只学了一件事：<b>给定前文，猜下一个 token</b>。<br>你问它问题，它会顺着往下编。</p>
+  </div>
+  <div class="stage">
+    <div class="demo rv d4">
+      <div class="msg u"><div class="who">用户</div>中国的首都是哪里？</div>
+      <div class="msg bad"><div class="who">预训练模型</div>中国的首都是哪里？中国的首都是哪里？<br><b>（它在模仿「一堆相同的问句」这种网页结构）</b></div>
+    </div>
+    <div class="prob rv d5">
+      <div class="p"><span class="tk">「中国的首都是哪里？」</span><span class="tr"><i style="--w:78%;--i:0"></i></span><span class="pc">78%</span></div>
+      <div class="p"><span class="tk">「北京。」</span><span class="tr"><i style="--w:14%;--i:1"></i></span><span class="pc">14%</span></div>
+      <div class="p"><span class="tk">「谢谢观看」</span><span class="tr"><i style="--w:8%;--i:2"></i></span><span class="pc">8%</span></div>
+    </div>
+    <p class="small rv d6">它没错，它只是<b>按统计规律续写</b>。问题在于没人告诉它「这是个问题，该回答」</p>
+  </div>
+  <div class="scr-foot rv d7">预训练给了它<b>知识</b>，没给它<b>角色</b></div>
+</section>
+
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1">02 · <b>SFT</b></div>
+    <h2 class="rv d2">教格式，不教知识</h2>
+    <p class="scr-desc rv d3">人工写出「问题 → 理想回答」的示范，继续用同一个目标训练。<br>这一步量很小，几万到几十万条，但<b>形状全在这里定下来</b>。</p>
+  </div>
+  <div class="stage">
+    <div class="demo rv d4">
+      <div class="msg u"><div class="who">用户</div>中国的首都是哪里？</div>
+      <div class="msg good"><div class="who">SFT 之后</div>北京。<br><b>简洁、直接、不重复题目。</b></div>
+    </div>
+    <div class="facts rv d5">
+      <div class="fact"><span class="i">📐</span><div><b>学的是「怎么答」</b><p>语气、长度、结构、什么时候说不知道。知识在预训练时就有了。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">SFT 不是给模型灌新知识，是<b>把知识摆到能被问出来的位置</b></div>
+</section>
+
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1">03 · <b>偏好</b></div>
+    <h2 class="rv d2">人不会写，但会比较</h2>
+    <p class="scr-desc rv d3">让标注员写满分答案太难，但让他们在两条回答里挑一条好的很容易。</p>
+  </div>
+  <div class="stage">
+    <div class="rank rv d4">
+      <div class="it top"><span class="sc">4.6</span><span class="tx">先给结论，再解释原因，最后点出例外</span></div>
+      <div class="it"><span class="sc">3.1</span><span class="tx">答案对，但绕了一大圈才说到重点</span></div>
+      <div class="it"><span class="sc">1.4</span><span class="tx">自信地给了一个错误答案</span></div>
+    </div>
+    <p class="small rv d5">这些比较结果训出一个<b>奖励模型</b>（RM）—— 它是「人类偏好的替身」</p>
+  </div>
+  <div class="scr-foot rv d6">之后所有优化，都不再需要人参与，<b>只问这个替身</b></div>
+</section>
+
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1">04 · <b>PPO</b></div>
+    <h2 class="rv d2">四个模型同时在显存里</h2>
+    <p class="scr-desc rv d3">强化学习阶段最贵的不是算力，是<b>要同时装下四份模型</b>。</p>
+  </div>
+  <div class="stage">
+    <div class="four rv d4">
+      <div class="m"><div class="k">策略</div><b>正在训练的模型</b><p>生成回答，被更新的那个</p></div>
+      <div class="m"><div class="k">参考</div><b>冻住的 SFT 模型</b><p>用来算 KL，防止跑偏太远</p></div>
+      <div class="m"><div class="k">奖励</div><b>RM 打分器</b><p>给回答一个分</p></div>
+      <div class="m"><div class="k">价值</div><b>预估未来收益</b><p>算优势函数，稳定训练</p></div>
+    </div>
+    <div class="fourbar rv d5">
+      <div class="bx">
+        <div style="flex:1;background:rgba(163,230,53,.72);color:#14200a">策略</div>
+        <div style="flex:1;background:rgba(163,230,53,.34);color:#c3cde2">参考</div>
+        <div style="flex:1;background:rgba(251,191,36,.52);color:#1a1206">奖励</div>
+        <div style="flex:1;background:rgba(232,121,249,.42);color:#f5e6fb">价值</div>
+      </div>
+      <div class="cap"><span>7B 模型</span><span>4 × 14 GB ≈ 56 GB（还不含优化器）</span></div>
+    </div>
+    <p class="small rv d6">KL 惩罚是关键：<b>没有它，模型会学会骗奖励模型</b>，回答变得又长又谄媚</p>
+  </div>
+  <div class="scr-foot rv d7">奖励黑客（reward hacking）不是 bug，是<b>优化太成功的必然结果</b></div>
+</section>
+
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1">05 · <b>省掉</b></div>
+    <h2 class="rv d2">DPO：把 RL 变成分类题</h2>
+    <p class="scr-desc rv d3">既然偏好数据已经有了，为什么还要先训 RM、再跑 PPO？<br>可以直接用偏好对做一步到位的优化。</p>
+  </div>
+  <div class="stage">
+    <div class="tbl rv d4">
+      <div class="r" style="grid-template-columns:1fr 74px 74px"><span></span><span>PPO</span><span>DPO</span></div>
+      <div class="r" style="grid-template-columns:1fr 74px 74px"><span>要训的模型</span><b>4 个</b><b>1 个</b></div>
+      <div class="r" style="grid-template-columns:1fr 74px 74px"><span>采样</span><b>在线生成</b><b>离线数据</b></div>
+      <div class="r" style="grid-template-columns:1fr 74px 74px"><span>稳定性</span><b>难调</b><b>接近监督学习</b></div>
+    </div>
+    <p class="small rv d5">DPO 的损失就是一句话：<b>让好回答的概率相对差回答上升</b></p>
+  </div>
+  <div class="scr-foot rv d6">工程上的简化，往往比算法上的精巧更能落地</div>
+</section>
+
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1">06 · <b>退场</b></div>
+    <h2 class="rv d2">人越来越少</h2>
+    <p class="scr-desc rv d3">数学和代码有标准答案，不必再问人 —— 让程序当考官。</p>
+  </div>
+  <div class="stage">
+    <div class="era rv d4">
+      <div class="e"><div class="ax"><i></i><s></s></div><div class="bd"><b>人工示范</b><p>SFT：人写答案 <em>人的判断力 → 数据</em></p></div></div>
+      <div class="e"><div class="ax"><i></i><s></s></div><div class="bd"><b>人工比较</b><p>RM + PPO：人排序，模型学偏好 <em>人的判断力 → 打分器</em></p></div></div>
+      <div class="e"><div class="ax"><i></i><s></s></div><div class="bd"><b>程序判分</b><p>RLVR：跑单测、对答案，对错自动判 <em>零人力，可无限扩</em></p></div></div>
+    </div>
+    <p class="small rv d5">这条线不是「谁取代谁」，是<b>人的判断被逐步固化进系统</b></p>
+  </div>
+  <div class="scr-foot rv d6">下一步：把这些串起来，看一次真实训练的三个月中发生了什么</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  var HOOK = null;
+  /* ---------- episode ---------- */
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (HOOK) { try { HOOK(i); } catch (e) {} }
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+
+</body>
+</html>

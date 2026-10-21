@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#070b14">
-<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-18 + Hermes 进阶机制 01-07 + AI 运作原理拆解 01-14 + AI 深入篇 01-07 + LLM 模型算法原理 01-05 + Agent 开发避坑指南 01-05 + AGENT 实战工坊 01-06 + AGENT 模式进阶 01-06 + 推理原理 01-24（两季）+ 第三季 25/30/31，共 96 个自包含逐屏动画">
+<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-18 + Hermes 进阶机制 01-07 + AI 运作原理拆解 01-14 + AI 深入篇 01-07 + LLM 模型算法原理 01-05 + Agent 开发避坑指南 01-05 + AGENT 实战工坊 01-06 + AGENT 模式进阶 01-06 + 训练原理 01-06 + 推理原理 01-24（两季）+ 第三季 25/30/31，共 102 个自包含逐屏动画">
 <title>AI 运作原理 · 动画演示索引</title>
 <style>
   :root {
@@ -193,11 +193,11 @@
 <div class="wrap">
   <span class="kicker">AI-INSIGHT · DOCS</span>
   <h1>运作动画<span class="grad">演示索引</span></h1>
-  <p class="sub">96 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
+  <p class="sub">102 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
 
   <div class="finder">
-    <input id="q" type="search" placeholder="搜索 96 集 · 试试「KV」「注入」「MoE」「缓存」" aria-label="搜索动画" autocomplete="off">
-    <span class="finder-n" id="qn">96 集</span>
+    <input id="q" type="search" placeholder="搜索 102 集 · 试试「KV」「注入」「MoE」「缓存」" aria-label="搜索动画" autocomplete="off">
+    <span class="finder-n" id="qn">102 集</span>
   </div>
 
   <section class="board" id="map">
@@ -240,14 +240,15 @@
     </div>
     <div class="layer">
       <div class="layer-l"><b>L1</b>训练</div>
-      <div class="layer-d">模型怎么来的：预训练、梯度、强化学习、微调 <b style="color:#fbbf24">← 当前最薄</b></div>
+      <div class="layer-d">模型怎么来的：数据、并行、稳定性、规模、对齐</div>
       <div class="layer-t">
+        <a href="tr-01-corpus-animation.html">数据</a>
         <a href="ai-01-training-animation.html">预训练</a>
         <a href="llm-02-loss-animation.html">梯度与损失</a>
         <a href="ai-17-rlvr-animation.html">RLVR</a>
         <a href="ai-18-finetune-animation.html">LoRA</a>
       </div>
-      <div class="layer-n">4 集</div>
+      <div class="layer-n">10 集</div>
     </div>
   </section>
 
@@ -278,6 +279,49 @@
       <a href="dev-05-injection-animation.html">注入防御</a>
     </span></div>
   </section>
+
+  <div class="series">
+    <div class="series-head"><b>训练原理 · 模型怎么来的</b></div>
+    <div class="series-note">🔥 新补 6 集：整站从 L1 训练到 L4 Agent 是一条因果链，而最上游一直只有 4 集 —— 模型「怎么来的」讲得太快。这一季把它拆开：数据怎么筛、参数怎么切到几千张卡、训练为什么不炸、要不要更大、怎么从会续写变成会听话，最后用一条 90 天的时间线串起来。<code>tr-</code> 前缀，01–06。</div>
+    <div class="grid">
+      <a class="card" href="tr-01-corpus-animation.html">
+        <div class="card-top"><span class="card-ico">🧹</span><span class="num n-h1">· 01</span></div>
+        <b>二十万亿个 token</b>
+        <p>抓取 → 抽正文 → 去重 → 质量分 → 配比 → 切 token，以及为什么宁可「过度训练」</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="tr-02-parallel-animation.html">
+        <div class="card-top"><span class="card-ico">🔪</span><span class="num n-h2">· 02</span></div>
+        <b>一张卡放不下</b>
+        <p>五种切法、机内 400 与机间 50 的带宽差、2048 张卡怎么排、流水线气泡</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="tr-03-stability-animation.html">
+        <div class="card-top"><span class="card-ico">🛡️</span><span class="num n-h3">· 03</span></div>
+        <b>训练为什么不崩</b>
+        <p>五份显存开销、fp32 主权重、Adam 的三个数、warmup 曲线与 loss 尖峰回滚</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="tr-04-scaling-animation.html">
+        <div class="card-top"><span class="card-ico">📈</span><span class="num n-h4">· 04</span></div>
+        <b>要多大才够</b>
+        <p>幂律曲线、算力在参数与数据之间怎么分、MoE 用 18 倍容量只付 1 倍成本</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="tr-05-alignment-animation.html">
+        <div class="card-top"><span class="card-ico">🤝</span><span class="num n-h5">· 05</span></div>
+        <b>从会接话到会做事</b>
+        <p>SFT 教格式、奖励模型当人类替身、PPO 的四个模型、DPO 的简化、RLVR 让程序判卷</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="tr-06-ninety-days-animation.html">
+        <div class="card-top"><span class="card-ico">🗓️</span><span class="num n-h6">· 06</span></div>
+        <b>九十天出厂</b>
+        <p>小模型试错、开训后盯的三条曲线、Day 30 回滚、退火与长上下文、后训练出厂</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+    </div>
+  </div>
 
   <div class="series">
     <div class="series-head"><b>HERMES AGENT 对象拆解</b></div>

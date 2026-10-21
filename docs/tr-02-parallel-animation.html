@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="训练原理 02：大模型训练的并行切分 —— 五种刀法（DP/TP/PP/EP/CP）、NVLink 与 IB 的带宽差、2048 卡的 16×64×2 排布、流水线气泡的算法。">
+<title>一张卡放不下 · 训练原理 02</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#fb7185;--acc2:#fda4af;--accSoft:rgba(251,113,133,.34);
+    --accBg:rgba(251,113,133,.08);--accBd:rgba(251,113,133,.34);--accGl:rgba(251,113,133,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1,.s2,.s3,.s4,.s5,.s6,.s7,.s8,.s9{--glow:var(--accGl)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:1 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--acc2) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .bigcmp{display:flex;align-items:flex-end;gap:18px;margin-top:26px;justify-content:center;flex-wrap:wrap}
+  .bignum{text-align:center}
+  .bignum .v{font-family:var(--mono);font-size:clamp(23px,6.2vw,34px);font-weight:800;line-height:1}
+  .bignum .k{font-size:9.5px;color:var(--dim);margin-top:6px}
+  .bignum.old .v{color:#94a3b8;text-decoration:line-through;text-decoration-thickness:1px;opacity:.75}
+  .bignum.new .v{color:var(--acc)}
+  .bignum.mid .v{color:var(--acc2)}
+  .bignum.dim .v{color:#64748b}
+  .bigcmp .ar{font-size:18px;color:var(--dim);padding-bottom:12px}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 通用组件 */
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .stack{display:flex;flex-direction:column;gap:11px;width:100%;max-width:540px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:540px}
+  .cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;width:100%;max-width:540px}
+  .tag{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.07);color:#c3cde2}
+  .tag.acc{background:var(--accBg);color:var(--acc);border:1px solid var(--accBd)}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+  .big{font-family:var(--mono);font-size:clamp(20px,5vw,26px);font-weight:800;color:var(--acc);line-height:1}
+
+  .bars{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .bar{display:flex;align-items:center;gap:8px}
+  .bar .lbl{width:56px;flex:none;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .bar .track{flex:1;height:10px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .bar .fill{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accSoft),var(--acc))}
+  .screen.active .bar .fill{animation:grow .9s cubic-bezier(.2,1,.3,1) both}
+  @keyframes grow{to{width:var(--w,50%)}}
+  .bar .val{width:52px;flex:none;font-family:var(--mono);font-size:9.5px;color:#c3cde2}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .chartbox{width:100%;max-width:560px}
+  .chartbox canvas{width:100%;height:clamp(176px,34vh,236px);display:block}
+
+  /* 横向流程：节点 + 箭头 */
+  .flow{display:flex;align-items:stretch;width:100%;max-width:560px;gap:0}
+  .flow .n{flex:1;border:1px solid var(--line);border-radius:11px;background:var(--card);padding:12px 8px;text-align:center;
+    display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:0}
+  .flow .n .t{font-size:12px;font-weight:700}
+  .flow .n .s{font-family:var(--mono);font-size:9px;color:var(--dim);line-height:1.5}
+  .flow .n.hi{border-color:var(--accBd);background:var(--accBg)}
+  .flow .a{flex:none;width:20px;display:flex;align-items:center;justify-content:center;color:var(--acc);font-size:11px}
+
+  /* 概率轴：填充 + 参考线 */
+  .axis{position:relative;width:100%;max-width:520px;height:14px;border-radius:99px;background:rgba(255,255,255,.07);margin:22px 0 4px}
+  .axis .f{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accSoft),var(--acc))}
+  .screen.active .axis .f{animation:grow 1s cubic-bezier(.2,1,.3,1) both}
+  .axis .m{position:absolute;top:-6px;width:2px;height:26px;background:#94a3b8;border-radius:2px}
+  .axis .m span{position:absolute;top:-19px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:9px;color:var(--dim);white-space:nowrap}
+
+  /* 堆叠条：两段构成 */
+  .split{display:flex;width:100%;max-width:520px;height:24px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+  .split .a{background:var(--acc);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#0b1020;font-weight:700}
+  .split .b{flex:1;background:rgba(244,114,182,.72);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#2b0b18;font-weight:700}
+
+  /* 表格 */
+  .tbl{width:100%;max-width:540px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:rgba(7,11,20,.4)}
+  .tbl .r{display:grid;gap:6px;padding:9px 12px;font-size:11px;border-top:1px solid var(--line);align-items:center}
+  .tbl .r:first-child{border-top:none;background:rgba(255,255,255,.04);font-size:9px;letter-spacing:.1em;color:var(--dim);font-family:var(--mono)}
+  .tbl .r b{font-family:var(--mono);color:var(--acc);font-weight:700}
+
+  /* 点阵（一次 run 一条） */
+  .dots960{display:grid;grid-template-columns:repeat(60,1fr);gap:2px;width:100%;max-width:520px}
+  .dots960 i{aspect-ratio:1;border-radius:1px;background:rgba(96,165,250,.20);display:block}
+  .dots960 i.bad{background:#fb7185;box-shadow:0 0 9px rgba(251,113,133,.9)}
+
+  /* 字节尺 */
+  .bytebar{display:flex;width:100%;max-width:520px;height:34px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+  .bytebar .d{background:linear-gradient(180deg,var(--acc),var(--accSoft));display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:9.5px;color:#0b1020;font-weight:700}
+  .bytebar .s{background:rgba(244,114,182,.78);display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:9px;color:#2b0b18;font-weight:700}
+
+  .cells{display:grid;gap:3px;width:100%;max-width:520px}
+  .cells i{height:26px;border-radius:2px;background:rgba(255,255,255,.06);display:block}
+  .cells i.on{background:linear-gradient(180deg,var(--acc),var(--accSoft))}
+  .cells i.hot{background:linear-gradient(180deg,#fb7185,rgba(251,113,133,.35))}
+
+  /* 交互滑杆 */
+  .slider{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .slider .row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .slider .row b{color:var(--acc);font-size:12px}
+  .slider input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:99px;
+    background:rgba(255,255,255,.14);outline:none}
+  .slider input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+    background:var(--acc);border:2px solid #070b14;box-shadow:0 0 10px var(--accBd);cursor:pointer}
+  .slider input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--acc);
+    border:2px solid #070b14;cursor:pointer}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+:root{--acc:#a3e635;--acc2:#bef264;--accBg:rgba(163,230,53,.08);--accBd:rgba(163,230,53,.34);--accGl:rgba(163,230,53,.12);--accSoft:rgba(163,230,53,.34)}
+
+  .c3d{width:100%;max-width:540px;height:clamp(210px,42vh,302px);position:relative;
+    border:1px solid var(--line);border-radius:12px;background:rgba(7,11,20,.42);overflow:hidden}
+  .c3d canvas{display:block;width:100%!important;height:100%!important}
+
+  .memo{width:100%;max-width:540px;display:flex;flex-direction:column;gap:6px}
+  .memo .ln{display:flex;justify-content:space-between;align-items:baseline;
+    font-family:var(--mono);font-size:10.5px;padding:7px 11px;border-radius:8px;background:var(--card);border:1px solid var(--line)}
+  .memo .ln span{color:var(--dim);font-size:9.5px}
+  .memo .ln b{color:#c3cde2}
+  .memo .ln.sum{border-color:var(--accBd);background:var(--accBg)}
+  .memo .ln.sum b{color:var(--acc);font-size:12px}
+
+  .bub{width:100%;max-width:560px;display:flex;flex-direction:column;gap:4px}
+  .bub .st{display:flex;gap:3px;align-items:center}
+  .bub .st span{width:44px;flex:none;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .bub .st i{flex:1;height:16px;border-radius:2px;background:rgba(255,255,255,.045);border:1px solid transparent}
+  .bub .st i.b{background:rgba(163,230,53,.10);border:1px dashed rgba(163,230,53,.45)}
+  .bub .st i.on{background:var(--acc);border:1px solid var(--acc)}
+
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="tr-01-corpus-animation.html" aria-label="上一集" title="上一集：二十万亿个 token">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="tr-03-stability-animation.html" aria-label="下一集" title="下一集：训练为什么不崩">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1">
+  <div class="hero-kicker rv d1">TRAINING · 02 · 并行</div>
+  <h1 class="rv d2">一张卡<br><span class="grad">放不下</span></h1>
+  <p class="hero-sub rv d3">671B 个参数，每张卡只有 80 GB</p>
+  <div class="bigcmp rv d4">
+    <div class="bignum new"><div class="v">671 GB</div><div class="k">参数本身（1 字节）</div></div>
+    <div class="bignum old"><div class="v">8.7 TB</div><div class="k">真训起来要的</div></div>
+    <div class="bignum dim"><div class="v">≈110</div><div class="k">张 80 GB 卡</div></div>
+  </div>
+  <div class="next-hint">向下滚动 · 看这 110 张卡怎么切开<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1">01 · <b>五种刀法</b></div>
+    <h2 class="rv d2">切什么，取决于通信</h2>
+    <p class="scr-desc rv d3">并行不是一种技术，是一组取舍。<br>每种切法换来的显存，代价是一次特定的通信。</p>
+  </div>
+  <div class="stage">
+    <div class="tbl rv d4">
+      <div class="r" style="grid-template-columns:44px 1fr 96px"><span>切法</span><span>切在哪</span><span>代价</span></div>
+      <div class="r" style="grid-template-columns:44px 1fr 96px"><b>DP</b><span>整个模型复制一份</span><span>梯度 all-reduce</span></div>
+      <div class="r" style="grid-template-columns:44px 1fr 96px"><b>TP</b><span>每层的宽度</span><span>每层两次 all-reduce</span></div>
+      <div class="r" style="grid-template-columns:44px 1fr 96px"><b>PP</b><span>层的深度</span><span>边界传激活</span></div>
+      <div class="r" style="grid-template-columns:44px 1fr 96px"><b>EP</b><span>专家分散到各卡</span><span>all-to-all 路由</span></div>
+      <div class="r" style="grid-template-columns:44px 1fr 96px"><b>CP</b><span>一条序列切成几段</span><span>注意力跨卡交换</span></div>
+    </div>
+    <p class="small rv d5">TP 的通信<b>发生次数最多</b>（每层都有），所以它永远待在机内</p>
+  </div>
+  <div class="scr-foot rv d6">判断用哪种切法，只看一件事：<b>这份数据的通信，走 NVLink 还是走网线</b></div>
+</section>
+
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1">02 · <b>三个方向</b></div>
+    <h2 class="rv d2">把一个模型切成 64 块</h2>
+    <p class="scr-desc rv d3">横着切宽度、竖着切深度、再复制几份 —— 三个方向互不干扰，可以叠着用。</p>
+  </div>
+  <div class="stage">
+    <div class="c3d rv d4" id="c3d"></div>
+    <div class="cols3 rv d5" style="max-width:540px">
+      <div class="card"><div class="k">横 · TP</div><b>切宽度</b><p>同一层拆给 4 张卡</p></div>
+      <div class="card"><div class="k">竖 · PP</div><b>切深度</b><p>不同层放到不同卡</p></div>
+      <div class="card"><div class="k">深 · DP</div><b>复制整份</b><p>各算各的，事后对账</p></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">4 × 4 × 4 = <b>64 张卡</b>，这是一个 3D 并行的最小完整形态</div>
+</section>
+
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1">03 · <b>两条路</b></div>
+    <h2 class="rv d2">机内 400，机间 50</h2>
+    <p class="scr-desc rv d3">单位都是 GB/s。差八倍，决定了哪种切法只能待在机箱里。</p>
+  </div>
+  <div class="stage">
+    <div class="bars rv d4">
+      <div class="bar"><span class="lbl">NVLink</span><span class="track"><i class="fill" style="--w:100%"></i></span><span class="val">400 GB/s</span></div>
+      <div class="bar"><span class="lbl">IB 400G</span><span class="track"><i class="fill" style="--w:12.5%"></i></span><span class="val">50 GB/s</span></div>
+    </div>
+    <div class="facts rv d5">
+      <div class="fact"><span class="i">🔗</span><div><b>TP 走 NVLink</b><p>每层两次 all-reduce，次数太多，一旦出机箱就会被网络拖死。所以 TP 一般不超过 8（一台机器的卡数）。</p></div></div>
+      <div class="fact"><span class="i">🌐</span><div><b>PP / EP / DP 走网线</b><p>每步只通信一次，量虽大但次数少，可以跨机 —— 代价是要等。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">并行的本质不是「分得更细」，是<b>把通信放在更短的那根线上</b></div>
+</section>
+
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1">04 · <b>实例</b></div>
+    <h2 class="rv d2">2048 张卡怎么排</h2>
+    <p class="scr-desc rv d3">671B 的 MoE 模型，三个维度同时开：深 16 段 × 专家 64 路 × 数据 2 份。</p>
+  </div>
+  <div class="stage">
+    <div class="memo rv d4">
+      <div class="ln"><b>PP = 16</b><span>层分成 16 段，跨机</span></div>
+      <div class="ln"><b>EP = 64</b><span>每段里 64 路专家并行</span></div>
+      <div class="ln"><b>DP = 2</b><span>两份数据副本，ZeRO-1 切优化器</span></div>
+      <div class="ln sum"><b>16 × 64 × 2 = 2048</b><span>张 H800</span></div>
+    </div>
+    <p class="small rv d5">没有用 TP —— MoE 的专家已经把参数摊开了，<b>再切宽度收益很低</b></p>
+  </div>
+  <div class="scr-foot rv d6">每个维度都在回应一个具体约束：<b>显存放不下、专家要在一起、梯度要对账</b></div>
+</section>
+
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1">05 · <b>气泡</b></div>
+    <h2 class="rv d2">切得越深，等得越久</h2>
+    <p class="scr-desc rv d3">流水线并行像工厂传送带：第一件要走到最后一站，最后一站才开始干活。<br>中间那段空转，叫气泡。</p>
+  </div>
+  <div class="stage">
+    <div class="bub rv d4">
+      <div class="st"><span>段 1</span><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="b"></i><i class="b"></i><i class="b"></i></div>
+      <div class="st"><span>段 2</span><i class="b"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="b"></i><i class="b"></i></div>
+      <div class="st"><span>段 3</span><i class="b"></i><i class="b"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="b"></i></div>
+      <div class="st"><span>段 4</span><i class="b"></i><i class="b"></i><i class="b"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div>
+    </div>
+    <p class="small rv d5">实色是干活，虚线框是空转。气泡比例 ≈ <b>(段数 − 1) ÷ (微批 + 段数 − 1)</b></p>
+  </div>
+  <div class="scr-foot rv d6">4 段 8 个微批 → 空转 <b>3/11 ≈ 27%</b>。切得越深省显存越多，浪费也越多</div>
+</section>
+
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1">尾声</div>
+    <h2 class="rv d2">并行是一道换算题</h2>
+  </div>
+  <div class="stage">
+    <div class="codeblk rv d4">显存不够   →   切一刀
+切一刀     →   多一次通信
+多一次通信 →   把这条线换短
+
+<i>机内 / 机间 · 次数多 / 次数少</i></div>
+    <p class="small rv d5">没有人靠一种切法训完大模型。<br>所有并行方案，都是<b>通信与显存的兑换比例</b>。</p>
+  </div>
+  <div class="scr-foot rv d6">下一集：这个换算表随时可能崩 —— 训练是怎么保住不炸的</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  var HOOK = null;
+  /* ---------- episode ---------- */
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (HOOK) { try { HOOK(i); } catch (e) {} }
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+<script src="vendor/three.global.js"></script>
+<script>
+(function () {
+  var host = document.getElementById('c3d');
+  if (!host) return;
+  var st = null;
+
+  function fitD(w, h) {
+    var span = 2.62;
+    var vfov = 32 * Math.PI / 180;
+    var d = span / (2 * Math.tan(vfov / 2));
+    var byW = span / (2 * Math.tan(vfov / 2) * (w / h));
+    return Math.max(d, byW) * 1.16;
+  }
+
+  var DIR = { y: 0.62, z: 0.78 };
+
+  function init() {
+    if (!window.THREE) return false;
+    var THREE = window.THREE;
+    var w = host.clientWidth, h = host.clientHeight;
+    if (!w || !h) return false;
+
+    var scene = new THREE.Scene();
+    var cam = new THREE.PerspectiveCamera(32, w / h, 0.1, 100);
+    var D = fitD(w, h);
+    cam.position.set(0, D * DIR.y, D * DIR.z);
+    cam.lookAt(0, 0, 0);
+
+    var renderer;
+    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
+    catch (e) { return false; }
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setSize(w, h);
+    host.appendChild(renderer.domElement);
+
+    var N = 4, S = 0.30, GAP = 0.115, STEP = S + GAP;
+    var geo = new THREE.BoxGeometry(S, S, S);
+    /* 基材质必须是白色：实例色会乘上去 */
+    var mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.94 });
+    var mesh = new THREE.InstancedMesh(geo, mat, N * N * N);
+    var m4 = new THREE.Matrix4();
+    var col = new THREE.Color();
+    var HUES = [0.105, 0.24, 0.51, 0.76];   /* amber / lime / cyan / purple */
+
+    var k = 0;
+    for (var ix = 0; ix < N; ix++) {
+      for (var iy = 0; iy < N; iy++) {
+        for (var iz = 0; iz < N; iz++) {
+          m4.makeTranslation(
+            (ix - (N - 1) / 2) * STEP,
+            (iy - (N - 1) / 2) * STEP,
+            (iz - (N - 1) / 2) * STEP
+          );
+          mesh.setMatrixAt(k, m4);
+          col.setHSL(HUES[ix], 0.82, 0.56);
+          mesh.setColorAt(k, col);
+          k++;
+        }
+      }
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+
+    var group = new THREE.Group();
+    group.add(mesh);
+
+    /* 底部网格，给一个空间参照 */
+    var grid = new THREE.GridHelper(3.0, 12, 0x1e293b, 0x141d2e);
+    grid.position.y = -0.98;
+    group.add(grid);
+
+    scene.add(group);
+    st = { scene: scene, cam: cam, renderer: renderer, group: group, t: 0 };
+    return true;
+  }
+
+  function visible() {
+    var r = host.getBoundingClientRect();
+    return r.bottom > 0 && r.top < innerHeight;
+  }
+
+  var last = 0;
+  function tick(now) {
+    requestAnimationFrame(tick);
+    if (!st) return;
+    var dt = Math.min((now - last) / 1000 || 0, 0.05);
+    last = now;
+    if (!visible()) return;
+    st.t += dt;
+    st.group.rotation.y = Math.sin(st.t * 0.30) * 0.42 + 0.5;
+    st.renderer.render(st.scene, st.cam);
+  }
+
+  function boot() {
+    if (!init()) {
+      host.style.background = 'radial-gradient(58% 44% at 50% 52%, rgba(163,230,53,.12), transparent 70%)';
+    }
+    requestAnimationFrame(tick);
+  }
+
+  var rz;
+  addEventListener('resize', function () {
+    clearTimeout(rz);
+    rz = setTimeout(function () {
+      if (!st) return;
+      var w = host.clientWidth, h = host.clientHeight;
+      if (!w || !h) return;
+      st.cam.aspect = w / h;
+      var D = fitD(w, h);
+      st.cam.position.set(0, D * DIR.y, D * DIR.z);
+      st.cam.lookAt(0, 0, 0);
+      st.cam.updateProjectionMatrix();
+      st.renderer.setSize(w, h);
+    }, 150);
+  });
+
+  if (document.readyState === 'complete') boot();
+  else addEventListener('load', boot);
+})();
+</script>
+
+</body>
+</html>

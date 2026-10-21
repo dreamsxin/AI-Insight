@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="训练原理 01：预训练语料的清洗流水线 —— 抓取、抽正文、去重（精确与近似）、质量打分、配比、token 化，以及为什么今天的模型要「过度训练」。">
+<title>二十万亿个 token · 训练原理 01</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#fb7185;--acc2:#fda4af;--accSoft:rgba(251,113,133,.34);
+    --accBg:rgba(251,113,133,.08);--accBd:rgba(251,113,133,.34);--accGl:rgba(251,113,133,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1,.s2,.s3,.s4,.s5,.s6,.s7,.s8,.s9{--glow:var(--accGl)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:1 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--acc2) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .bigcmp{display:flex;align-items:flex-end;gap:18px;margin-top:26px;justify-content:center;flex-wrap:wrap}
+  .bignum{text-align:center}
+  .bignum .v{font-family:var(--mono);font-size:clamp(23px,6.2vw,34px);font-weight:800;line-height:1}
+  .bignum .k{font-size:9.5px;color:var(--dim);margin-top:6px}
+  .bignum.old .v{color:#94a3b8;text-decoration:line-through;text-decoration-thickness:1px;opacity:.75}
+  .bignum.new .v{color:var(--acc)}
+  .bignum.mid .v{color:var(--acc2)}
+  .bignum.dim .v{color:#64748b}
+  .bigcmp .ar{font-size:18px;color:var(--dim);padding-bottom:12px}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 通用组件 */
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .stack{display:flex;flex-direction:column;gap:11px;width:100%;max-width:540px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:540px}
+  .cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;width:100%;max-width:540px}
+  .tag{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.07);color:#c3cde2}
+  .tag.acc{background:var(--accBg);color:var(--acc);border:1px solid var(--accBd)}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+  .big{font-family:var(--mono);font-size:clamp(20px,5vw,26px);font-weight:800;color:var(--acc);line-height:1}
+
+  .bars{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .bar{display:flex;align-items:center;gap:8px}
+  .bar .lbl{width:56px;flex:none;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .bar .track{flex:1;height:10px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .bar .fill{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accSoft),var(--acc))}
+  .screen.active .bar .fill{animation:grow .9s cubic-bezier(.2,1,.3,1) both}
+  @keyframes grow{to{width:var(--w,50%)}}
+  .bar .val{width:52px;flex:none;font-family:var(--mono);font-size:9.5px;color:#c3cde2}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .chartbox{width:100%;max-width:560px}
+  .chartbox canvas{width:100%;height:clamp(176px,34vh,236px);display:block}
+
+  /* 横向流程：节点 + 箭头 */
+  .flow{display:flex;align-items:stretch;width:100%;max-width:560px;gap:0}
+  .flow .n{flex:1;border:1px solid var(--line);border-radius:11px;background:var(--card);padding:12px 8px;text-align:center;
+    display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:0}
+  .flow .n .t{font-size:12px;font-weight:700}
+  .flow .n .s{font-family:var(--mono);font-size:9px;color:var(--dim);line-height:1.5}
+  .flow .n.hi{border-color:var(--accBd);background:var(--accBg)}
+  .flow .a{flex:none;width:20px;display:flex;align-items:center;justify-content:center;color:var(--acc);font-size:11px}
+
+  /* 概率轴：填充 + 参考线 */
+  .axis{position:relative;width:100%;max-width:520px;height:14px;border-radius:99px;background:rgba(255,255,255,.07);margin:22px 0 4px}
+  .axis .f{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accSoft),var(--acc))}
+  .screen.active .axis .f{animation:grow 1s cubic-bezier(.2,1,.3,1) both}
+  .axis .m{position:absolute;top:-6px;width:2px;height:26px;background:#94a3b8;border-radius:2px}
+  .axis .m span{position:absolute;top:-19px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:9px;color:var(--dim);white-space:nowrap}
+
+  /* 堆叠条：两段构成 */
+  .split{display:flex;width:100%;max-width:520px;height:24px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+  .split .a{background:var(--acc);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#0b1020;font-weight:700}
+  .split .b{flex:1;background:rgba(244,114,182,.72);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#2b0b18;font-weight:700}
+
+  /* 表格 */
+  .tbl{width:100%;max-width:540px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:rgba(7,11,20,.4)}
+  .tbl .r{display:grid;gap:6px;padding:9px 12px;font-size:11px;border-top:1px solid var(--line);align-items:center}
+  .tbl .r:first-child{border-top:none;background:rgba(255,255,255,.04);font-size:9px;letter-spacing:.1em;color:var(--dim);font-family:var(--mono)}
+  .tbl .r b{font-family:var(--mono);color:var(--acc);font-weight:700}
+
+  /* 点阵（一次 run 一条） */
+  .dots960{display:grid;grid-template-columns:repeat(60,1fr);gap:2px;width:100%;max-width:520px}
+  .dots960 i{aspect-ratio:1;border-radius:1px;background:rgba(96,165,250,.20);display:block}
+  .dots960 i.bad{background:#fb7185;box-shadow:0 0 9px rgba(251,113,133,.9)}
+
+  /* 字节尺 */
+  .bytebar{display:flex;width:100%;max-width:520px;height:34px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+  .bytebar .d{background:linear-gradient(180deg,var(--acc),var(--accSoft));display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:9.5px;color:#0b1020;font-weight:700}
+  .bytebar .s{background:rgba(244,114,182,.78);display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:9px;color:#2b0b18;font-weight:700}
+
+  .cells{display:grid;gap:3px;width:100%;max-width:520px}
+  .cells i{height:26px;border-radius:2px;background:rgba(255,255,255,.06);display:block}
+  .cells i.on{background:linear-gradient(180deg,var(--acc),var(--accSoft))}
+  .cells i.hot{background:linear-gradient(180deg,#fb7185,rgba(251,113,133,.35))}
+
+  /* 交互滑杆 */
+  .slider{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .slider .row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .slider .row b{color:var(--acc);font-size:12px}
+  .slider input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:99px;
+    background:rgba(255,255,255,.14);outline:none}
+  .slider input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+    background:var(--acc);border:2px solid #070b14;box-shadow:0 0 10px var(--accBd);cursor:pointer}
+  .slider input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--acc);
+    border:2px solid #070b14;cursor:pointer}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+:root{--acc:#fbbf24;--acc2:#fcd34d;--accBg:rgba(251,191,36,.08);--accBd:rgba(251,191,36,.34);--accGl:rgba(251,191,36,.12);--accSoft:rgba(251,191,36,.34)}
+
+  .pipe{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:100%;max-width:540px}
+  .pipe > div{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:11px 10px;position:relative}
+  .pipe > div.hi{border-color:var(--accBd);background:var(--accBg)}
+  .pipe > div .n{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.08em}
+  .pipe > div .t{font-size:12.5px;font-weight:700;margin:3px 0 2px}
+  .pipe > div .s{font-size:9.5px;color:var(--dim);line-height:1.5}
+
+  .dup{width:100%;max-width:520px;display:flex;flex-direction:column;gap:7px}
+  .dup .doc{display:flex;gap:3px;align-items:center}
+  .dup .doc .tag{width:50px;flex:none;font-family:var(--mono);font-size:9px;color:var(--dim);white-space:nowrap}
+  .dup .doc i{flex:1;height:15px;border-radius:2px;background:rgba(255,255,255,.07)}
+  .dup .doc i.same{background:var(--acc)}
+  .dup .doc i.near{background:rgba(251,191,36,.42)}
+  .dup .legend{display:flex;gap:18px;justify-content:center;font-size:9.5px;color:var(--dim);margin-top:3px}
+  .dup .legend b{color:var(--acc)}
+
+  .mix{width:100%;max-width:520px;display:flex;flex-direction:column;gap:7px}
+  .mix .r{display:flex;align-items:center;gap:8px}
+  .mix .r .nm{width:62px;flex:none;font-size:10px;color:#c3cde2;text-align:right}
+  .mix .r .tk{flex:1;height:16px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden}
+  .mix .r .fl{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accSoft),var(--acc));border-radius:4px}
+  .screen.active .mix .r .fl{animation:grow .9s cubic-bezier(.2,1,.3,1) both;animation-delay:calc(var(--i) * 90ms + .2s)}
+  .mix .r .pc{width:34px;flex:none;font-family:var(--mono);font-size:9.5px;color:var(--acc);text-align:right}
+  .mix .r .wt{width:56px;flex:none;font-size:9px;color:#5b657c}
+
+  .budget{display:flex;gap:10px;width:100%;max-width:520px;align-items:flex-end;justify-content:center}
+  .budget .col{flex:0 0 132px;text-align:center;display:flex;flex-direction:column;justify-content:flex-end;gap:6px}
+  .budget .col .bar2{border-radius:8px 8px 0 0;background:linear-gradient(180deg,var(--acc),var(--accSoft));
+    width:100%;height:var(--h);display:flex;align-items:flex-start;justify-content:center;padding-top:6px}
+  .budget .col.opt .bar2{background:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,.06));border:1px dashed rgba(255,255,255,.32)}
+  .budget .col .v{font-family:var(--mono);font-size:13px;font-weight:800;color:var(--acc)}
+  .budget .col.opt .v{color:#94a3b8}
+  .budget .col .k{font-size:9.5px;color:var(--dim);line-height:1.5;min-height:26px}
+
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <span class="epnav-b dis" aria-hidden="true">‹</span>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="tr-02-parallel-animation.html" aria-label="下一集" title="下一集：一张卡放不下">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1">
+  <div class="hero-kicker rv d1">TRAINING · 01 · 数据</div>
+  <h1 class="rv d2">二十万亿个<br><span class="grad">token</span></h1>
+  <p class="hero-sub rv d3">模型不是被写出来的，是<strong>喂</strong>出来的</p>
+  <div class="bigcmp rv d4">
+    <div class="bignum new"><div class="v">14.8T</div><div class="k">预训练 token</div></div>
+    <div class="bignum mid"><div class="v">671B</div><div class="k">总参数</div></div>
+    <div class="bignum dim"><div class="v">37B</div><div class="k">每 token 激活</div></div>
+  </div>
+  <div class="next-hint">向下滚动 · 看这 14.8 万亿是怎么筛出来的<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1">01 · <b>流水线</b></div>
+    <h2 class="rv d2">从网页到整数流</h2>
+    <p class="scr-desc rv d3">抓下来的原始网页不能直接训。<br>中间隔着一整条清洗流水线，真正决定模型质量的是这里。</p>
+  </div>
+  <div class="stage">
+    <div class="pipe rv d4">
+<div class=""><div class="n">01</div><div class="t">抓取</div><div class="s">网页 / 代码 / 论文</div></div><div class=""><div class="n">02</div><div class="t">抽正文</div><div class="s">去掉导航与广告</div></div><div class="hi"><div class="n">03</div><div class="t">去重</div><div class="s">整篇与近似</div></div><div class="hi"><div class="n">04</div><div class="t">质量分</div><div class="s">启发式 + 分类器</div></div><div class="hi"><div class="n">05</div><div class="t">配比</div><div class="s">谁多谁少</div></div><div class=""><div class="n">06</div><div class="t">切 token</div><div class="s">变成整数流</div></div>
+    </div>
+    <p class="small rv d5">标注的三步是真正拉开差距的地方 —— 同样的网页，<b>去重和质量分不同，训出来的模型不是一个水平</b></p>
+  </div>
+  <div class="scr-foot rv d6">后面每一步都在做同一件事：<b>从十倍的数据里，挑出值得学的那一份</b></div>
+</section>
+
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1">02 · <b>去重</b></div>
+    <h2 class="rv d2">同一句话，听了三十遍</h2>
+    <p class="scr-desc rv d3">网页之间大量互相转载。重复数据不会让模型更懂，只会让它<b>背下来</b> —— 这正是幻觉的一个来源。</p>
+  </div>
+  <div class="stage">
+    <div class="dup rv d4">
+      <div class="doc"><span class="tag">文档 A</span><i class="same"></i><i class="same"></i><i class="same"></i><i></i><i class="same"></i><i></i><i></i></div>
+      <div class="doc"><span class="tag">文档 B</span><i class="same"></i><i class="same"></i><i class="same"></i><i class="near"></i><i class="same"></i><i></i><i class="near"></i></div>
+      <div class="legend"><span><b>实色</b> 完全相同的片段</span><span><b>浅色</b> 改了几个字</span></div>
+    </div>
+    <div class="cols rv d5" style="max-width:520px">
+      <div class="card"><div class="k">精确去重</div><b>比指纹</b><p>整篇算一个 hash，相同直接丢。快，但只能抓住一字不改的转载。</p></div>
+      <div class="card"><div class="k">近似去重</div><b>比片段集合</b><p>把文章切成若干片段，采样算 Jaccard 相似度。超过阈值就判为重复。</p></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">近似去重的门槛通常是 <b>Jaccard &gt; 0.8</b> —— 保住改写，去掉转载</div>
+</section>
+
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1">03 · <b>质量</b></div>
+    <h2 class="rv d2">什么叫「好文本」</h2>
+    <p class="scr-desc rv d3">机器不认识好坏，所以先给它一套可以计算的判据。</p>
+  </div>
+  <div class="stage">
+    <div class="facts rv d4" style="max-width:520px">
+      <div class="fact"><span class="i">📏</span><div><b>长度与结构</b><p>太短的多是导航条和评论，太长的多是拼接页。段落数、句长分布都算信号。</p></div></div>
+      <div class="fact"><span class="i">🔣</span><div><b>符号比例</b><p>乱码、菜单、代码片段混在正文里，符号占比会异常。这一步几乎零成本。</p></div></div>
+      <div class="fact"><span class="i">🎓</span><div><b>训个分类器打分</b><p>拿维基、教材、获奖书籍当正例，训一个小模型给网页打「像不像教科书」的分，按分位截断。</p></div></div>
+    </div>
+    <p class="small rv d5">前两条是<b>规则</b>，第三条是<b>学习</b> —— 用干净语料当尺子，去量脏语料</p>
+  </div>
+  <div class="scr-foot rv d6">这一步的产出不是「留下好数据」，而是给每篇文档一个分数，<b>让配比阶段有得挑</b></div>
+</section>
+
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1">04 · <b>配比</b></div>
+    <h2 class="rv d2">喂什么，长什么</h2>
+    <p class="scr-desc rv d3">总量定了之后，<b>比例</b>决定能力分布。这是训练里最像「配方」的一步。</p>
+  </div>
+  <div class="stage">
+    <div class="mix rv d4">
+<div class="r"><span class="nm">代码</span><span class="tk"><i class="fl" style="--w:28%;--i:0"></i></span><span class="pc">28%</span><span class="wt">逻辑与结构</span></div><div class="r"><span class="nm">网页</span><span class="tk"><i class="fl" style="--w:26%;--i:1"></i></span><span class="pc">26%</span><span class="wt">世界知识</span></div><div class="r"><span class="nm">数学</span><span class="tk"><i class="fl" style="--w:18%;--i:2"></i></span><span class="pc">18%</span><span class="wt">推理链</span></div><div class="r"><span class="nm">中文</span><span class="tk"><i class="fl" style="--w:16%;--i:3"></i></span><span class="pc">16%</span><span class="wt">母语</span></div><div class="r"><span class="nm">书籍论文</span><span class="tk"><i class="fl" style="--w:12%;--i:4"></i></span><span class="pc">12%</span><span class="wt">长文连贯</span></div>
+    </div>
+    <p class="small rv d5">示意比例，各家的真实配比都是核心机密 · <b>代码给结构，网页给常识，数学给推理链</b></p>
+  </div>
+  <div class="scr-foot rv d6">配比错了不是「少学一点」，是<b>偏科</b> —— 代码放多了模型说话像 README</div>
+</section>
+
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1">05 · <b>预算</b></div>
+    <h2 class="rv d2">二十倍，还是两百倍</h2>
+    <p class="scr-desc rv d3">同样的算力，可以训一个<b>大而短</b>的模型，也可以训一个<b>小而久</b>的模型。<br>后者更划算 —— 因为推理是永久的。</p>
+  </div>
+  <div class="stage">
+    <div class="budget rv d4">
+      <div class="col opt"><div class="v">20×</div><div class="bar2" style="--h:58px"></div><div class="k">算力最优<br>Chinchilla</div></div>
+      <div class="col"><div class="v">285×</div><div class="bar2" style="--h:150px"></div><div class="k">部署最优<br>今天的做法</div></div>
+    </div>
+    <p class="small rv d5">（柱高为示意，非等比）每个参数配 20 个 token 是「把这一轮训练做到最省」；<br>配到两百倍以上，是<b>把未来几年的推理账单做小</b></p>
+  </div>
+  <div class="scr-foot rv d6">训练花一次钱，推理花一辈子钱 —— <b>所以模型宁愿「过度训练」</b></div>
+</section>
+
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1">尾声</div>
+    <h2 class="rv d2">数据是世界的压缩包</h2>
+  </div>
+  <div class="stage">
+    <div class="codeblk rv d4">文本  →  压缩  →  参数
+<i>14.8T token              671B 个数</i>
+
+压缩得好  =  抓住了规律  =  能泛化
+压缩得差  =  只记住了原文  =  会背不会用</div>
+    <p class="small rv d5">模型没有一张存着原文的表。<br>它把这些文本压进了参数里 —— <b>压得越狠，越像懂了</b>。</p>
+  </div>
+  <div class="scr-foot rv d6">下一集：这 671B 个数，怎么塞进 2048 张卡</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  var HOOK = null;
+  /* ---------- episode ---------- */
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (HOOK) { try { HOOK(i); } catch (e) {} }
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+
+</body>
+</html>
