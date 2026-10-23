@@ -35,6 +35,20 @@ Frontend (run from `frontend/`):
   models in `models/`; chapter content and the 100-term library in `data/`.
   Services raise `ValueError` for bad input; routers translate it to HTTP 400 via
   the `_safe()` helper — follow this pattern for new compute endpoints.
+- **Agent framework (`app/agent/`)**: a self-contained, production-grade async
+  agent runtime (`Agent` loop, `ToolRegistry`, `LLMClient`, `Guardrails`,
+  Pydantic models in `models.py`, typed errors in `errors.py`; see
+  `app/agent/README.md`). It is deliberately **decoupled** from
+  routers/services/models — it imports nothing from them, and nothing imports
+  it yet. Design: the model only proposes tool calls, the host executes
+  (`think → act → observe`); guardrails (max steps, token budgets, repeat
+  detection, tool allowlist) are enforced in code, not prompts; every step
+  emits a structured event through the `on_event` callback (sync or async).
+  `LLMClient` speaks the OpenAI Chat Completions protocol via `httpx` and
+  reads `LLM_BASE_URL` / `LLM_API_KEY` from the environment (config.py does
+  NOT load .env files). When wiring it into a router later, note that
+  `AgentError` subclasses are NOT `ValueError` — `_safe()` won't catch them;
+  add a dedicated AgentError → HTTP mapping instead.
 - **Content is data-driven**: `backend/app/data/chapters.py` defines
   Chapter → Page, and each page names a visualization by **string** plus its
   `ControlConfig`s. The frontend resolves that string through `VIZ_REGISTRY`.
@@ -68,6 +82,11 @@ Frontend (run from `frontend/`):
 - Trained models persist as individual JSON files under
   `backend/app/data/saved_models/` (no database). The directory is git-ignored and
   created at runtime by `services/model_store.py`; don't commit model files.
+- Agent async tests (`app/tests/test_agent.py`) rely on `pytest-asyncio`
+  (listed in requirements.txt; `asyncio_mode=auto` is set in pytest.ini).
+  LLM credentials for `app/agent` come from the environment
+  (`LLM_BASE_URL` / `LLM_API_KEY`) — never commit keys; the 12 agent tests
+  run offline against a FakeLLM and need no credentials.
 - `docs/` holds the animation collection; `index.html` is the only entry point
   and links all 103 episodes (none orphaned). Twelve series, in index order:
   训练原理 ·01–06 (`tr-` prefix, the L1 layer that used to hold only four

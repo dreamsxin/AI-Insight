@@ -5,7 +5,7 @@
     python docs/tools/nav-gen.py          # 注入/更新
     python docs/tools/nav-gen.py --check  # 只检查是否与索引一致，不写文件
 
-顺序来源：index.html 中 a.card 的出现顺序（9 个系列、共 82 集）。
+顺序来源：index.html 中 a.card 的出现顺序（12 个系列、共 103 集）。
 幂等：每次先删除 <!-- epnav:start --> … <!-- epnav:end --> 再重新插入。
 新增或删除一集后重跑本脚本即可，不要手工改单集文件。
 """
