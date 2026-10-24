@@ -90,3 +90,55 @@ Addy Osmani《Agent Harness Engineering》：
 8. tianpan.co — Anatomy of an Agent Harness（2026-02，Scaffolding vs Harness）
 9. awesome-harness-engineering（GitHub，含 2026-09 上下文提权攻击分析）
 10. HPE Community — Context vs Memory vs Harness Engineering（两段式模式解读）
+
+## 五、第二轮调研（2026-10-24 · 面向路线图）
+
+针对「下一步该往 harness 里补什么」做的深化抓取，两篇全文：
+
+### LangChain《The Anatomy of an Agent Harness》（2026-03-10）
+
+- 公式同前：**Agent = Model + Harness**，「如果你不是模型，你就是 harness」。
+- **按期望行为逆向设计 harness**（behavior → design）是全文方法论。
+- 组件清单：**文件系统 + Git**（最基础原语：持久化、上下文卸载、跨会话账本、
+  可回滚分支实验）；**Bash/代码执行**（通用工具，模型自己造工具）；**沙箱**
+  （隔离执行、白名单、网络隔离，形成「写码→跑测试→看日志→修错」闭环）；
+  **记忆与搜索**（AGENTS.md 持续记忆 + Web Search/MCP 突破知识截止）；
+  **对抗 context rot**（compaction、工具输出卸载存文件、Skills 渐进披露）；
+  **长时程自主**（规划文件 + hook 跑测试回传错误 + Ralph Loop 拦截提前退出）。
+- 硬数字：**仅改 harness，Terminal Bench 2.0 从 52.8% 升至 66.5%**
+  （Top 30 → Top 5）；同一 Opus 4.6 在 Claude Code harness 里得分显著低于
+  其他 harness。
+- 开放问题：数百 agent 并行共享代码库；agent 分析自身 trace 修复 harness；
+  按任务动态组装工具与上下文。
+
+### MongoDB《The Agent Harness: Why the LLM Is the Smallest Part》（2026-04）
+
+- **六大组件**：① 状态与持久化（checkpoint/恢复/生命周期管理；等待人工审批
+  的暂停 agent 仍在烧基础设施）；② 安全与治理（身份传播、权限范围、审计；
+  三大失败模式：工具调用身份未传播→外泄、上下文未消毒→注入、共享系统身份
+  →访问控制失准）；③ 编排与工具调用（MCP 只解决连通性，不解决协调/限流/
+  沙箱——生产事故多发于此）；④ 记忆（工作记忆 vs 持久存储两级）；⑤ 可观测
+  （三信号：输出、推理轨迹、促成决策的记忆与调用）；⑥ 评估（带外运行，
+  读可观测数据决定可否部署）。
+- **Harness ≠ 平台**：三层成熟度（提示包装器 → 有状态编排 → 治理化机队），
+  全球平均 35/100，仅 <1% 超过 50。审计三问：**agent 能否从检查点恢复？
+  平台能否产出审计轨迹？能否看到每次行动的成本？**任一「还没有」即未达
+  生产标准。
+- 硬数字：Claude Code 泄露源码约 **51.2 万行 TS**，模型交互只占极小部分；
+  **Vercel 删掉 80% 的工具后成功率 80%→100%、token 减半、延迟 724s→141s**；
+  Princeton CORE-Bench 同模型不同 scaffold **42% vs 78%**；Harvey 靠 harness
+  优化准确率翻倍。反方证据：Scale AI SWE-Atlas 与 METR 发现部分模型家族对
+  harness 不敏感——**harness 收益因模型而异，评估先行**。
+
+### 对路线图的直接推论
+
+1. 「评估/可观测」不是 P2 尾活而是 harness 六大件之一 → trace 落盘与最小
+   评估集应升级为独立工作项（对应避坑 04 期方法论）。
+2. **工具瘦身审计**有硬数字背书（Vercel 案例）→ 给 `ToolRegistry` 加
+   「工具利用率统计」比加新工具更有价值。
+3. **checkpoint 恢复 + 审计轨迹 + 单行动成本**三问 = 生产标准自检表 →
+   `app.agent` 已有事件流与 messages 序列化，缺「落盘 + 成本标注」。
+4. **上下文来源消毒**（MongoDB 失败模式二 / 2026-09 提权攻击）→ 工具结果
+   打「数据非指令」标记应进框架层而非提示词层。
+5. 长任务两段式（Anthropic）适合作为 **examples 进阶篇**（feature 清单 +
+   progress 文件），暂不进框架核心。

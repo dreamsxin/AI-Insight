@@ -190,10 +190,11 @@ AI-Insight/
 
 下一步规划详见 [`docs/research/roadmap-2026-10.md`](docs/research/roadmap-2026-10.md)。摘要：
 
-- **P0 · Agent 框架接入应用**：`/api/agent/chat` 端点（AgentError→HTTP 映射）+ 前端 API 封装
-- **P1 · 前端 Agent Playground**：以第 10 章形式融入章节模型（零路由改动）；把 NumPy 计算服务注册为 Agent 工具形成教学闭环
+- **✅ 已完成**：`/api/agent/chat` + SSE 流式端点（51 后端测试）；进阶机制 ·08《从零造一个 Harness》动画；`examples/agent-harness-demo/` 五个离线可运行脚本；Harness 资料汇编
+- **P1 · 前端 Agent Playground**：第 10 章形式融入章节模型（零路由改动），展示工具轨迹与护栏触发
+- **P1 · Harness 深化**：trace 落盘与最小评估集、checkpoint store、工具结果来源标记（防上下文提权）、工具利用率审计——依据 `docs/research/agent-harness-research.md` 第二轮调研
 - **P1 · 动画库收尾**：推理原理第三季剩余 9 集（inf-26–29、32–36）
-- **P2 · 工程深化**：真实模型 e2e、评估集与 trace 落盘、子代理支持、会话持久化
+- **P2 · 工程深化**：真实模型 e2e、长任务两段式示例、治理三问自检（恢复/审计/成本）、子代理支持
 
 ## 📝 License
 
