@@ -88,7 +88,7 @@ Frontend (run from `frontend/`):
   (`LLM_BASE_URL` / `LLM_API_KEY`) — never commit keys; the 12 agent tests
   run offline against a FakeLLM and need no credentials.
 - `docs/` holds the animation collection; `index.html` is the only entry point
-  and links all 103 episodes (none orphaned). Twelve series, in index order:
+  and links all 104 episodes (none orphaned). Twelve series, in index order:
   训练原理 ·01–06 (`tr-` prefix, the L1 layer that used to hold only four
   episodes: corpus pipeline & dedup & mixture, parallel sharding
   DP/TP/PP/EP/CP with the
@@ -100,7 +100,9 @@ Frontend (run from `frontend/`):
   extrapolation); HERMES AGENT 进阶机制 ·01–07 (thinking budget wired into the
   main loop, Skills progressive disclosure, Hooks lifecycle slots, MCP 2026
   transport evolution, A2A & multi-agent sobering, Harness
-  scaffold/checkpoint/background tasks, CUA); AI 运作原理拆解 ·01–15 (13 推理
+  scaffold/checkpoint/background tasks, CUA, and building a harness from
+  scratch step by step — paired with runnable scripts in
+  `examples/agent-harness-demo/`); AI 运作原理拆解 ·01–15 (13 推理
   模型与思维链 is the merged episode: thinking-token mechanism, trial-and-error
   chain, test-time compute, effort spectrum, billing — it absorbed the old
   深入篇 思考链 episode, and its hero is a 3D search tree that backtracks); AI
@@ -140,7 +142,7 @@ Frontend (run from `frontend/`):
   which is idempotent. After adding, removing or reordering an episode,
   re-run it (`--check` reports drift without writing). Never hand-edit the
   block — it is replaced wholesale on the next run, and it is what keeps the
-  episodes from being 103 dead ends.
+  episodes from being 104 dead ends.
 - **Index affordances.** `index.html` also has a client-side search (`/`
   focuses, `Esc` clears; matches `a.card` on text + href), a static 知识地图
   (L1 训练 → L2 模型原理 → L3 推理服务 → L4 Agent 工程) and three recommended

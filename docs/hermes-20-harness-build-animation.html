@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="从零造一个 Agent Harness：裸模型的三个缺口 → 工具循环 → 三道保险丝 → 错误回填 → 轨迹与检查点 → Anthropic 长任务两段式，配套可运行示例，逐屏动画演示">
+<title>从零造一个 Harness · 逐屏动画演示</title>
+<style>
+  :root {
+    --bg0: #070b14; --bg1: #0c1322; --ink: #e8eefc; --dim: #8b96ad;
+    --cyan: #22d3ee; --purple: #a78bfa; --green: #34d399;
+    --amber: #fbbf24; --red: #fb7185; --pink: #f472b6;
+    --card: rgba(255,255,255,.05); --line: rgba(255,255,255,.12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  body {
+    background: var(--bg0); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  code { font-family: var(--mono); }
+  .dots { position: fixed; right: 9px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 11px; z-index: 60; }
+  .dots button { width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0; background: rgba(255,255,255,.22); cursor: pointer; transition: all .3s; }
+  .dots button.on { background: var(--cyan); transform: scale(1.4); box-shadow: 0 0 10px rgba(34,211,238,.85); }
+  .screen {
+    position: relative; z-index: 1; height: 100vh; height: 100svh;
+    scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  }
+  .screen::before { content: ""; position: absolute; inset: -20%; pointer-events: none;
+    background: radial-gradient(620px 440px at 50% 32%, var(--glow, rgba(34,211,238,.10)), transparent 70%); }
+  .s-hero { --glow: rgba(34,211,238,.10); } .s-gap { --glow: rgba(251,113,133,.09); }
+  .s-loop { --glow: rgba(34,211,238,.11); } .s-fuse { --glow: rgba(251,191,36,.09); }
+  .s-heal { --glow: rgba(52,211,153,.10); } .s-log { --glow: rgba(167,139,250,.11); }
+  .s-prod { --glow: rgba(52,211,153,.09); } .s-sum { --glow: rgba(244,114,182,.08); }
+  .scr-head { width: 100%; max-width: 640px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .step-badge { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .14em; color: var(--cyan);
+    border: 1px solid rgba(34,211,238,.35); background: rgba(34,211,238,.07); padding: 4px 13px; border-radius: 999px; }
+  .step-badge b { color: #fff; font-weight: 800; }
+  h2 { font-size: clamp(21px, 5.4vw, 30px); font-weight: 800; letter-spacing: .02em; }
+  .scr-desc { font-size: clamp(12px, 3.4vw, 14px); color: #aab6cf; line-height: 1.65; max-width: 560px; }
+  .scr-desc code { color: var(--cyan); font-size: .92em; background: rgba(34,211,238,.08); padding: 1px 5px; border-radius: 5px; }
+  .code-chip { font-family: var(--mono); font-size: 11px; color: #9fb3d1; background: rgba(255,255,255,.04);
+    border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px; max-width: 100%;
+    overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+  .code-chip::-webkit-scrollbar { display: none; }
+  .code-chip b { color: var(--cyan); font-weight: 600; }
+  .stage { position: relative; z-index: 1; flex: 1; min-height: 0; width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13px; }
+  .scr-foot { width: 100%; max-width: 640px; text-align: center; font-size: 12px; line-height: 1.65; color: var(--dim); }
+  .scr-foot b { color: #c3cde2; }
+  .rv { opacity: 0; transform: translateY(14px); }
+  .screen.active .rv { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+  .screen.active .d1 { animation-delay: .1s; } .screen.active .d2 { animation-delay: .3s; }
+  .screen.active .d3 { animation-delay: .5s; } .screen.active .d4 { animation-delay: .7s; }
+  .screen.active .d5 { animation-delay: .9s; } .screen.active .d6 { animation-delay: 1.15s; }
+  .screen.active .d7 { animation-delay: 1.4s; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  .s-hero { justify-content: center; text-align: center; }
+  .hero-kicker { font-size: 10px; letter-spacing: .28em; color: var(--dim); border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 6px 16px; border-radius: 999px; }
+  h1 { font-size: clamp(34px, 9vw, 52px); line-height: 1.14; font-weight: 800; margin: 20px 0 12px; letter-spacing: .02em; }
+  .grad { background: linear-gradient(92deg, #22d3ee 10%, #a78bfa 55%, #f472b6 95%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero-sub { font-size: clamp(13px, 3.8vw, 16px); color: #c3cde2; letter-spacing: .06em; }
+  .hero-chain { display: flex; align-items: center; gap: 7px; margin-top: 30px; }
+  .hc-node { font-size: clamp(11px, 3.1vw, 13px); padding: 9px 13px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); white-space: nowrap; }
+  .hc-arrow { position: relative; width: clamp(18px, 6vw, 34px); height: 2px; background: var(--line); border-radius: 2px; }
+  .hc-arrow i { position: absolute; top: 50%; transform: translateY(-50%); left: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+  .s-hero.active .hc-arrow i { animation: flowDot 1.7s linear infinite; }
+  .s-hero.active .hc-arrow-2 i { animation-delay: .55s; }
+  .hero-quote { margin-top: 24px; font-size: 12px; color: var(--dim); letter-spacing: .05em; }
+  .next-hint { position: absolute; bottom: calc(16px + env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: .1em; }
+  .chev { display: inline-block; margin-left: 6px; }
+  .s-hero.active .chev { animation: bob 1.4s ease-in-out infinite; }
+
+  /* 屏2 三缺口 */
+  .gap-row { display: flex; gap: 9px; width: 100%; max-width: 560px; }
+  .gap { flex: 1; border-radius: 13px; padding: 12px; background: var(--card); border: 1px solid rgba(251,113,133,.4); }
+  .gap .ic { font-size: 20px; }
+  .gap b { display: block; font-size: 12px; color: #ffb9c4; margin: 6px 0 4px; }
+  .gap p { font-size: 10px; color: var(--dim); line-height: 1.6; }
+  .formula-strip { width: 100%; max-width: 560px; text-align: center; font-family: var(--mono); font-size: 12.5px;
+    color: #67e8f9; border: 1px dashed rgba(34,211,238,.45); border-radius: 999px; padding: 9px 15px; background: rgba(34,211,238,.05); }
+  .formula-strip b { color: #c4b5fd; }
+
+  /* 屏3 工具循环 */
+  .loop-pipe { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 560px; justify-content: center; }
+  .lp { border-radius: 12px; padding: 11px 13px; text-align: center; background: var(--card); border: 1px solid var(--line); min-width: 88px; }
+  .lp b { display: block; font-size: 11.5px; color: #c3cde2; margin-bottom: 2px; }
+  .lp span { font-size: 9.3px; color: var(--dim); display: block; line-height: 1.45; }
+  .lp.t { border-color: rgba(167,139,250,.5); } .lp.t b { color: #c4b5fd; }
+  .lp.a { border-color: rgba(52,211,153,.5); } .lp.a b { color: #6ee7b7; }
+  .lp.o { border-color: rgba(34,211,238,.5); } .lp.o b { color: #67e8f9; }
+  .loop-arrow { color: var(--dim); font-size: 13px; }
+  .loop-back { width: 100%; max-width: 560px; text-align: center; font-family: var(--mono); font-size: 10.5px; color: #6ee7b7;
+    border: 1px dashed rgba(52,211,153,.45); border-radius: 999px; padding: 7px 13px; background: rgba(52,211,153,.05); }
+  .rights-row { display: flex; gap: 9px; width: 100%; max-width: 560px; }
+  .right { flex: 1; border-radius: 11px; padding: 9px 11px; text-align: center; font-size: 10.3px; color: var(--dim); line-height: 1.6;
+    background: var(--card); border: 1px solid var(--line); }
+  .right b { display: block; font-size: 11px; margin-bottom: 2px; }
+  .right.model b { color: #c4b5fd; } .right.host b { color: #6ee7b7; }
+
+  /* 屏4 保险丝 */
+  .fuse-row { display: flex; gap: 9px; width: 100%; max-width: 560px; }
+  .fuse { flex: 1; border-radius: 12px; padding: 11px; background: var(--card); border: 1px solid rgba(251,191,36,.45); text-align: center; }
+  .fuse .ic { font-size: 18px; }
+  .fuse b { display: block; font-family: var(--mono); font-size: 11px; color: #fde68a; margin: 5px 0 3px; }
+  .fuse span { font-size: 9.4px; color: var(--dim); line-height: 1.5; display: block; }
+  .burst-line { display: flex; gap: 5px; align-items: center; width: 100%; max-width: 560px; justify-content: center;
+    font-family: var(--mono); font-size: 9.8px; }
+  .burst-line .rep { white-space: nowrap; border-radius: 7px; padding: 4px 8px; border: 1px solid var(--line); background: var(--card); color: #aab6cf; }
+  .burst-line .rep.dup { border-color: rgba(251,113,133,.55); color: #ffb9c4; background: rgba(251,113,133,.08); }
+  .burst-line .boom { white-space: nowrap; color: #fde68a; }
+  .code-note { width: 100%; max-width: 560px; border-radius: 11px; padding: 9px 13px; text-align: center;
+    font-size: 10.8px; color: var(--dim); line-height: 1.65; background: var(--card); border: 1px solid var(--line); }
+  .code-note b { color: #c3cde2; }
+
+  /* 屏5 错误回填 */
+  .heal-timeline { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 7px; }
+  .hline { display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: center;
+    border-radius: 11px; padding: 9px 12px; background: var(--card); border: 1px solid var(--line); }
+  .hline .tag { font-family: var(--mono); font-size: 9.5px; text-align: center; border-radius: 999px; padding: 3px 0; }
+  .hline .tag.err { color: #ffb9c4; border: 1px solid rgba(251,113,133,.45); background: rgba(251,113,133,.07); }
+  .hline .tag.ok { color: #6ee7b7; border: 1px solid rgba(52,211,153,.45); background: rgba(52,211,153,.07); }
+  .hline p { font-family: var(--mono); font-size: 10px; color: #9fb3d1; line-height: 1.55; }
+  .hline p b { color: #c3cde2; font-weight: 400; }
+  .heal-note { width: 100%; max-width: 560px; text-align: center; font-size: 11px; color: var(--dim); line-height: 1.7; }
+  .heal-note b { color: #c3cde2; }
+
+  /* 屏6 轨迹与检查点 */
+  .jsonl-box { width: 100%; max-width: 560px; border-radius: 12px; padding: 11px 14px;
+    background: rgba(0,0,0,.32); border: 1px solid var(--line);
+    font-family: var(--mono); font-size: 9.8px; line-height: 1.8; color: #9fb3d1; }
+  .jsonl-box .k { color: #c4b5fd; } .jsonl-box .g { color: #6ee7b7; }
+  .cp-row { display: flex; gap: 9px; width: 100%; max-width: 560px; }
+  .cp { flex: 1; border-radius: 11px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line);
+    font-size: 10.2px; color: var(--dim); line-height: 1.6; text-align: center; }
+  .cp b { display: block; font-size: 11px; color: #c3cde2; margin-bottom: 2px; }
+
+  /* 屏7 生产对照 */
+  .anth-card { width: 100%; max-width: 560px; border-radius: 13px; padding: 12px 15px;
+    background: rgba(167,139,250,.05); border: 1px solid rgba(167,139,250,.4); }
+  .anth-card h4 { font-size: 12px; color: #c4b5fd; margin-bottom: 7px; }
+  .anth-card ul { list-style: none; font-size: 10.3px; color: var(--dim); line-height: 1.8; }
+  .anth-card ul li::before { content: "· "; }
+  .anth-card ul li b { color: #c3cde2; font-weight: 600; }
+  .map-table { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 6px; }
+  .mrow { display: grid; grid-template-columns: 130px 1fr; gap: 10px; align-items: center;
+    border-radius: 10px; padding: 8px 12px; background: var(--card); border: 1px solid var(--line); }
+  .mrow .mk { font-family: var(--mono); font-size: 10px; color: #67e8f9; }
+  .mrow .mv { font-size: 10.2px; color: var(--dim); line-height: 1.5; }
+  .mrow .mv code { color: #6ee7b7; font-size: .95em; }
+
+  /* 总结 */
+  .sum-flow { display: flex; gap: 4px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 10px; color: var(--dim); }
+  .sum-flow span { border: 1px solid var(--line); background: rgba(255,255,255,.03); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+  .sum-flow i { color: var(--cyan); font-style: normal; }
+  .adv-grid { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 560px; }
+  .adv { display: flex; gap: 13px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 15px; }
+  .adv-ico { font-size: 22px; line-height: 1.2; }
+  .adv b { font-size: 13.5px; display: block; margin-bottom: 3px; }
+  .adv p { font-size: 11.5px; color: var(--dim); line-height: 1.65; }
+  .sum-quote { font-size: clamp(15px, 4.4vw, 19px); font-weight: 800; text-align: center; line-height: 1.65; letter-spacing: .04em;
+    background: linear-gradient(92deg, #22d3ee, #a78bfa 85%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .replay { font-size: 12.5px; color: #06121c; background: var(--cyan); border: none; padding: 10px 26px; border-radius: 999px; font-weight: 700; cursor: pointer; letter-spacing: .06em; }
+  .replay:active { transform: scale(.96); }
+  .series-badge { position: absolute; bottom: calc(10px + env(safe-area-inset-bottom)); right: 16px; font-size: 9.5px; color: rgba(255,255,255,.28); letter-spacing: .12em; }
+
+  @keyframes bob { 0%,100% { transform: translateY(0); opacity:.55 } 50% { transform: translateY(5px); opacity:1 } }
+  @keyframes flowDot { 0% { left: 0; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: calc(100% - 6px); opacity: 0 } }
+  @media (max-height: 560px) { .screen { overflow-y: auto; justify-content: flex-start; } .stage { flex: 0 0 auto; padding: 14px 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; scroll-behavior: auto !important; }
+    .rv { opacity: 1 !important; transform: none !important; }
+  }
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="hermes-19-cua-animation.html" aria-label="上一集" title="上一集：CUA 看屏幕点鼠标">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="ai-01-training-animation.html" aria-label="下一集" title="下一集：大模型是怎么炼成的">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+
+<nav class="dots" id="dots" aria-label="屏幕导航">
+  <button class="on" title="封面"></button>
+  <button title="STEP 1 裸模型的缺口"></button>
+  <button title="STEP 2 工具循环"></button>
+  <button title="STEP 3 三道保险丝"></button>
+  <button title="STEP 4 错误回填"></button>
+  <button title="STEP 5 轨迹与检查点"></button>
+  <button title="STEP 6 生产对照"></button>
+  <button title="总结"></button>
+</nav>
+
+<!-- 屏1 · 封面 -->
+<section class="screen s-hero active">
+  <div class="hero-inner">
+    <div class="hero-kicker rv d1">HERMES AGENT 进阶机制 · 08</div>
+    <h1 class="rv d2">从零造一个<br><span class="grad">Agent Harness</span></h1>
+    <p class="hero-sub rv d3">裸模型 → 工具循环 → 保险丝 → 错误回填 → 检查点</p>
+    <div class="hero-chain rv d4">
+      <span class="hc-node">🤖 裸模型</span>
+      <span class="hc-arrow"><i></i></span>
+      <span class="hc-node">🧰 逐步补齐</span>
+      <span class="hc-arrow hc-arrow-2"><i></i></span>
+      <span class="hc-node">🏭 生产 Harness</span>
+    </div>
+    <p class="hero-quote rv d5">「LLM 是系统里最小的部分 —— 每补一块积木，它就更可靠一分」</p>
+  </div>
+  <div class="next-hint">上滑逐屏观看<span class="chev">▾</span></div>
+</section>
+
+<!-- 屏2 · STEP 1 裸模型的缺口 -->
+<section class="screen s-gap">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 1</b>裸模型的三个缺口</div>
+    <h2 class="rv d1">只会说话的模型，不是 Agent</h2>
+    <p class="scr-desc rv d2">直接调用 LLM 只有「一问一答」。行业公式先立起来：<code>Agent = Model + Harness</code> —— 缺的部分全在 Harness</p>
+  </header>
+  <div class="stage">
+    <div class="gap-row">
+      <div class="gap rv d2">
+        <div class="ic">🗣️</div>
+        <b>不会动手</b>
+        <p>说得出「2+3 等于 5」，但从不真正计算；碰不到文件、网络与数据库</p>
+      </div>
+      <div class="gap rv d3">
+        <div class="ic">🫥</div>
+        <b>没有状态</b>
+        <p>每次调用从零开始，任务中断即全部丢失，跨会话什么都不记得</p>
+      </div>
+      <div class="gap rv d4">
+        <div class="ic">🎰</div>
+        <b>不可信任</b>
+        <p>没有步数与预算上限，没有轨迹可审计 —— 失败了连原因都查不到</p>
+      </div>
+    </div>
+    <div class="formula-strip rv d5">Agent = <b>Model</b>（推理） + <b>Harness</b>（其余一切工程）</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 18 期说「Harness 决定上限」—— 这一集把上限<b>一块一块垒出来</b>，每步都有可运行代码</footer>
+</section>
+
+<!-- 屏3 · STEP 2 工具循环 -->
+<section class="screen s-loop">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 2</b>第一块积木：工具循环</div>
+    <h2 class="rv d1">模型提案，宿主执行</h2>
+    <p class="scr-desc rv d2">Harness 的核心是一条循环：模型发出<b style="color:#c4b5fd">工具提案</b>，宿主真实执行，把结果作为<b style="color:#67e8f9">观察</b>塞回消息，直到模型不再要求工具</p>
+    <div class="code-chip rv d2">while 无最终回答: think → tool_call → <b>宿主执行</b> → observe</div>
+  </header>
+  <div class="stage">
+    <div class="loop-pipe rv d3">
+      <div class="lp t"><b>think</b><span>模型提案<br>add(17, 25)</span></div>
+      <span class="loop-arrow">→</span>
+      <div class="lp a"><b>act</b><span>宿主执行<br>返回 42</span></div>
+      <span class="loop-arrow">→</span>
+      <div class="lp o"><b>observe</b><span>结果入消息<br>再次推理</span></div>
+    </div>
+    <div class="loop-back rv d4">↻ 直到 tool_calls 为空 → 收敛作答「17 加 25 等于 42」（5 条消息轨迹）</div>
+    <div class="rights-row">
+      <div class="right model rv d5"><b>模型只有提案权</b>说要调什么工具、传什么参数</div>
+      <div class="right host rv d5"><b>宿主握执行权</b>真跑、可拦截、可审计 —— 安全边界在此</div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d6">💡 这一条循环补上「不会动手」—— Hermes 04 期的主循环、本仓库 <b>Agent.run()</b> 都是它</footer>
+</section>
+
+<!-- 屏4 · STEP 5 三道保险丝 -->
+<section class="screen s-fuse">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 3</b>第二块积木：保险丝</div>
+    <h2 class="rv d1">失控的循环是台烧钱机</h2>
+    <p class="scr-desc rv d2">模型会用<b style="color:#fde68a">完全相同的参数</b>反复撞同一堵墙（temperature=0 也救不了）。护栏必须长在代码里</p>
+  </header>
+  <div class="stage">
+    <div class="burst-line rv d2">
+      <span class="rep">read_config("config.json")</span>
+      <span class="rep dup">×2 同参数</span>
+      <span class="rep dup">×3 同参数</span>
+      <span class="boom">⛔ 熔断</span>
+    </div>
+    <div class="fuse-row">
+      <div class="fuse rv d3"><div class="ic">🔢</div><b>max_steps</b><span>步数上限<br>防空转</span></div>
+      <div class="fuse rv d4"><div class="ic">💸</div><b>token 预算</b><span>总量封顶<br>防烧钱</span></div>
+      <div class="fuse rv d5"><div class="ic">🔁</div><b>重复检测</b><span>同工具同参数<br>连续 3 次即断</span></div>
+    </div>
+    <div class="code-note rv d5">三道闸全部写在<b>宿主代码</b>里，模型既看不到也关不掉 ——<br>熔断后升级而非硬扛：问人 / 换路 / 如实报 failed（避坑 02 期）</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 保险丝补上「不可信任」的一半 —— <b>另一半靠可观测</b>，见 STEP 5</footer>
+</section>
+
+<!-- 屏5 · STEP 4 错误回填 -->
+<section class="screen s-heal">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 4</b>第三块积木：错误回填</div>
+    <h2 class="rv d1">失败不是异常，是塞回循环的观察</h2>
+    <p class="scr-desc rv d2">工具报错时 Harness 不崩溃，把错误文本作为观察回填 —— 模型下一轮<b style="color:#6ee7b7">亲眼看到失败原因</b>，自己修正重试</p>
+  </header>
+  <div class="stage">
+    <div class="heal-timeline">
+      <div class="hline rv d2"><span class="tag err">尝试 1</span><p>read_config(<b>"config.json"</b>) → FileNotFoundError：文件不存在（也许叫 config.yml？）</p></div>
+      <div class="hline rv d3"><span class="tag err">观察</span><p>错误文本作为 role=tool 消息回填 —— 模型读到线索</p></div>
+      <div class="hline rv d4"><span class="tag ok">尝试 2</span><p>read_config(<b>"config.yml"</b>) → 成功返回 app_port=8000</p></div>
+    </div>
+    <div class="heal-note rv d5">错误信息越具体，自救成功率越高；<b>宁可如实报错，不许编一个「已完成」</b><br>（Hermes 11 期的铁律，在生产 Harness 里是一条 if 语句）</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 工具错误回填 = <b>给模型一双看见失败的眼睛</b> —— 这是 11 期「错误恢复」的最小实现</footer>
+</section>
+
+<!-- 屏6 · STEP 5 轨迹与检查点 -->
+<section class="screen s-log">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 5</b>第四块积木：轨迹与检查点</div>
+    <h2 class="rv d1">黑盒变白盒，崩溃可续跑</h2>
+    <p class="scr-desc rv d2">最后补「无状态」与「不可审计」：每步事件写 JSONL 轨迹，消息历史落盘即检查点</p>
+  </header>
+  <div class="stage">
+    <div class="jsonl-box rv d2">
+      <span class="k">tool_call</span>&nbsp;&nbsp;&nbsp;{"name": "get_weather", "arguments": {"city": "杭州"}}<br>
+      <span class="g">tool_result</span>{"content": "12–19°C 小雨", "is_error": false}<br>
+      <span class="k">llm_response</span>{"content": "杭州今天 12–19°C 小雨…", "step": 2}<br>
+      <span class="g">finished</span>&nbsp;&nbsp;&nbsp;{"output": "…出门带伞。", "steps": 2}
+    </div>
+    <div class="cp-row">
+      <div class="cp rv d3"><b>📜 trace.jsonl</b>逐步事件落盘<br>失败可回放、可评测（避坑 04）</div>
+      <div class="cp rv d4"><b>💾 checkpoint.json</b>messages 序列化<br>新会话带着历史续聊</div>
+    </div>
+    <div class="heal-note rv d5">学术前沿 SafeHarness 建议<b style="color:#c3cde2">每 3 个执行步骤做一次 checkpoint</b>，可回滚到最近可信状态</div>
+  </div>
+  <footer class="scr-foot rv d6">💡 「会话即事件日志」（18 期）的最小实现：<b>状态外置，进程随时可死可换</b></footer>
+</section>
+
+<!-- 屏7 · STEP 6 生产对照 -->
+<section class="screen s-prod">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>STEP 6</b>生产里的 Harness 长什么样</div>
+    <h2 class="rv d1">Anthropic 的长任务配方</h2>
+    <p class="scr-desc rv d2">Anthropic（2025-11）让 Agent 跨多个 context window 连续工作数小时：两大失败模式 —— <b style="color:#c3cde2">one-shot 做完全部</b> 与 <b style="color:#c3cde2">过早宣布完工</b></p>
+  </header>
+  <div class="stage">
+    <div class="anth-card rv d2">
+      <h4>🏛️ 两段式 Agent + 清单门禁</h4>
+      <ul>
+        <li><b>Initializer</b> 首个会话搭环境，把需求展开为 <b>200+ 项 feature 清单</b>（JSON，初始全部 passes: false）</li>
+        <li><b>Coding agent</b> 每个 session 只做一个 feature，测试通过才能翻 true</li>
+        <li><b>progress 文件 + git log</b> 让新会话快速恢复现状；init.sh 一键启动</li>
+        <li>清单用 JSON 而非 Markdown —— 模型更不容易擅自改动</li>
+      </ul>
+    </div>
+    <div class="map-table rv d4">
+      <div class="mrow"><span class="mk">工具循环</span><span class="mv">本仓库 <code>backend/app/agent/</code> 的 Agent.run()</span></div>
+      <div class="mrow"><span class="mk">保险丝/回填</span><span class="mv">Guardrails 三道闸 + is_error 观察</span></div>
+      <div class="mrow"><span class="mk">轨迹/检查点</span><span class="mv">on_event 事件流 + messages 序列化</span></div>
+      <div class="mrow"><span class="mk">亲手跑一遍</span><span class="mv"><code>examples/agent-harness-demo/</code> 五个脚本（离线可运行）</span></div>
+    </div>
+  </div>
+  <footer class="scr-foot rv d5">💡 生产 Harness 没有魔法 —— <b>就是这四块积木的工业级放大</b>，加上清单与门禁</footer>
+</section>
+
+<!-- 屏8 · 总结 -->
+<section class="screen s-sum">
+  <header class="scr-head">
+    <div class="step-badge rv d1"><b>RECAP</b>全景</div>
+    <h2 class="rv d1">四块积木，一个 Harness</h2>
+    <p class="scr-desc rv d2">裸模型 → 工具循环 → 保险丝 → 错误回填 → 轨迹与检查点 → 生产配方</p>
+  </header>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>裸模型</span><i>→</i><span>工具循环</span><i>→</i><span>三道保险丝</span><i>→</i><span>错误回填</span><i>→</i><span>轨迹+检查点</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">🧰</div>
+        <div><b>每块积木堵一个缺口</b><p>循环治「不会动手」，保险丝治「不可信任」，回填让失败变成教材，轨迹与检查点治「无状态」</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🏛️</div>
+        <div><b>生产配方：清单 + 门禁</b><p>Anthropic 两段式：200+ 项 feature 清单（passes: false）、单 session 单 feature、测试通过才翻牌 —— 治 one-shot 与过早完工</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">🧪</div>
+        <div><b>五步都可亲手运行</b><p>examples/agent-harness-demo 五个脚本离线可跑，对照本仓库 backend/app/agent 阅读 —— Harness 不再是黑话</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“模型决定下限，<br>Harness 是你亲手垒出来的上限。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">HERMES AGENT 进阶机制 · 08 / 从零造一个 Harness 篇</div>
+</section>
+
+<script>
+  const secs = Array.from(document.querySelectorAll('.screen'));
+  const dots = Array.from(document.querySelectorAll('.dots button'));
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting && en.intersectionRatio >= 0.45) {
+          const idx = secs.indexOf(en.target);
+          secs.forEach((s, i) => s.classList.toggle('active', i === idx));
+          dots.forEach((d, i) => d.classList.toggle('on', i === idx));
+        }
+      });
+    }, { threshold: [0.45] });
+    secs.forEach((s) => io.observe(s));
+  } else { secs.forEach((s) => s.classList.add('active')); }
+  dots.forEach((d, i) => d.addEventListener('click', () => secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' })));
+  const replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+</script>
+</body>
+</html>

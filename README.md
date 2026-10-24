@@ -5,7 +5,7 @@
 仓库由三部分组成：
 
 1. **交互式课程应用** — Python(FastAPI) + TypeScript(Vite) + 原生 Canvas API 的 AI 原理可视化教程，用数据流动画和直观比喻让不懂数学公式的人也能理解 AI 原理。
-2. **运作动画演示库（`docs/`）** — 12 个系列、103 集自包含逐屏动画，覆盖训练原理、模型原理、推理服务到 Agent 工程的完整知识地图，是仓库目前最主要的产出。
+2. **运作动画演示库（`docs/`）** — 12 个系列、104 集自包含逐屏动画，覆盖训练原理、模型原理、推理服务到 Agent 工程的完整知识地图，是仓库目前最主要的产出。
 3. **通用 Agent 框架（`backend/app/agent/`）** — 零 LLM-SDK 依赖、可用于生产的异步 Agent 运行时，其设计正取自动画系列沉淀的工程共识。
 
 ## 📚 课程内容
@@ -24,7 +24,7 @@
 
 ## 🎬 运作动画演示（docs/）
 
-`docs/index.html` 是唯一入口，收录 **12 个系列、103 集**（无孤儿文件）：
+`docs/index.html` 是唯一入口，收录 **12 个系列、104 集**（无孤儿文件）：
 
 | 系列 | 期数 | 主题 |
 |---|---|---|
@@ -168,12 +168,12 @@ AI-Insight/
 │   │   ├── visualizations/   # 每章可视化实现 (ch01 ~ ch09)
 │   │   └── utils/            # 数学/颜色工具
 │   └── tests/                # Vitest测试 (25个)
-├── docs/                     # 103 集动画演示库（独立于 Vite 应用）
+├── docs/                     # 104 集动画演示库（独立于 Vite 应用）
 │   ├── index.html            # 唯一入口：12 系列 + 检索 + 知识地图
 │   ├── research/             # 系列规划书与审计报告
 │   ├── tools/                # nav-gen.py 集间导航生成器
 │   └── vendor/               # three.js r160（file:// 直开改写版）
-├── examples/                 # RAG 实战工坊配套示例（rag-demo）
+├── examples/                 # 配套可运行示例（rag-demo / agent-harness-demo）
 ├── start.bat                 # Windows一键启动
 ├── start.sh                  # Linux/Mac一键启动
 └── README.md
