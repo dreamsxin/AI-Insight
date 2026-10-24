@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="Pass@k 的定义、k=1 的退化、n−c<k 的边界与缺样本近似：报 Pass@k 必须同时报 k 和 n，否则这个数没有意义。">
+<title>k 越大越好看 · 推理原理 第三季</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#fb7185;--acc2:#fda4af;--accSoft:rgba(251,113,133,.34);
+    --accBg:rgba(251,113,133,.08);--accBd:rgba(251,113,133,.34);--accGl:rgba(251,113,133,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1,.s2,.s3,.s4,.s5,.s6,.s7,.s8,.s9{--glow:var(--accGl)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--acc2) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .bigcmp{display:flex;align-items:flex-end;gap:18px;margin-top:26px;justify-content:center;flex-wrap:wrap}
+  .bignum{text-align:center}
+  .bignum .v{font-family:var(--mono);font-size:clamp(23px,6.2vw,34px);font-weight:800;line-height:1}
+  .bignum .k{font-size:9.5px;color:var(--dim);margin-top:6px}
+  .bignum.old .v{color:#94a3b8}
+  .bignum.new .v{color:var(--acc)}
+  .bigcmp .ar{font-size:18px;color:var(--dim);padding-bottom:12px}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .stack{display:flex;flex-direction:column;gap:11px;width:100%;max-width:540px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:540px}
+  .tag{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.07);color:#c3cde2}
+  .tag.acc{background:var(--accBg);color:var(--acc);border:1px solid var(--accBd)}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+  .big{font-family:var(--mono);font-size:clamp(20px,5vw,26px);font-weight:800;color:var(--acc);line-height:1}
+
+  .bars{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .bar{display:flex;align-items:center;gap:8px}
+  .bar .lbl{width:56px;flex:none;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .bar .track{flex:1;height:10px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .bar .fill{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accSoft),var(--acc))}
+  .screen.active .bar .fill{animation:grow .9s cubic-bezier(.2,1,.3,1) both}
+  @keyframes grow{to{width:var(--w,50%)}}
+  .bar .val{width:52px;flex:none;font-family:var(--mono);font-size:9.5px;color:#c3cde2}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .flow{display:flex;align-items:stretch;width:100%;max-width:560px;gap:0}
+  .flow .n{flex:1;border:1px solid var(--line);border-radius:11px;background:var(--card);padding:12px 8px;text-align:center;
+    display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:0}
+  .flow .n .t{font-size:12px;font-weight:700}
+  .flow .n .s{font-family:var(--mono);font-size:9px;color:var(--dim);line-height:1.5}
+  .flow .n.hi{border-color:var(--accBd);background:var(--accBg)}
+  .flow .a{flex:none;width:20px;display:flex;align-items:center;justify-content:center;color:var(--acc);font-size:11px}
+
+  .axis{position:relative;width:100%;max-width:520px;height:14px;border-radius:99px;background:rgba(255,255,255,.07);margin:22px 0 4px}
+  .axis .f{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accSoft),var(--acc))}
+  .screen.active .axis .f{animation:grow 1s cubic-bezier(.2,1,.3,1) both}
+  .axis .m{position:absolute;top:-6px;width:2px;height:26px;background:#94a3b8;border-radius:2px}
+  .axis .m span{position:absolute;top:-19px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:9px;color:var(--dim);white-space:nowrap}
+
+  .split{display:flex;width:100%;max-width:520px;height:24px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+  .split .a{background:var(--acc);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#0b1020;font-weight:700}
+  .split .b{flex:1;background:rgba(244,114,182,.72);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#2b0b18;font-weight:700}
+
+  .tbl{width:100%;max-width:540px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:rgba(7,11,20,.4)}
+  .tbl .r{display:grid;gap:6px;padding:9px 12px;font-size:11px;border-top:1px solid var(--line);align-items:center}
+  .tbl .r:first-child{border-top:none;background:rgba(255,255,255,.04);font-size:9px;letter-spacing:.1em;color:var(--dim);font-family:var(--mono)}
+  .tbl .r b{font-family:var(--mono);color:var(--acc);font-weight:700}
+
+  .runs{width:100%;max-width:520px;display:flex;flex-direction:column;gap:11px}
+  .runs .row{display:flex;align-items:center;gap:10px}
+  .runs .row .nm{width:56px;flex:none;font-family:var(--mono);font-size:9px;color:var(--dim);text-align:right}
+  .runs .row .bx{flex:1;display:flex;gap:3px;flex-wrap:wrap;align-items:center}
+  .runs .row .bx i{width:9px;height:18px;border-radius:2px;background:var(--acc);display:block;opacity:0}
+  .screen.active .runs .row .bx i{animation:pop .3s cubic-bezier(.2,1.4,.4,1) both;animation-delay:calc(var(--i) * 22ms + .2s)}
+  @keyframes pop{from{opacity:0;transform:scaleY(.2)}to{opacity:1;transform:scaleY(1)}}
+  .runs .row .ct{width:40px;flex:none;font-family:var(--mono);font-size:9.5px;color:var(--acc);text-align:right}
+
+  /* RECAP */
+  .sum-flow{display:flex;gap:4px;align-items:center;justify-content:center;flex-wrap:wrap;font-size:10px;color:var(--dim)}
+  .sum-flow span{border:1px solid var(--line);background:rgba(255,255,255,.03);padding:3px 8px;border-radius:999px;white-space:nowrap}
+  .sum-flow i{color:var(--acc);font-style:normal}
+  .adv-grid{display:flex;flex-direction:column;gap:10px;width:100%;max-width:560px}
+  .adv{display:flex;gap:13px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 15px}
+  .adv-ico{font-size:22px;line-height:1.2}
+  .adv b{font-size:13.5px;display:block;margin-bottom:3px}
+  .adv p{font-size:11.5px;color:var(--dim);line-height:1.65}
+  .sum-quote{font-size:clamp(15px,4.4vw,19px);font-weight:800;text-align:center;line-height:1.65;letter-spacing:.04em;
+    background:linear-gradient(92deg,var(--acc),var(--acc2) 85%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .replay{font-size:12.5px;color:#06121c;background:var(--acc);border:none;padding:10px 26px;border-radius:999px;font-weight:700;cursor:pointer;letter-spacing:.06em}
+  .replay:active{transform:scale(.96)}
+  .series-badge{position:absolute;bottom:calc(10px + env(safe-area-inset-bottom));right:16px;font-size:9.5px;color:rgba(255,255,255,.28);letter-spacing:.12em}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="inf-25-eval-bench-animation.html" aria-label="上一集" title="上一集：三个基准一台秤">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="inf-27-judge-coverage-animation.html" aria-label="下一集" title="下一集：谁说了算，什么时候不算数">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1">
+  <div class="hero-kicker rv d1">SEASON 3 · 02 · 幕 A 分数</div>
+  <h1 class="rv d2">k 越大<br><span class="grad">越好看</span></h1>
+  <p class="hero-sub rv d3">同一批 rollout，只换一个读法</p>
+  <div class="bigcmp rv d4">
+    <div class="bignum old"><div class="v">99.9</div><div class="k">k = 1</div></div>
+    <div class="ar">→</div>
+    <div class="bignum new"><div class="v">100</div><div class="k">k = 32</div></div>
+  </div>
+  <div class="next-hint">向下滚动 · 同一批 960 条 rollout，分数随 k 上涨<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1">01 · <b>定义</b></div>
+    <h2 class="rv d2">抽 k 条，有一条对就算过</h2>
+    <p class="scr-desc rv d3">Pass@k 不再重跑模型 —— 它是对<b>已有 rollout</b> 的另一种读法</p>
+  </div>
+  <div class="stage">
+    <div class="codeblk rv d4"><em>pass@k</em> = 1 − C(n−c, k) / C(n, k)
+
+i   一道题跑了 <em>n</em> 条 rollout
+c   其中 <em>c</em> 条最终答案正确
+k   从 n 条里抽 k 条来看</div>
+    <div class="small rv d5">解析组合数直接算，<b>不掷骰子</b> —— 无偏估计</div>
+  </div>
+  <div class="scr-foot rv d6">模型一次没重跑，分数却可以一路算到 100 —— <b>这就是「读法」的力量</b>。</div>
+</section>
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1">02 · <b>k = 1 的退化</b></div>
+    <h2 class="rv d2">Pass@1 就是平均对率</h2>
+    <p class="scr-desc rv d3">k = 1 时组合数相除等于 1，公式退化成 <code>c / n</code> ——<br>所以 Pass@1 和「平均对率」是同一件事的两个名字</p>
+  </div>
+  <div class="stage">
+    <div class="axis rv d4">
+      <div class="f" style="--w:99.9%"></div>
+      <div class="m" style="left:12%"><span>c / n</span></div>
+    </div>
+    <div class="cols rv d5" style="max-width:460px">
+      <div class="card"><div class="k">Pass@1</div><b>评测报告里的名字</b><p>每题平均对率，跑分表上的那一列</p></div>
+      <div class="card"><div class="k">c / n</div><b>代码里的名字</b><p><code>pass@1 = c/n</code>，k=1 只是公式的退化情况</p></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">上一集的 99.9，在公式里就是 <b>959 / 960</b> —— 两集在这里接轨。</div>
+</section>
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1">03 · <b>k 往上调</b></div>
+    <h2 class="rv d2">一条错样本，被 k 摊薄</h2>
+    <p class="scr-desc rv d3">还是那道「960 条里错 1 条」的题：n = 32、c = 31，<br>k 调到 32 时，那条错的根本挡不住你</p>
+  </div>
+  <div class="stage">
+    <div class="bars">
+      <div class="bar rv d2"><span class="lbl">k=1</span><span class="track"><i class="fill" style="--w:3.1%"></i></span><span class="val">3.1%</span></div>
+      <div class="bar rv d3"><span class="lbl">k=4</span><span class="track"><i class="fill" style="--w:12.5%"></i></span><span class="val">12.5%</span></div>
+      <div class="bar rv d4"><span class="lbl">k=16</span><span class="track"><i class="fill" style="--w:50%"></i></span><span class="val">50%</span></div>
+      <div class="bar rv d5"><span class="lbl">k=32</span><span class="track"><i class="fill" style="--w:100%"></i></span><span class="val">100%</span></div>
+    </div>
+    <div class="small rv d6">n=32、c=31 时 pass@k = k / 32 · 抽得越多，越必然抽到对的</div>
+  </div>
+  <div class="scr-foot rv d6">99.9 爬到 100 没有任何魔法 —— <b>只是把「读几条」的旋钮拧到了头</b>。</div>
+</section>
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1">04 · <b>边界</b></div>
+    <h2 class="rv d2">错的比 k 还少，就必过</h2>
+    <p class="scr-desc rv d3">当 <code>n − c &lt; k</code>，组合数 <code>C(n−c, k)</code> 取 0，<br>公式直接返回 1.0 —— 数学上必然能抽到一条对的</p>
+  </div>
+  <div class="stage">
+    <div class="tbl rv d3">
+      <div class="r" style="grid-template-columns:.8fr .7fr .7fr 1.1fr 1fr">
+        <span>n</span><span>c</span><span>k</span><span>pass@k</span><span>说明</span>
+      </div>
+      <div class="r" style="grid-template-columns:.8fr .7fr .7fr 1.1fr 1fr">
+        <span>32</span><span>31</span><span>1</span><b>96.9%</b><span>平均对率</span>
+      </div>
+      <div class="r" style="grid-template-columns:.8fr .7fr .7fr 1.1fr 1fr">
+        <span>32</span><span>31</span><span>8</span><b>100%</b><span>错 1 条 &lt; 8，必抽到对的</span>
+      </div>
+      <div class="r" style="grid-template-columns:.8fr .7fr .7fr 1.1fr 1fr">
+        <span>8</span><span>1</span><span>8</span><b>100%</b><span>同样的边界</span>
+      </div>
+    </div>
+    <div class="small rv d4">代码里的注释原话：错的样本比 k 少时，「mathematically we can always pick k correct samples」</div>
+  </div>
+  <div class="scr-foot rv d6">高 k 的分数会<b>饱和</b>——过了某个点大家都是 100，分辨力归零。</div>
+</section>
+
+<section class="screen s5" style="--glow:rgba(52,211,153,.10)">
+  <header class="scr-head">
+    <div class="step-badge rv d1" style="color:var(--green);border-color:rgba(52,211,153,.34);background:rgba(52,211,153,.08)">05 · <b>为什么不重采样</b></div>
+    <h2 class="rv d1">解析算，不掷骰子</h2>
+    <p class="scr-desc rv d2">另一种实现是「真去抽 k 条」——但那既浪费又引入随机</p>
+  </header>
+  <div class="stage">
+    <div class="cols">
+      <div class="card rv d2" style="border-color:rgba(52,211,153,.34)">
+        <div class="k" style="color:var(--green)">✓ 组合数解析</div>
+        <b>无偏 · 零浪费</b>
+        <p>用 C(n−c,k)/C(n,k) 直接算出精确概率，32 次采样一条都不浪费</p>
+      </div>
+      <div class="card rv d3">
+        <div class="k">✗ 重采样 k 条</div>
+        <b>有偏 · 白扔信息</b>
+        <p>每次抽到的子集不同、结果抖动；其余 n−k 条样本的信息全被扔掉</p>
+      </div>
+    </div>
+    <div class="small rv d4">代码注释原话：<b>avoids the noise of a random subset</b> —— 解析式给的是确定的数</div>
+  </div>
+  <footer class="scr-foot rv d5">能算的不要抽 —— <b>确定性是评测系统最贵的品质</b>。</footer>
+</section>
+
+<section class="screen s6">
+  <header class="scr-head">
+    <div class="step-badge rv d1">06 · <b>缺样本怎么办</b></div>
+    <h2 class="rv d2">min(k, n)，别丢题</h2>
+    <p class="scr-desc rv d2">某题只跑出 3 条有效 rollout（判分失败 / 截断）时，<br>用 <code>min(k, n)</code> 近似 —— <b style="color:#fda4af">直接丢掉这题会让分数偏高</b></p>
+  </header>
+  <div class="stage">
+    <div class="flow rv d3">
+      <div class="n"><div class="t">某题只有 3 条</div><div class="s">n = 3 &lt; k</div></div>
+      <div class="a">→</div>
+      <div class="n hi"><div class="t">min(k, 3)</div><div class="s">按 3 条近似</div></div>
+      <div class="a">vs</div>
+      <div class="n"><div class="t">丢掉这题</div><div class="s">难的先被丢</div></div>
+    </div>
+    <div class="card rv d4" style="max-width:520px">
+      <div class="k">why 分数偏高</div>
+      <b>被丢的通常是难的</b>
+      <p>样本少的原因往往是生成超长、格式解析失败 —— 这些都集中在难题上。丢题等于把最难的分母删掉，剩下的平均分自然好看。</p>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">近似有代价，丢题有偏 —— <b>两害相权，代码选了近似</b>。</div>
+</section>
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1">RECAP · <b>读法三件事</b></div>
+    <h2 class="rv d1">报 Pass@k 必须连报 k 和 n</h2>
+    <p class="scr-desc rv d2">缺任何一个数，这个分数都无法比较、无法复现</p>
+  </div>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>同一批 rollout</span><i>→</i><span>定义：1−C(n−c,k)/C(n,k)</span><i>→</i><span>k=1 退化=c/n</span><i>→</i><span>k 大必饱和</span><i>→</i><span>缺样本 min(k,n)</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">📖</div>
+        <div><b>分数是一种读法</b><p>模型一次没重跑，99.9 到 100 只是 k 从 1 拧到 32 —— 评测分数是「读已有数据的方式」</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🧮</div>
+        <div><b>解析优于抽样</b><p>组合数公式无偏、确定、零浪费；k=1 退化为 c/n，与上一集的「平均对率」完全接轨</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">⚠️</div>
+        <div><b>报分带口径</b><p>Pass@k 必须连报 k 与 n；缺样本用 min(k,n) 近似而不是丢题——丢的偏偏是难题</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“Pass@k 不改模型的一根权重，<br>却能让分数随便爬 —— 所以永远要问 k 是多少。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">推理原理 · 第三季 · 02 / Pass@k 篇 · 数据锚点 eval/common/passk.py</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+
+  var replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+
+</body>
+</html>

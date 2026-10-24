@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="rule judge 与 LLM judge 的八条等价规则、AIME 960 条 100% 一致、HLE 为何拒绝 rule 判分、coverage_complete 与截断惩罚：分数的三个隐藏参数。">
+<title>谁说了算，什么时候不算数 · 推理原理 第三季</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#fb7185;--acc2:#fda4af;--accSoft:rgba(251,113,133,.34);
+    --accBg:rgba(251,113,133,.08);--accBd:rgba(251,113,133,.34);--accGl:rgba(251,113,133,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1,.s2,.s3,.s4,.s5,.s6,.s7,.s8,.s9{--glow:var(--accGl)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--acc2) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:540px}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+  .big{font-family:var(--mono);font-size:clamp(20px,5vw,26px);font-weight:800;color:var(--acc);line-height:1}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .flow{display:flex;align-items:stretch;width:100%;max-width:560px;gap:0}
+  .flow .n{flex:1;border:1px solid var(--line);border-radius:11px;background:var(--card);padding:12px 8px;text-align:center;
+    display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:0}
+  .flow .n .t{font-size:12px;font-weight:700}
+  .flow .n .s{font-family:var(--mono);font-size:9px;color:var(--dim);line-height:1.5}
+  .flow .n.hi{border-color:var(--accBd);background:var(--accBg)}
+  .flow .n.bad{border-color:rgba(251,113,133,.6);background:rgba(251,113,133,.08)}
+  .flow .a{flex:none;width:20px;display:flex;align-items:center;justify-content:center;color:var(--acc);font-size:11px}
+
+  .axis{position:relative;width:100%;max-width:520px;height:14px;border-radius:99px;background:rgba(255,255,255,.07);margin:22px 0 4px}
+  .axis .f{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accSoft),var(--acc))}
+  .screen.active .axis .f{animation:grow 1s cubic-bezier(.2,1,.3,1) both}
+
+  .tbl{width:100%;max-width:540px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:rgba(7,11,20,.4)}
+  .tbl .r{display:grid;gap:6px;padding:9px 12px;font-size:11px;border-top:1px solid var(--line);align-items:center}
+  .tbl .r:first-child{border-top:none;background:rgba(255,255,255,.04);font-size:9px;letter-spacing:.1em;color:var(--dim);font-family:var(--mono)}
+  .tbl .r b{font-family:var(--mono);color:var(--acc);font-weight:700}
+
+  .rules{display:grid;grid-template-columns:1fr 1fr;gap:6px;width:100%;max-width:540px}
+  .rules div{border:1px solid var(--line);border-radius:9px;background:var(--card);padding:8px 10px;
+    font-size:10.5px;color:#c3cde2;display:flex;gap:7px;align-items:baseline}
+  .rules div i{font-family:var(--mono);font-style:normal;font-size:9px;color:var(--acc);flex:none}
+
+  .sum-flow{display:flex;gap:4px;align-items:center;justify-content:center;flex-wrap:wrap;font-size:10px;color:var(--dim)}
+  .sum-flow span{border:1px solid var(--line);background:rgba(255,255,255,.03);padding:3px 8px;border-radius:999px;white-space:nowrap}
+  .sum-flow i{color:var(--acc);font-style:normal}
+  .adv-grid{display:flex;flex-direction:column;gap:10px;width:100%;max-width:560px}
+  .adv{display:flex;gap:13px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 15px}
+  .adv-ico{font-size:22px;line-height:1.2}
+  .adv b{font-size:13.5px;display:block;margin-bottom:3px}
+  .adv p{font-size:11.5px;color:var(--dim);line-height:1.65}
+  .sum-quote{font-size:clamp(15px,4.4vw,19px);font-weight:800;text-align:center;line-height:1.65;letter-spacing:.04em;
+    background:linear-gradient(92deg,var(--acc),var(--acc2) 85%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .replay{font-size:12.5px;color:#06121c;background:var(--acc);border:none;padding:10px 26px;border-radius:999px;font-weight:700;cursor:pointer;letter-spacing:.06em}
+  .replay:active{transform:scale(.96)}
+  .series-badge{position:absolute;bottom:calc(10px + env(safe-area-inset-bottom));right:16px;font-size:9.5px;color:rgba(255,255,255,.28);letter-spacing:.12em}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="inf-26-pass-at-k-animation.html" aria-label="上一集" title="上一集：k 越大越好看">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="inf-30-cache-bytes-animation.html" aria-label="下一集" title="下一集：一个 token 的账">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1">
+  <div class="hero-kicker rv d1">SEASON 3 · 03 · 幕 A 分数</div>
+  <h1 class="rv d2">谁说了算<br><span class="grad">什么时候不算数</span></h1>
+  <p class="hero-sub rv d3">同一批输出，两种判分器，两个不同的分</p>
+  <div class="hero-sub rv d4" style="margin-top:20px">分数有三个隐藏参数：<b>判分器 · 覆盖度 · 截断</b></div>
+  <div class="next-hint">向下滚动 · 一个分数是怎么被判分器捏出来的<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1">01 · <b>rule judge</b></div>
+    <h2 class="rv d2">零依赖的确定性判分</h2>
+    <p class="scr-desc rv d3">从模型的输出里按格式抓答案 —— 抓到什么就是什么，<b>完全可重复</b></p>
+  </div>
+  <div class="stage">
+    <div class="codeblk rv d3">AIME   抓 <em>\boxed{…}</em> 里的整数
+GPQA   抓 <em>ANSWER: X</em> 后的选项字母
+
+i   零外部依赖 · 同一输入永远同一判定
+i   推理过程完全不看 —— 只看最终格式</div>
+  </div>
+  <div class="scr-foot rv d5">规则判分器又快又稳，但它只认格式 —— <b>格式之外的对错它看不见</b>。</div>
+</section>
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1">02 · <b>LLM judge</b></div>
+    <h2 class="rv d2">只判等价，不看推理</h2>
+    <p class="scr-desc rv d3">自由文本需要一个「懂等价」的裁判 —— 但裁判只回答一个问题：<b>这两个答案等价吗</b></p>
+  </div>
+  <div class="stage">
+    <div class="rules rv d3">
+      <div><i>R1</i>代数等价</div>
+      <div><i>R2</i>数值等价（2.0 = 2）</div>
+      <div><i>R3</i>集合无序</div>
+      <div><i>R4</i>单位换算</div>
+      <div><i>R5</i>大小写与标点</div>
+      <div><i>R6</i>多选：字母或内容</div>
+      <div><i>R7</i>不给部分分</div>
+      <div><i>R8</i>提不出答案算错</div>
+    </div>
+    <div class="small rv d4">八条规则写死在 judge 的 prompt 里 · 除此之外<b>不评价任何东西</b></div>
+  </div>
+  <div class="scr-foot rv d5">边界划得很清楚：<b>judge 不判过程对不对，只判答案等不等价</b> —— 推理分不在这里。</div>
+</section>
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1">03 · <b>一致性</b></div>
+    <h2 class="rv d2">两个裁判，一个结论</h2>
+    <p class="scr-desc rv d3">AIME 的 960 条 rollout 上，rule judge 与 LLM judge<br>逐条比对：<b style="color:#fda4af">100% 一致</b></p>
+  </div>
+  <div class="stage">
+    <div class="big rv d3">100%</div>
+    <div class="small rv d4">960 条 rollout · 两种判分器 · <b>零分歧</b></div>
+    <div class="card rv d5" style="max-width:520px;margin-top:6px">
+      <div class="k">why it matters</div>
+      <b>一致率是换裁判的通行证</b>
+      <p>正因为 960 条上完全一致，才敢说「换判分器不影响这个基准的分数」——这是可以写进报告里的验证，不是感觉。</p>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">数学题的答案足够规整，规则与模型殊途同归 —— <b>分歧出在下一集的自由文本上</b>。</div>
+</section>
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1">04 · <b>HLE 只能用 LLM judge</b></div>
+    <h2 class="rv d2">自由文本，抓不出来</h2>
+    <p class="scr-desc rv d3">HLE 过半答案是自由文本。精确匹配会把「对的」判成「错的」，<br>系统性压低分数 —— 所以 <code>score.py</code> 直接拒绝 <code>--judge rule</code></p>
+  </div>
+  <div class="stage">
+    <div class="flow rv d3">
+      <div class="n"><div class="t">请求</div><div class="s">--judge rule</div></div>
+      <div class="a">→</div>
+      <div class="n bad"><div class="t">拒绝执行</div><div class="s">rule judge 与 HLE 不兼容</div></div>
+      <div class="a">→</div>
+      <div class="n hi"><div class="t">只能 LLM judge</div><div class="s">等价性判断</div></div>
+    </div>
+    <div class="small rv d4">为什么拒绝：自由文本的表面形式无穷多，<b>逐字匹配必然误杀</b></div>
+  </div>
+  <div class="scr-foot rv d5">判分器是<b>跟基准绑定</b>的 —— 换一个基准，「用什么判」的答案就变了。</div>
+</section>
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1">05 · <b>coverage_complete</b></div>
+    <h2 class="rv d2">Pass@1 只在它为 true 时有效</h2>
+    <p class="scr-desc rv d3">每道题都登记一个覆盖标志：缺 rank、缺样本，<br>这个题的 Pass@1 就<b style="color:#fda4af">数字作废</b></p>
+  </div>
+  <div class="stage">
+    <div class="flow rv d3">
+      <div class="n"><div class="t">生成</div><div class="s">rollout 落盘</div></div>
+      <div class="a">→</div>
+      <div class="n"><div class="t">判分</div><div class="s">judge 逐条打分</div></div>
+      <div class="a">→</div>
+      <div class="n hi"><div class="t">coverage</div><div class="s">rank/样本齐了吗</div></div>
+      <div class="a">→</div>
+      <div class="n"><div class="t">Pass@1</div><div class="s">true 才计入</div></div>
+    </div>
+    <div class="small rv d4">看起来是算分前的例行检查 —— 实际是<b>分数合法性的裁判</b></div>
+  </div>
+  <div class="scr-foot rv d5">一个分数成立的前提写在另一个布尔字段里 —— <b>coverage 不为 true，一切都白算</b>。</div>
+</section>
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1">06 · <b>截断也会压分</b></div>
+    <h2 class="rv d2">没答完的，单独记账</h2>
+    <p class="scr-desc rv d3"><code>finish_reason</code> 是 <code>length</code> / <code>prompt_length_exceeded</code> 的 rollout<br><b style="color:#fda4af">单列统计</b>，不混进对错里</p>
+  </div>
+  <div class="stage">
+    <div class="tbl rv d3">
+      <div class="r" style="grid-template-columns:1.3fr 1fr">
+        <span>finish_reason</span><span>处理方式</span>
+      </div>
+      <div class="r" style="grid-template-columns:1.3fr 1fr">
+        <span>stop</span><b>正常判分</b>
+      </div>
+      <div class="r" style="grid-template-columns:1.3fr 1fr">
+        <span>length</span><b>单列统计（判错但另有账）</b>
+      </div>
+      <div class="r" style="grid-template-columns:1.3fr 1fr">
+        <span>prompt_length_exceeded</span><b>单列统计</b>
+      </div>
+    </div>
+    <div class="codeblk rv d4" style="margin-top:4px">日志原话：<em>raise the judge max_tokens and re-run</em>
+i   截断多不是模型笨，是 judge 的输出预算不够</div>
+  </div>
+  <div class="scr-foot rv d5">把「没答完」和「答错了」混在一格，分数就<b>同时冤枉了两个不同的病</b>。</div>
+</section>
+
+<section class="screen s8">
+  <div class="scr-head">
+    <div class="step-badge rv d1">RECAP · <b>三个隐藏参数</b></div>
+    <h2 class="rv d1">报分不报这三个，等于没报</h2>
+    <p class="scr-desc rv d2">判分器 · 覆盖度 · 截断 —— 幕 A 到此收口</p>
+  </div>
+  <div class="stage">
+    <div class="sum-flow rv d2"><span>rule / LLM judge</span><i>→</i><span>八条等价规则</span><i>→</i><span>960 条 100% 一致</span><i>→</i><span>coverage 闸门</span><i>→</i><span>截断单列</span></div>
+    <div class="adv-grid">
+      <div class="adv rv d3">
+        <div class="adv-ico">⚖️</div>
+        <div><b>判分器跟基准绑定</b><p>数学抓格式、自由文本靠等价性裁判；换基准先换判分器，一致率是通行证</p></div>
+      </div>
+      <div class="adv rv d4">
+        <div class="adv-ico">🚦</div>
+        <div><b>coverage 是合法性闸门</b><p>coverage_complete 不为 true 的题，Pass@1 直接作废 —— 分数成立有前提</p></div>
+      </div>
+      <div class="adv rv d5">
+        <div class="adv-ico">✂️</div>
+        <div><b>截断单列，不混对错</b><p>没答完是预算问题不是能力问题；混进对错会同时误诊两个病</p></div>
+      </div>
+    </div>
+    <blockquote class="sum-quote rv d6">“99.9 后面站着两个裁判、一道闸门<br>和一张截断名单 —— 这才是完整的分数。”</blockquote>
+    <button class="replay rv d7" id="replayBtn">↺ 重新观看</button>
+  </div>
+  <div class="series-badge">推理原理 · 第三季 · 03 / 判分器与覆盖篇 · 数据锚点 eval/score.py · eval/common/judge.py</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+
+  var replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+
+</body>
+</html>

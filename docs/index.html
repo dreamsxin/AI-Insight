@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#070b14">
-<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-18 + Hermes 进阶机制 01-08 + AI 运作原理拆解 01-14 + AI 深入篇 01-08 + LLM 模型算法原理 01-05 + Agent 开发避坑指南 01-05 + AGENT 实战工坊 01-06 + AGENT 模式进阶 01-06 + 训练原理 01-06 + 推理原理 01-24（两季）+ 第三季 25/30/31，共 104 个自包含逐屏动画">
+<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-18 + Hermes 进阶机制 01-08 + AI 运作原理拆解 01-14 + AI 深入篇 01-08 + LLM 模型算法原理 01-05 + Agent 开发避坑指南 01-05 + AGENT 实战工坊 01-06 + AGENT 模式进阶 01-06 + 训练原理 01-06 + 推理原理 01-24（两季）+ 第三季 25-27/30/31，共 106 个自包含逐屏动画">
 <title>AI 运作原理 · 动画演示索引</title>
 <style>
   :root {
@@ -193,11 +193,11 @@
 <div class="wrap">
   <span class="kicker">AI-INSIGHT · DOCS</span>
   <h1>运作动画<span class="grad">演示索引</span></h1>
-  <p class="sub">104 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
+  <p class="sub">106 个自包含动画，全屏滚动逐屏播放，每屏只讲一个环节 · 直接双击打开，或在 docs 目录运行 <code>python -m http.server 8899</code> 后从本页点击进入</p>
 
   <div class="finder">
-    <input id="q" type="search" placeholder="搜索 104 集 · 试试「KV」「注入」「MoE」「缓存」" aria-label="搜索动画" autocomplete="off">
-    <span class="finder-n" id="qn">104 集</span>
+    <input id="q" type="search" placeholder="搜索 106 集 · 试试「KV」「注入」「MoE」「缓存」" aria-label="搜索动画" autocomplete="off">
+    <span class="finder-n" id="qn">106 集</span>
   </div>
 
   <section class="board" id="map">
@@ -224,7 +224,7 @@
         <a href="inf-09-dspark-animation.html">投机解码</a>
         <a href="ai-15-kv-cache-animation.html">KV 深入</a>
       </div>
-      <div class="layer-n">31 集</div>
+      <div class="layer-n">33 集</div>
     </div>
     <div class="layer">
       <div class="layer-l"><b>L2</b>模型原理</div>
@@ -840,12 +840,24 @@
 
   <div class="series">
     <div class="series-head"><b>推理原理 · 第三季</b></div>
-    <div class="series-note">🎬 第三季四幕 12 集（25–36）：前两季讲「机器怎么运转」，这一季反过来 —— 从业外能看到的四个数字<b>分数 · 长度 · 时延 · 密度</b>往下钻，看每个数字被什么钉死。四幕：<b>分数 25–27</b> → <b>长度 28–30</b> → <b>时延 31–33</b> → <b>密度 34–36</b>。已上线 3 集，其余按批续更。</div>
+    <div class="series-note">🎬 第三季四幕 12 集（25–36）：前两季讲「机器怎么运转」，这一季反过来 —— 从业外能看到的四个数字<b>分数 · 长度 · 时延 · 密度</b>往下钻，看每个数字被什么钉死。四幕：<b>分数 25–27</b> → <b>长度 28–30</b> → <b>时延 31–33</b> → <b>密度 34–36</b>。已上线 5 集（幕 A 分数 25–27 全部完成），其余按批续更。</div>
     <div class="grid">
       <a class="card" href="inf-25-eval-bench-animation.html">
         <div class="card-top"><span class="card-ico">⚖️</span><span class="num n-h1">· 25</span></div>
         <b>三个基准一台秤</b>
         <p>先跑完再判分 · 960 条只错 1 条 · 差别不在难度在每题跑几次</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="inf-26-pass-at-k-animation.html">
+        <div class="card-top"><span class="card-ico">📈</span><span class="num n-h2">· 26</span></div>
+        <b>k 越大越好看</b>
+        <p>同一批 rollout 换个读法 · k=1 退化成平均对率 · 报 Pass@k 必须连报 k 和 n</p>
+        <span class="go">▶ 逐屏观看 →</span>
+      </a>
+      <a class="card" href="inf-27-judge-coverage-animation.html">
+        <div class="card-top"><span class="card-ico">⚖️</span><span class="num n-h3">· 27</span></div>
+        <b>谁说了算，什么时候不算数</b>
+        <p>rule vs LLM judge 八条等价规则 · 960 条 100% 一致 · coverage 闸门与截断单列</p>
         <span class="go">▶ 逐屏观看 →</span>
       </a>
       <a class="card" href="inf-30-cache-bytes-animation.html">
