@@ -14,6 +14,7 @@ python examples/agent-harness-demo/02_tool_loop.py
 python examples/agent-harness-demo/03_guards.py
 python examples/agent-harness-demo/04_error_healing.py
 python examples/agent-harness-demo/05_trace_and_checkpoint.py
+python examples/agent-harness-demo/06_eval.py
 
 # 接真实模型（读环境变量 LLM_BASE_URL / LLM_API_KEY）
 python examples/agent-harness-demo/02_tool_loop.py --live
@@ -30,6 +31,7 @@ python examples/agent-harness-demo/02_tool_loop.py --live
 | `03_guards.py` | 死循环烧钱 → 步数/预算/重复三道保险丝 | `Guardrails` | STEP 3 |
 | `04_error_healing.py` | 工具失败即崩溃 → 错误回填为观察、模型自救 | `is_error` ToolResult | STEP 4 |
 | `05_trace_and_checkpoint.py` | 黑盒与从头重来 → JSONL 轨迹 + messages 检查点续聊 | `on_event` / `AgentResult.messages` | STEP 5 |
+| `06_eval.py` | harness 改动无数字可依 → 最小评估集全量重跑 | `EvalCase` / `run_eval_async` | 避坑 04 期 |
 
 05 会产出 `trace.jsonl`（逐步事件）与 `checkpoint.json`（可恢复的消息历史），
 可直接打开查看 Harness 留下的「工作痕迹」。

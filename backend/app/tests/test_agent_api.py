@@ -97,7 +97,7 @@ def test_chat_with_tool_returns_trace(client, install_llm):
     kinds = [(s["type"], s["name"]) for s in data["trace"]]
     assert kinds == [("tool_call", "calculator"), ("tool_result", "calculator")]
     result_step = data["trace"][1]
-    assert result_step["content"] == "42"
+    assert result_step["content"].endswith("42")
     assert result_step["is_error"] is False
 
 
@@ -172,4 +172,4 @@ def test_stream_emits_events_until_finished(client, install_llm):
     finished = events[-1]
     assert finished["output"] == "2 加 3 等于 5。"
     tool_result = next(e for e in events if e["event"] == "tool_result")
-    assert tool_result["content"] == "5"
+    assert tool_result["content"].endswith("5")

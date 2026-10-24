@@ -5,6 +5,7 @@
 - 纯函数式工具注册表：工具是带 JSON Schema 的普通函数，同步/异步皆可
 - 护栏在代码层而非提示词：max_steps / token 预算 / 重复检测 / 工具权限
 - 全链路结构化事件：每一步产生可观测的 RunEvent，便于 tracing 与审计
+- 检查点存储与 JSONL 轨迹：可恢复、可回放、可评估（app/agent/store.py）
 - 模型客户端走 OpenAI Chat Completions 兼容协议（OpenAI / DeepSeek / 本地 vLLM 通吃）
 
 快速开始见 app/agent/README.md。
@@ -31,6 +32,13 @@ from app.agent.llm import LLMClient, LLMResponse
 from app.agent.tools import ToolRegistry, tool
 from app.agent.agent import Agent, AgentConfig
 from app.agent.guards import Guardrails, RunStats
+from app.agent.store import (
+    CheckpointStore,
+    JsonCheckpointStore,
+    MemoryCheckpointStore,
+)
+from app.agent.testing import ScriptedLLM
+from app.agent.eval import EvalCase, EvalReport, run_eval, run_eval_async
 
 __all__ = [
     "Agent",
@@ -47,6 +55,14 @@ __all__ = [
     "tool",
     "Guardrails",
     "RunStats",
+    "CheckpointStore",
+    "MemoryCheckpointStore",
+    "JsonCheckpointStore",
+    "ScriptedLLM",
+    "EvalCase",
+    "EvalReport",
+    "run_eval",
+    "run_eval_async",
     "AgentError",
     "BudgetExceededError",
     "MaxStepsExceededError",

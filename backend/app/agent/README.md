@@ -45,6 +45,9 @@ print(result.messages)        # 完整消息轨迹（可持久化/续写）
 | `models.py` | `Message` / `ToolCall` / `ToolResult` / `ToolSpec` / `AgentResult` |
 | `tools.py` | `ToolRegistry` 注册表、`@tool` 装饰器、类型注解 → JSON Schema |
 | `llm.py` | `LLMClient`：httpx 异步调用兼容端点，解析 tool_calls 与用量 |
+| `store.py` | `CheckpointStore` 检查点存储（内存 / JSON 文件，原子写） |
+| `testing.py` | `ScriptedLLM` 离线测试替身（脚本化响应 + 消息记录） |
+| `eval.py` | `EvalCase` / `run_eval`：最小评估集运行器（避坑 04 方法论） |
 | `guards.py` | `Guardrails`：max_steps / token 预算 / 重复检测 / 白名单；`RunStats` |
 | `agent.py` | `Agent` 主循环、工具执行、错误回填、事件发射 |
 | `errors.py` | 可分类的异常体系（重试 / 上报 / 转人工） |

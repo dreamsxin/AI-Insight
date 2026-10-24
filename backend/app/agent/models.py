@@ -121,3 +121,5 @@ class AgentResult(BaseModel):
     steps: int
     finish_reason: str  # stop / tool_calls(length 截断由调用方感知) / max_steps
     stopped_by_guard: bool = False
+    # 每个工具的调用次数（利用率审计：低频/零频工具是裁剪候选，见避坑 01）
+    tool_usage: dict[str, int] = Field(default_factory=dict)

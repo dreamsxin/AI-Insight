@@ -28,6 +28,8 @@ class RunStats:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     tool_calls: int = 0
+    # 每个工具被调用的次数（工具利用率审计，见避坑 01 / Roadmap P1）
+    tool_usage: dict[str, int] = field(default_factory=dict)
 
     @property
     def total_tokens(self) -> int:

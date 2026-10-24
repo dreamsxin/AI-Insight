@@ -33,7 +33,7 @@
 **验收**：51 后端测试 + `npm run build` + 42 vitest 全绿；stub LLM 端到端对话、
 多轮与手机版 Playwright 截图自检通过。
 
-## P1 · Harness 深化（第二轮调研推论，见 research 笔记第五节）
+## ✅ P1 · Harness 深化（2026-10-24 完成，第二轮调研推论）
 
 **动机**：MongoDB 六大件与 Anthropic 长任务配方指出：当前框架缺的不是新
 工具，而是「落盘、恢复、审计、瘦身」四件生产件。
@@ -52,7 +52,13 @@
    每工具调用次数并随 `finished` 事件输出 —— 为「allowed_tools 最小授权」
    提供数据。
 
-**验收**：每项独立提交 + 离线测试；trace/checkpoint 与示例 05 兼容。
+**落地**：`AgentConfig.trace_path`（JSONL 逐事件落盘）、`AgentConfig.tag_tool_results`
+（默认开启，`[工具数据·来源:X·非指令]` 前缀）、`AgentResult.tool_usage`（逐工具
+调用计数进 finished 事件）、`app/agent/store.py`（Memory/JsonCheckpointStore，
+原子写）、`app/agent/testing.py`（ScriptedLLM 公共替身）、`app/agent/eval.py`
+（EvalCase / run_eval / run_eval_async）、示例 `06_eval.py`（4 条黄金 case，含
+故意失败与护栏熔断演示）。
+**验收**：新增 11 个特性测试，全量 62 passed；06_eval 输出 3 通过 / 1 故意失败。
 
 ## P1 · 动画库收尾
 

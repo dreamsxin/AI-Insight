@@ -131,7 +131,7 @@ async def test_agent_runs_tool_then_converges():
     assert roles == [Role.SYSTEM, Role.USER, Role.ASSISTANT, Role.TOOL, Role.ASSISTANT]
     # 工具结果确实是 42 且回填
     tool_msg = result.messages[3]
-    assert tool_msg.role == Role.TOOL and tool_msg.content == "42"
+    assert tool_msg.role == Role.TOOL and tool_msg.content.endswith("42")
     assert tool_msg.tool_call_id == "c1"
     assert "tool_call" in events and "tool_result" in events and "finished" in events
 
@@ -150,7 +150,7 @@ async def test_async_tool_supported():
     ])
     agent = Agent(llm, reg, AgentConfig(max_steps=4))
     result = await agent.run("回声 hi")
-    assert result.messages[3].content == "echo:hi"
+    assert result.messages[3].content.endswith("echo:hi")
 
 
 # ---------- 错误自救 ----------
