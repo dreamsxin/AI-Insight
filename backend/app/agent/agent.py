@@ -134,6 +134,8 @@ class Agent:
                         "call_id": result.call_id,
                         "is_error": result.is_error,
                         "chars": len(result.content),
+                        # 流式 UI 直接展示回填内容；截断避免事件过大
+                        "content": result.content[:400],
                     },
                 )
 

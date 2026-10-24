@@ -1,5 +1,5 @@
 """Routers package."""
 
-from app.routers import chapters, compute, terms  # noqa: F401
+from app.routers import agent, chapters, compute, terms  # noqa: F401
 
-__all__ = ["chapters", "compute", "terms"]
+__all__ = ["agent", "chapters", "compute", "terms"]
