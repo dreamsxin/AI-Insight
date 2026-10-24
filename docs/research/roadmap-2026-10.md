@@ -16,7 +16,7 @@
   回填 → 轨迹/检查点，离线可跑，`--live` 接真实模型。
 - **README/AGENTS 文档全面更新**：三组成结构、104 集、框架入档。
 
-## P1 · 前端 Agent Playground（后端已就绪，仅剩前端）
+## ✅ P1 · 前端 Agent Playground（2026-10-24 完成）
 
 **动机**：端点已可用；让学习者直观看到工具调用轨迹与护栏触发。
 
@@ -28,8 +28,10 @@
   `BaseVisualization`，canvas 容器内 DOM 聊天 UI + 工具轨迹时间线；
   `ch10_agent/index.ts` 注册 + barrel 导入
 
-**验收**：`#/ch10/p1` 可对话并展示 trace；护栏 409 时 UI 显示结构化原因；
-`npm run build` 与 `npx vitest run` 通过；Playwright 双宽度截图自检。
+**落地**：chapters.py 第 10 章（1 页）+ `api/agent.ts` + `ch10_agent/AgentPlaygroundViz.ts`
+（DOM 聊天 UI + 工具轨迹时间线，含建议问题 chips 与 409/503 错误展示）。
+**验收**：51 后端测试 + `npm run build` + 42 vitest 全绿；stub LLM 端到端对话、
+多轮与手机版 Playwright 截图自检通过。
 
 ## P1 · Harness 深化（第二轮调研推论，见 research 笔记第五节）
 

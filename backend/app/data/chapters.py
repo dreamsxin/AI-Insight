@@ -711,10 +711,34 @@ CH9 = Chapter(
 )
 
 # ---------------------------------------------------------------------------
+# Chapter 10 – Agent 实验台
+# ---------------------------------------------------------------------------
+
+CH10 = Chapter(
+    id=10,
+    title="Agent 实验台",
+    subtitle="Agent Playground",
+    icon="🤖",
+    pages=[
+        Page(
+            id="p1",
+            title="和 Agent 对话",
+            visualization="AgentPlaygroundViz",
+            description="与真实运行的 Agent 对话：看它提案工具、执行、读结果再回答 —— 主循环不再是动画，而是正在发生的事。",
+            content=[
+                ContentBlock(type=ContentBlockType.TEXT, text="输入问题，观察右侧时间线：模型只负责提案工具调用，真正执行的是宿主（Hermes 04 期的 think → act → observe）。算术会调用 calculator，演示前向传播用 nn_forward_demo（3 个输入），演示卷积用 cnn_convolve_demo。"),
+                ContentBlock(type=ContentBlockType.NOTE, text="需要后端配置 LLM_BASE_URL / LLM_API_KEY 环境变量；护栏触发时会看到 409 与具体原因（步数 / 预算 / 重复检测）。配套阅读：进阶机制 ·08《从零造一个 Harness》。"),
+            ],
+            controls=[],
+        ),
+    ],
+)
+
+# ---------------------------------------------------------------------------
 # Aggregate
 # ---------------------------------------------------------------------------
 
-ALL_CHAPTERS: list[Chapter] = [CH1, CH2, CH3, CH4, CH5, CH6, CH7, CH8, CH9]
+ALL_CHAPTERS: list[Chapter] = [CH1, CH2, CH3, CH4, CH5, CH6, CH7, CH8, CH9, CH10]
 
 CHAPTERS_BY_ID: dict[int, Chapter] = {ch.id: ch for ch in ALL_CHAPTERS}
 

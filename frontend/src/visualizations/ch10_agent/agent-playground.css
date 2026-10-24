@@ -1,0 +1,197 @@
+/* Agent Playground - chat overlay inside the canvas container. */
+
+.agp {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.agp-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-light);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.agp-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--positive);
+  flex: 0 0 auto;
+}
+
+.agp-dot.busy {
+  background: var(--accent);
+  animation: agp-pulse 1s ease-in-out infinite;
+}
+
+.agp-dot.err {
+  background: var(--negative);
+}
+
+@keyframes agp-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.agp-head b {
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.agp-log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agp-msg {
+  max-width: 88%;
+  border-radius: 12px;
+  padding: 8px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agp-msg.user {
+  align-self: flex-end;
+  background: rgba(66, 199, 212, 0.14);
+  border: 1px solid rgba(66, 199, 212, 0.45);
+}
+
+.agp-msg.agent {
+  align-self: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.agp-msg.system {
+  align-self: center;
+  max-width: 96%;
+  background: rgba(239, 106, 106, 0.08);
+  border: 1px solid rgba(239, 106, 106, 0.4);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.agp-msg.typing {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* 工具轨迹时间线 */
+.agp-trace {
+  align-self: flex-start;
+  max-width: 92%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+  font-size: 11px;
+}
+
+.agp-step {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  border-radius: 8px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  background: var(--bg-light);
+}
+
+.agp-step .k {
+  flex: 0 0 auto;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.agp-step.call .k { color: var(--accent2); }
+.agp-step.result .k { color: var(--positive); }
+.agp-step.result.is-err .k { color: var(--negative); }
+
+.agp-step .v {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.agp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 14px 10px;
+}
+
+.agp-chip {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.agp-chip:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.agp-input {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-light);
+}
+
+.agp-input input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 9px 12px;
+  font-size: 13px;
+  outline: none;
+}
+
+.agp-input input:focus {
+  border-color: var(--accent);
+}
+
+.agp-input button {
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #08222a;
+  font-weight: 700;
+  padding: 0 18px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.agp-input button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

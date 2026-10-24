@@ -27,6 +27,9 @@ import "./ch08_vectorization";
 // Ch9 - AI Terms
 import "./ch09_terms";
 
+// Ch10 - Agent Playground
+import "./ch10_agent";
+
 // Placeholder imports for other chapters (will be filled in M3/M4)
 // These ensure the registry is populated when the app starts.
 

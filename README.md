@@ -52,6 +52,8 @@ python -m http.server 8899 --directory docs
 
 生产级异步 Agent 运行时：`think → act → observe` 主循环，**模型只有提案权、执行在宿主**；工具即普通函数；护栏（步数 / token 预算 / 重复检测 / 白名单）全部在代码层强制；全链路结构化事件可观测。走 OpenAI Chat Completions 兼容协议，OpenAI / DeepSeek / 本地 vLLM 均可接入，仅依赖 `httpx`。
 
+**已接入应用**：后端暴露 `POST /api/agent/chat`（含 SSE 流式 `/chat/stream`，需环境变量 `LLM_BASE_URL` / `LLM_API_KEY`）；前端第 10 章「Agent 实验台」提供可对话的 Playground，实时展示工具调用轨迹与护栏触发。
+
 ```python
 import asyncio
 from app.agent import Agent, AgentConfig, LLMClient, ToolRegistry, tool
@@ -98,8 +100,8 @@ TypeScript + Vite                    Python + FastAPI + NumPy + httpx
 | 前端构建 | Vite | 极速HMR |
 | 前端语言 | TypeScript (strict) | 类型安全 |
 | 可视化 | 原生 Canvas 2D API | 自研轻量渲染引擎（`three` 仅 3 处使用） |
-| 后端测试 | pytest + pytest-asyncio | 43 个测试（含 Agent 框架 12 个离线测试） |
-| 前端测试 | Vitest | 25个测试 |
+| 后端测试 | pytest + pytest-asyncio | 51 个测试（含 Agent 框架与端点测试） |
+| 前端测试 | Vitest | 42个测试 |
 
 ## 🚀 快速开始
 
@@ -164,7 +166,7 @@ AI-Insight/
 │   │   │   └── animation/    # Tween, Easing, Timeline
 │   │   ├── components/       # UI组件 (Sidebar, ControlsPanel...)
 │   │   ├── core/             # App, Router, EventBus
-│   │   ├── api/              # fetch 封装 (client/chapters/compute)
+│   │   ├── api/              # fetch 封装 (client/chapters/compute/agent)
 │   │   ├── visualizations/   # 每章可视化实现 (ch01 ~ ch09)
 │   │   └── utils/            # 数学/颜色工具
 │   └── tests/                # Vitest测试 (25个)
@@ -191,7 +193,7 @@ AI-Insight/
 下一步规划详见 [`docs/research/roadmap-2026-10.md`](docs/research/roadmap-2026-10.md)。摘要：
 
 - **✅ 已完成**：`/api/agent/chat` + SSE 流式端点（51 后端测试）；进阶机制 ·08《从零造一个 Harness》动画；`examples/agent-harness-demo/` 五个离线可运行脚本；Harness 资料汇编
-- **P1 · 前端 Agent Playground**：第 10 章形式融入章节模型（零路由改动），展示工具轨迹与护栏触发
+- **✅ P1 · 前端 Agent Playground**：第 10 章「Agent 实验台」已上线（零路由改动），实时展示工具轨迹与护栏触发
 - **P1 · Harness 深化**：trace 落盘与最小评估集、checkpoint store、工具结果来源标记（防上下文提权）、工具利用率审计——依据 `docs/research/agent-harness-research.md` 第二轮调研
 - **P1 · 动画库收尾**：推理原理第三季剩余 9 集（inf-26–29、32–36）
 - **P2 · 工程深化**：真实模型 e2e、长任务两段式示例、治理三问自检（恢复/审计/成本）、子代理支持
