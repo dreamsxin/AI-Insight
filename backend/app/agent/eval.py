@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -34,6 +35,9 @@ class EvalCase:
     prompt: str
     check: Callable[[AgentResult], bool] | None = None
     llm_script: list | None = None  # 离线模式必填（ScriptedLLM 响应序列）
+    # 提示进化用：接收 system_prompt、返回对该 prompt 敏感的任务模型。
+    # 设置后优先于 llm_script（离线演示「改 prompt → 行为改变」必需）。
+    llm_factory: Callable[[str], Any] | None = None
     expect_error: type[AgentError] | None = None  # 期望护栏熔断时填写
     max_steps: int = 8
 
@@ -73,13 +77,16 @@ async def run_eval_async(
     report = EvalReport()
     for case in cases:
         try:
-            if live_model:
+            if case.llm_factory is not None:
+                # 提示敏感任务模型：system_prompt 变化 → 行为变化（GEPA 式进化用）
+                llm = case.llm_factory(system_prompt)
+            elif live_model:
                 llm = LLMClient(model=live_model)
-            else:
-                if not case.llm_script:
-                    report.results.append((case.name, False, "离线模式缺少 llm_script"))
-                    continue
+            elif case.llm_script is not None:
                 llm = ScriptedLLM(case.llm_script)
+            else:
+                report.results.append((case.name, False, "缺少 llm_factory / llm_script"))
+                continue
             agent = Agent(
                 llm,
                 registry,

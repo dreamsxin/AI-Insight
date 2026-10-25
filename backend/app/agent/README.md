@@ -45,6 +45,7 @@ print(result.messages)        # 完整消息轨迹（可持久化/续写）
 | `models.py` | `Message` / `ToolCall` / `ToolResult` / `ToolSpec` / `AgentResult` |
 | `tools.py` | `ToolRegistry` 注册表、`@tool` 装饰器、类型注解 → JSON Schema |
 | `llm.py` | `LLMClient`：httpx 异步调用兼容端点，解析 tool_calls 与用量 |
+| `evolve.py` | GEPA 式提示进化外环：失败清单 → 重写 prompt → 评估留优（Pareto/提前停止/去重） |
 | `playbook.py` | ACE 式经验 playbook：delta 追加/去重/来源红线 + `reflect_into_playbook`（自进化闭环） |
 | `store.py` | `CheckpointStore` 检查点存储（内存 / JSON 文件，原子写） |
 | `testing.py` | `ScriptedLLM` 离线测试替身（脚本化响应 + 消息记录） |

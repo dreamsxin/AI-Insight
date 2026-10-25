@@ -100,7 +100,7 @@ TypeScript + Vite                    Python + FastAPI + NumPy + httpx
 | 前端构建 | Vite | 极速HMR |
 | 前端语言 | TypeScript (strict) | 类型安全 |
 | 可视化 | 原生 Canvas 2D API | 自研轻量渲染引擎（`three` 仅 3 处使用） |
-| 后端测试 | pytest + pytest-asyncio | 76 个测试（含 Agent 框架 / 端点 / 自进化闭环） |
+| 后端测试 | pytest + pytest-asyncio | 81 个测试（含 Agent 框架 / 端点 / 自进化闭环与提示进化） |
 | 前端测试 | Vitest | 42个测试 |
 
 ## 🚀 快速开始

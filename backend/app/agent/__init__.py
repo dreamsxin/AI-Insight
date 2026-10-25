@@ -40,6 +40,12 @@ from app.agent.store import (
 from app.agent.playbook import Playbook, PlaybookEntry, reflect_into_playbook
 from app.agent.testing import ScriptedLLM
 from app.agent.eval import EvalCase, EvalReport, run_eval, run_eval_async
+from app.agent.evolve import (
+    EvolutionReport,
+    PromptCandidate,
+    evolve_prompt,
+    evolve_prompt_async,
+)
 
 __all__ = [
     "Agent",
@@ -67,6 +73,10 @@ __all__ = [
     "EvalReport",
     "run_eval",
     "run_eval_async",
+    "PromptCandidate",
+    "EvolutionReport",
+    "evolve_prompt",
+    "evolve_prompt_async",
     "AgentError",
     "BudgetExceededError",
     "MaxStepsExceededError",

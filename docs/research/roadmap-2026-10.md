@@ -85,9 +85,10 @@
    - Reflector：任务结束后一次 LLM 调用读 trace JSONL，提炼「教训 delta」
      （成功模式 / 踩坑），Curator 合并去重
    - 红线：提炼必须引用外部信号（测试结果 / 工具输出），纯内省不写入
-2. **GEPA 式提示进化（P2）**：外层循环读失败 trace → LLM 反思生成
-   system_prompt 变体 → `run_eval_async` 按 golden case 通过率维护 Pareto
-   前沿 → 人工确认后替换
+2. **✅ GEPA 式提示进化（2026-10-25 完成）**：`app/agent/evolve.py`——
+   `evolve_prompt_async` 读失败清单 → evolver 重写 K 个变体 →
+   `run_eval_async` 评估留优（同分保先者/重复去重/全过提前停止/
+   进化器故障只损失变体），产出候选档案供人工确认替换
 3. **示例**：`examples/agent-harness-demo/08_self_improve.py`——离线演示
    「失败 → 反思 → playbook 追加 → 下次成功」的最小进化循环
 
