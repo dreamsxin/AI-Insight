@@ -15,6 +15,9 @@
 - **examples/agent-harness-demo**：裸模型缺口 → 工具循环 → 保险丝 → 错误
   回填 → 轨迹/检查点，离线可跑，`--live` 接真实模型。
 - **README/AGENTS 文档全面更新**：三组成结构、104 集、框架入档。
+- **资料汇编 v2**（10-24/25）：`agent-harness-research.md` 第二轮
+  （LangChain/MongoDB 全文）+ 新增 `agent-self-evolution-research.md`
+  （LLM 优化算法 / Agent 自我进化 / 记忆经验学习，三路并行调研）。
 
 ## ✅ P1 · 前端 Agent Playground（2026-10-24 完成）
 
@@ -65,6 +68,31 @@
 - 推理原理第三季剩 9 集（inf-26–29、32–36），按
   `research/inference-principles-s3-plan.md` 推进；每集后跑 `nav-gen.py`
   并更新知识地图计数；完成后刷新覆盖审计文档。
+
+## P1+ · Agent 自进化最小闭环（2026-10-25 新增，依据 self-evolution 调研第五/六节）
+
+**动机**：调研结论——应用层的 self-improvement 只有三条正路：**提示进化
+（GEPA）、上下文演化（ACE playbook）、经验复用**，全部不需要训练；且必须
+守住三条红线（反思接外部验证 / 经验库安全条目 / 评估器按攻击面对待）。
+本仓库已具备闭环的一半：`eval.py` 是现成评估器、`trace_path` 产出结构化
+轨迹、`store.py` 有原子写模式。
+
+**分两步落地**：
+1. **ACE 式 playbook（P1+，约 150–200 行）**：
+   - `app/agent/playbook.py`：结构化 playbook 存储（沿用 store.py 原子写，
+     按条目追加 delta 而非全文重写——防 context collapse 是 ACE 核心约束）
+   - `AgentConfig(playbook_path=...)`：启动时把 playbook 注入 system_prompt
+   - Reflector：任务结束后一次 LLM 调用读 trace JSONL，提炼「教训 delta」
+     （成功模式 / 踩坑），Curator 合并去重
+   - 红线：提炼必须引用外部信号（测试结果 / 工具输出），纯内省不写入
+2. **GEPA 式提示进化（P2）**：外层循环读失败 trace → LLM 反思生成
+   system_prompt 变体 → `run_eval_async` 按 golden case 通过率维护 Pareto
+   前沿 → 人工确认后替换
+3. **示例**：`examples/agent-harness-demo/08_self_improve.py`——离线演示
+   「失败 → 反思 → playbook 追加 → 下次成功」的最小进化循环
+
+**验收**：08 示例第 2 轮同一任务成功率提升（离线脚本可复现）；评估集
+全量重跑不回归；playbook 有 git 可审计的历史。
 
 ## P2 · 工程深化（按需启动）
 
