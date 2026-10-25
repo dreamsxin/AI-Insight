@@ -37,6 +37,7 @@ from app.agent.store import (
     JsonCheckpointStore,
     MemoryCheckpointStore,
 )
+from app.agent.playbook import Playbook, PlaybookEntry, reflect_into_playbook
 from app.agent.testing import ScriptedLLM
 from app.agent.eval import EvalCase, EvalReport, run_eval, run_eval_async
 
@@ -58,6 +59,9 @@ __all__ = [
     "CheckpointStore",
     "MemoryCheckpointStore",
     "JsonCheckpointStore",
+    "Playbook",
+    "PlaybookEntry",
+    "reflect_into_playbook",
     "ScriptedLLM",
     "EvalCase",
     "EvalReport",

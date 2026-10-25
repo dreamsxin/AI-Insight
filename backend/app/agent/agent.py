@@ -54,6 +54,8 @@ class AgentConfig:
     trace_path: str | None = None
     # 工具结果加「数据·来源·非指令」标记（防上下文提权：数据≠指令）
     tag_tool_results: bool = True
+    # ACE 式 playbook：启动时渲染注入 system（经验演化，见 playbook.py）
+    playbook_path: str | None = None
 
 
 class Agent:
@@ -85,6 +87,17 @@ class Agent:
             history.append(Message.system(cfg.system_prompt))
         if prompt:
             history.append(Message.user(prompt))
+
+        # ACE 式 playbook 注入：把沉淀的经验渲染进 system（见 playbook.py）
+        if cfg.playbook_path:
+            from app.agent.playbook import Playbook
+
+            rendered = Playbook.load(cfg.playbook_path).render()
+            if rendered:
+                if history and history[0].role == Role.SYSTEM:
+                    history[0] = Message.system(history[0].content + "\n\n" + rendered)
+                else:
+                    history.insert(0, Message.system(rendered))
 
         guards = Guardrails(
             max_steps=cfg.max_steps,

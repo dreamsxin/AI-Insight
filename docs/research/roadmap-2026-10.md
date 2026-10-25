@@ -69,7 +69,7 @@
   `research/inference-principles-s3-plan.md` 推进；每集后跑 `nav-gen.py`
   并更新知识地图计数；完成后刷新覆盖审计文档。
 
-## P1+ · Agent 自进化最小闭环（2026-10-25 新增，依据 self-evolution 调研第五/六节）
+## ✅ P1+ · Agent 自进化最小闭环（2026-10-25 实施完成）
 
 **动机**：调研结论——应用层的 self-improvement 只有三条正路：**提示进化
 （GEPA）、上下文演化（ACE playbook）、经验复用**，全部不需要训练；且必须
@@ -91,8 +91,11 @@
 3. **示例**：`examples/agent-harness-demo/08_self_improve.py`——离线演示
    「失败 → 反思 → playbook 追加 → 下次成功」的最小进化循环
 
-**验收**：08 示例第 2 轮同一任务成功率提升（离线脚本可复现）；评估集
-全量重跑不回归；playbook 有 git 可审计的历史。
+**落地**：`playbook.py`（PlaybookEntry / Playbook / reflect_into_playbook，
+delta 去重、source 红线、渲染限长、原子写）+ `AgentConfig.playbook_path`
+（渲染注入 system）+ 示例 `08_self_improve.py`（TeachableLLM 两轮对照）。
+**验收**：08 输出「轮 1 失败 → 反思 1 条带来源教训 → 轮 2 成功」；playbook.json
+可审计；新增 14 个 playbook 测试，全量 76 passed + 2 skipped。
 
 ## P2 · 工程深化（按需启动）
 
