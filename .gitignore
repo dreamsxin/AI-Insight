@@ -36,3 +36,6 @@ backend/app/data/saved_models/
 .zcode/
 chk*.png
 shot-*.png
+
+# Scratch dirs (screenshots, throwaway installs)
+.tmp*/

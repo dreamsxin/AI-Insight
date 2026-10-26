@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="RoPE 的高频/低频两类频率、外推的盲区、YaRN 的分段压缩与 mscale、两个 max_position 的区别：上下文变长，花掉的是远近的区分度。">
+<title>位置怎么被拉长 · 推理原理 第三季</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#60a5fa;--acc2:#93c5fd;--accSoft:rgba(96,165,250,.34);
+    --accBg:rgba(96,165,250,.08);--accBd:rgba(96,165,250,.34);--accGl:rgba(96,165,250,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1,.s2,.s3,.s4,.s5,.s6,.s7,.s8,.s9{--glow:var(--accGl)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--acc2) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .bigcmp{display:flex;align-items:flex-end;gap:18px;margin-top:26px;justify-content:center;flex-wrap:wrap}
+  .bignum{text-align:center}
+  .bignum .v{font-family:var(--mono);font-size:clamp(23px,6.2vw,34px);font-weight:800;line-height:1}
+  .bignum .k{font-size:9.5px;color:var(--dim);margin-top:6px}
+  .bignum.old .v{color:#94a3b8}
+  .bignum.new .v{color:var(--acc)}
+  .bigcmp .ar{font-size:18px;color:var(--dim);padding-bottom:12px}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .stack{display:flex;flex-direction:column;gap:11px;width:100%;max-width:540px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:540px}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .tbl{width:100%;max-width:540px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:rgba(7,11,20,.4)}
+  .tbl .r{display:grid;gap:6px;padding:9px 12px;font-size:11px;border-top:1px solid var(--line);align-items:center}
+  .tbl .r:first-child{border-top:none;background:rgba(255,255,255,.04);font-size:9px;letter-spacing:.1em;color:var(--dim);font-family:var(--mono)}
+  .tbl .r b{font-family:var(--mono);color:var(--acc);font-weight:700}
+
+  /* 两类频率表盘 */
+  .dials{display:flex;gap:22px;width:100%;max-width:520px;justify-content:center}
+  .dialwrap{display:flex;flex-direction:column;align-items:center;gap:8px}
+  .dial{position:relative;width:112px;height:112px;border-radius:50%;
+    border:1px solid var(--accBd);background:radial-gradient(circle,var(--accBg),transparent 72%)}
+  .dial::before{content:"";position:absolute;inset:14px;border-radius:50%;border:1px dashed rgba(255,255,255,.16)}
+  .dial .needle{position:absolute;left:50%;top:50%;width:2px;height:46px;margin-left:-1px;
+    transform-origin:50% 100%;background:linear-gradient(180deg,var(--acc),transparent);border-radius:2px}
+  .dial .hub{position:absolute;left:50%;top:50%;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;
+    background:var(--acc);box-shadow:0 0 10px var(--accBd)}
+  .dialwrap .nm{font-size:11.5px;font-weight:700;color:#c3cde2}
+  .dialwrap .sp{font-family:var(--mono);font-size:9px;color:var(--dim)}
+  .dial.fast .needle{animation:spinfast 2.4s linear infinite}
+  .dial.slow .needle{animation:spinslow 12s linear infinite}
+  @keyframes spinfast{to{transform:rotate(1080deg)}}
+  @keyframes spinslow{to{transform:rotate(300deg)}}
+
+  /* 训练区 vs 外推区标尺 */
+  .ruler{width:100%;max-width:520px}
+  .ruler .bar{display:flex;height:30px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+  .ruler .trained{width:18%;background:linear-gradient(180deg,var(--acc),var(--accSoft));
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#0b1020;font-weight:700}
+  .ruler .unseen{flex:1;border-left:1px dashed rgba(251,113,133,.6);
+    background:repeating-linear-gradient(135deg,rgba(251,113,133,.14) 0 8px,transparent 8px 16px);
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:#fda4af}
+  .ruler .lab{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--dim);margin-top:5px}
+  .ruler .lab .warn{color:#fda4af}
+
+  /* YaRN 分段条 */
+  .yarn{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .yarn .seg{display:flex;height:34px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+  .yarn .seg div{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1px;
+    font-family:var(--mono);font-size:9px;line-height:1.35}
+  .yarn .seg b{font-size:10px;letter-spacing:.03em}
+  .yarn .keep{width:34%;background:linear-gradient(180deg,var(--acc),var(--accSoft));color:#0b1020}
+  .yarn .keep b,.yarn .keep span{color:#0b1020}
+  .yarn .ramp{width:16%;background:linear-gradient(90deg,var(--accSoft),rgba(96,165,250,.14));color:#93c5fd}
+  .yarn .ramp b,.yarn .ramp span{color:#93c5fd}
+  .yarn .interp{flex:1;background:rgba(148,163,184,.12);color:#94a3b8}
+  .yarn .interp b,.yarn .interp span{color:#94a3b8}
+  .yarn .cap{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--dim)}
+
+  @media (max-width:560px){
+    .ruler .bar{height:38px}
+    .yarn .seg{height:auto}
+    .yarn .seg div{padding:5px 3px}
+    .yarn .cap{flex-direction:column;align-items:center;gap:3px;text-align:center}
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="inf-27-judge-coverage-animation.html" aria-label="上一集" title="上一集：谁说了算，什么时候不算数">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="inf-29-sparse-blocks-animation.html" aria-label="下一集" title="下一集：只算该算的块">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1">
+  <div class="hero-kicker rv d1">SEASON 3 · 04 · 幕 B 长度</div>
+  <h1 class="rv d2">位置怎么<br><span class="grad">被拉长</span></h1>
+  <p class="hero-sub rv d3">一句话被推到训练时从没见过的位置</p>
+  <div class="bigcmp rv d4">
+    <div class="bignum old"><div class="v">4K</div><div class="k">训练时见过的位置</div></div>
+    <div class="bignum new"><div class="v">1M</div><div class="k">推理时要用的位置</div></div>
+  </div>
+  <div class="next-hint">向下滚动 · 中间差的这几个数量级，靠什么补<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1">01 · <b>两类频率</b></div>
+    <h2 class="rv d2">RoPE 不是一支表，是一排表</h2>
+    <p class="scr-desc rv d3">位置编码的每个维度都在转圈，但转速不同：<br>高频维管<b>相邻 token</b>，转得飞快；低频维管<b>远距离</b>，转得极慢</p>
+  </div>
+  <div class="stage">
+    <div class="dials">
+      <div class="dialwrap rv d3">
+        <div class="dial fast"><div class="needle"></div><div class="hub"></div></div>
+        <div class="nm">高频维</div>
+        <div class="sp">相邻 token · 一圈很多格</div>
+      </div>
+      <div class="dialwrap rv d4">
+        <div class="dial slow"><div class="needle"></div><div class="hub"></div></div>
+        <div class="nm">低频维</div>
+        <div class="sp">远距离 · 一圈非常长</div>
+      </div>
+    </div>
+    <div class="small rv d5">"知道两个 token 离多远"这件事，靠的就是<b>这些角度的差</b></div>
+  </div>
+  <div class="scr-foot rv d6">问题出在慢的那排表：<b>位置一长，它们还没转完训练时见过的那一圈</b>。</div>
+</section>
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1">02 · <b>外推的盲区</b></div>
+    <h2 class="rv d2">没见过的角度</h2>
+    <p class="scr-desc rv d3">超过 <code>original_max_position</code> 之后，低频维转不满一圈，<br>模型面对的是一组<b style="color:#fda4af">训练时从未出现过的角度</b></p>
+  </div>
+  <div class="stage">
+    <div class="ruler rv d4">
+      <div class="bar">
+        <div class="trained">4K<br>见过</div>
+        <div class="unseen">从这里开始 · 角度是模型没学过的</div>
+      </div>
+      <div class="lab"><span>position 0</span><span class="warn">外推区：质量退化</span><span>position 1M</span></div>
+    </div>
+    <div class="small rv d5">表现不是报错，是<b>静默变笨</b>：长距离检索、指代、计数先掉，其余看着还行</div>
+  </div>
+  <div class="scr-foot rv d6">直接把窗口拉大不付费——<b>代价记在低频维的分辨率上</b>。</div>
+</section>
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1">03 · <b>YaRN 的办法</b></div>
+    <h2 class="rv d2">分两段：高频不动，低频压缩</h2>
+    <p class="scr-desc rv d3">不重训整张表：高频维保持原样（外推），低频维按 <code>factor</code> 压缩（插值），<br>中间用 <code>ramp</code> 平滑过渡，分界由 <code>beta_fast=32 / beta_slow=1</code> 定义</p>
+  </div>
+  <div class="stage">
+    <div class="yarn rv d4">
+      <div class="seg">
+        <div class="keep"><b>高频 · 保持</b><span>外推</span></div>
+        <div class="ramp"><b>ramp</b><span>平滑过渡</span></div>
+        <div class="interp"><b>低频 · 压缩 ×factor</b><span>插值进训练区间</span></div>
+      </div>
+      <div class="cap"><span>相邻 token 的精度保住</span><span>beta_fast = 32 · beta_slow = 1</span><span>远距离的角度回到见过 range</span></div>
+    </div>
+    <div class="small rv d5">一句话：<b>把没见过的角度，折回模型见过的范围里</b></div>
+  </div>
+  <div class="scr-foot rv d6">同样是 1M 位置，YaRN 之后低频维的每一格<b>都是模型学过的</b>。</div>
+</section>
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1">04 · <b>代价</b></div>
+    <h2 class="rv d2">换长度，花的是远近的区分度</h2>
+    <p class="scr-desc rv d2">低频维被压缩 = <b style="color:#fda4af">长距离的分辨率下降</b>：<br>原来 10 万 token 才转一格，现在一格代表更远</p>
+  </div>
+  <div class="stage">
+    <div class="stack">
+      <div class="card rv d3">
+        <div class="k">the trade</div>
+        <b>远近信息被"压扁"了</b>
+        <p>位置 8000 和 16000 在压缩后的低频维上差得更少 —— 需要<b>精细区分远距离</b>的任务（长文检索定位、大码堆计数）最先感觉到。</p>
+      </div>
+      <div class="card rv d4">
+        <div class="k">mscale</div>
+        <b>注意力温度跟着调回来</b>
+        <p>压缩会间接放大注意力的离散度，YaRN 用 <code>mscale</code> 系数把 softmax 温度校准回去 —— 两个参数是一对。</p>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d5">天下没有免费的上下文：<b>长度是重新分配分辨率买来的</b>。</div>
+</section>
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1">05 · <b>两个 max 分清</b></div>
+    <h2 class="rv d2">配置里有两个很像的字段</h2>
+  </div>
+  <div class="stage">
+    <div class="tbl rv d3">
+      <div class="r" style="grid-template-columns:1.5fr 1fr 1.3fr">
+        <span>字段</span><span>示例值</span><span>含义</span>
+      </div>
+      <div class="r" style="grid-template-columns:1.5fr 1fr 1.3fr">
+        <span><b>original_max_position_embeddings</b></span><span>4096</span><span>训练时见过的位置数 —— RoPE 参数围绕它设计</span>
+      </div>
+      <div class="r" style="grid-template-columns:1.5fr 1fr 1.3fr">
+        <span><b>max_position_embeddings</b></span><span>1048576</span><span>YaRN 外推后支持的发布口径</span>
+      </div>
+    </div>
+    <div class="small rv d4">调上下文长度改的是第二个；<b>错改第一个，等于把训练坐标系的锚点拔了</b></div>
+  </div>
+  <div class="scr-foot rv d5">这两个名字差一个词，含义差着两个数量级 —— <b>改配置前先分清</b>。</div>
+</section>
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1">06 · <b>收束</b></div>
+    <h2 class="rv d2">长度是买来的</h2>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><div class="i">🎡</div><div><b>两类频率</b><p>高频维管相邻、低频维管远距离；位置信息全在角度差里。</p></div></div>
+      <div class="fact rv d4"><div class="i">🪄</div><div><b>YaRN = 折回</b><p>高频保持、低频插值、ramp 过渡、mscale 校温 —— 把没见过的角度折回见过的范围。</p></div></div>
+      <div class="fact rv d5"><div class="i">📉</div><div><b>代价可预期</b><p>花掉的是远距离分辨率：长程精细定位先受影响，且静默发生。</p></div></div>
+    </div>
+    <div class="small rv d6">下一集：长度的另一半账 —— <b>只算该算的块</b></div>
+  </div>
+  <div class="scr-foot rv d7">数据出处：<b>layers/rotary_embedding.py</b> L110–L200（_yarn_find_correction_dim / _yarn_linear_ramp_mask / yarn_get_mscale）。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+
+</body>
+</html>

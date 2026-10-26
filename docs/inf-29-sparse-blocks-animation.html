@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="稀疏注意力的两级筛：uint8 块分索引、candidate_topk 粗筛、块内 max 归约、block_size//ratio 压缩比——稀疏不是免费加速，是承担看漏风险换速度。">
+<title>只算该算的块 · 推理原理 第三季</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#60a5fa;--acc2:#93c5fd;--accSoft:rgba(96,165,250,.34);
+    --accBg:rgba(96,165,250,.08);--accBd:rgba(96,165,250,.34);--accGl:rgba(96,165,250,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1,.s2,.s3,.s4,.s5,.s6,.s7,.s8,.s9{--glow:var(--accGl)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--acc2) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .stack{display:flex;flex-direction:column;gap:11px;width:100%;max-width:540px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:9px;width:100%;max-width:540px}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+  .big{font-family:var(--mono);font-size:clamp(20px,5vw,26px);font-weight:800;color:var(--acc);line-height:1}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .flow{display:flex;align-items:stretch;width:100%;max-width:560px;gap:0}
+  .flow .n{flex:1;border:1px solid var(--line);border-radius:11px;background:var(--card);padding:12px 8px;text-align:center;
+    display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:0}
+  .flow .n .t{font-size:12px;font-weight:700}
+  .flow .n .s{font-family:var(--mono);font-size:9px;color:var(--dim);line-height:1.5}
+  .flow .n.hi{border-color:var(--accBd);background:var(--accBg)}
+  .flow .a{flex:none;width:20px;display:flex;align-items:center;justify-content:center;color:var(--acc);font-size:11px}
+
+  .tbl{width:100%;max-width:540px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:rgba(7,11,20,.4)}
+  .tbl .r{display:grid;gap:6px;padding:9px 12px;font-size:11px;border-top:1px solid var(--line);align-items:center}
+  .tbl .r:first-child{border-top:none;background:rgba(255,255,255,.04);font-size:9px;letter-spacing:.1em;color:var(--dim);font-family:var(--mono)}
+  .tbl .r b{font-family:var(--mono);color:var(--acc);font-weight:700}
+
+  /* 3D 块墙容器与 CSS 降级 */
+  .wallbox{position:relative;width:100%;max-width:560px;height:clamp(220px,36vh,300px)}
+  .wallbox canvas{width:100%;height:100%;display:block}
+  .wallcss{position:absolute;inset:0;display:grid;grid-template-columns:repeat(10,1fr);gap:5px;align-content:center}
+  .wallcss i{aspect-ratio:1.25;border-radius:3px;background:rgba(148,163,184,.14);border:1px solid rgba(148,163,184,.14);display:block}
+  .wallcss i.lit{background:linear-gradient(180deg,var(--acc),var(--accSoft));border-color:var(--accBd);box-shadow:0 0 12px var(--accBd)}
+  .wallcap{font-family:var(--mono);font-size:9px;color:var(--dim);text-align:center;margin-top:2px}
+  .wallbox.no3d canvas{display:none}
+
+  /* 块分索引：块顶分数条 */
+  .kblocks{display:flex;gap:6px;width:100%;max-width:520px;justify-content:center}
+  .kb{width:64px;display:flex;flex-direction:column;gap:3px}
+  .kb .score{height:5px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .kb .score i{display:block;height:100%;width:0;border-radius:99px;background:var(--acc)}
+  .screen.active .kb .score i{animation:grow .8s cubic-bezier(.2,1,.3,1) both}
+  @keyframes grow{to{width:var(--w)}}
+  .kb .box{height:44px;border-radius:8px;border:1px solid var(--line);background:var(--card);
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9.5px;color:var(--dim)}
+  .kb.sel .box{border-color:var(--accBd);background:var(--accBg);color:var(--acc);font-weight:700}
+  .kb .nm{font-family:var(--mono);font-size:9px;color:var(--dim);text-align:center}
+
+  .ratio{width:100%;max-width:520px}
+  .ratio .ln{display:flex;height:34px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+  .ratio .idx{width:25%;background:linear-gradient(180deg,var(--acc),var(--accSoft));
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9.5px;color:#0b1020;font-weight:700}
+  .ratio .ghost{flex:1;border-left:1px dashed rgba(96,165,250,.5);
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9.5px;color:#93c5fd}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="inf-28-yarn-animation.html" aria-label="上一集" title="上一集：位置怎么被拉长">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="inf-30-cache-bytes-animation.html" aria-label="下一集" title="下一集：一个 token 的账">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1">
+  <div class="hero-kicker rv d1">SEASON 3 · 05 · 幕 B 长度</div>
+  <h1 class="rv d2">只算<br><span class="grad">该算的块</span></h1>
+  <p class="hero-sub rv d3">一整面墙的 KV 块，每个新 token 只需要看一小片</p>
+  <div class="wallbox rv d4" id="wallbox"><div class="wallcss" id="wallcss"></div></div>
+  <div class="wallcap rv d5">亮块 = 本步被选中参与注意力的 KV 块 · 其余跳过 · 3D / 网格示意</div>
+  <div class="next-hint">向下滚动 · 怎么知道该亮哪几块<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1">01 · <b>全长注意力的账</b></div>
+    <h2 class="rv d2">每个新 token，扫完整条历史</h2>
+    <p class="scr-desc rv d3">注意力天生是"全员互相看"：<b>100 万 token 的历史</b>，<br>每生成一步就是 100 万次比较 —— 而且每一步都如此</p>
+  </div>
+  <div class="stage">
+    <div class="big rv d3">1,000,000</div>
+    <div class="small rv d4">每步比较次数 · 且随历史增长<b>线性上升</b></div>
+    <div class="card rv d5" style="max-width:520px">
+      <div class="k">the question</div>
+      <b>真的每一次比较都有必要吗？</b>
+      <p>大部分历史（很久之前的寒暄、重复的页眉）对当前步毫无影响 —— 但全长注意力照样一个不落地算。</p>
+    </div>
+  </div>
+  <div class="scr-foot rv d6">上一集的 YaRN 解决"角度没见过"；这一集解决<b>"比较次数太多"</b> —— 长度的另一半账。</div>
+</section>
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1">02 · <b>索引缓存</b></div>
+    <h2 class="rv d2">给每块打一个"值不值得看"的分</h2>
+    <p class="scr-desc rv d3">历史被切成若干 KV 块，旁边多一条<b style="color:#c3cde2">细亮的索引缓存</b>：<br>每块一个 <code>uint8</code> 分数 —— 回答"这个块和当前步有多相关"</p>
+  </div>
+  <div class="stage">
+    <div class="kblocks rv d3">
+      <div class="kb"><div class="score"><i style="--w:18%"></i></div><div class="box">块 1</div><div class="nm">18</div></div>
+      <div class="kb"><div class="score"><i style="--w:64%"></i></div><div class="box">块 2</div><div class="nm">64</div></div>
+      <div class="kb sel"><div class="score"><i style="--w:92%"></i></div><div class="box">块 3</div><div class="nm">92</div></div>
+      <div class="kb"><div class="score"><i style="--w:11%"></i></div><div class="box">块 4</div><div class="nm">11</div></div>
+      <div class="kb sel"><div class="score"><i style="--w:88%"></i></div><div class="box">块 5</div><div class="nm">88</div></div>
+      <div class="kb"><div class="score"><i style="--w:23%"></i></div><div class="box">块 6</div><div class="nm">23</div></div>
+    </div>
+    <div class="small rv d4">uint8 一个字节一个分数 —— 便宜到<b>可以为每一块都记一份</b></div>
+  </div>
+  <div class="scr-foot rv d5">这一步把"扫 100 万 token"变成<b>"先看几十个分数"</b>。</div>
+</section>
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1">03 · <b>两级筛</b></div>
+    <h2 class="rv d2">粗筛候选，块内取最大</h2>
+    <p class="scr-desc rv d2">筛法有参数：<code>candidate_topk_blocks</code> 先选候选块，<br><code>topk_block_score_reduce="max"</code> 用<b>块内最大值</b>当块分，再取 top-k</p>
+  </div>
+  <div class="stage">
+    <div class="flow rv d3">
+      <div class="n"><div class="t">全部块</div><div class="s">每块 uint8 分</div></div>
+      <div class="a">→</div>
+      <div class="n"><div class="t">粗筛</div><div class="s">candidate_topk_blocks</div></div>
+      <div class="a">→</div>
+      <div class="n hi"><div class="t">块分归约</div><div class="s">块内取 max</div></div>
+      <div class="a">→</div>
+      <div class="n hi"><div class="t">top-k 入选</div><div class="s">只有入选块参与注意力</div></div>
+    </div>
+    <div class="small rv d4">两级的目的：<b>先放宽保召回，再收紧保算力</b> —— 一级筛很难同时做到</div>
+  </div>
+  <div class="scr-foot rv d5">落库设计：<b>选中的块才进注意力 kernel</b>，其余块的 KV 原地不动。</div>
+</section>
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1">04 · <b>索引也要省</b></div>
+    <h2 class="rv d2">索引缓存自身还有压缩比</h2>
+    <p class="scr-desc rv d3">index 缓存每条记录的条数是 <code>block_size // ratio</code> ——<br>压缩过的层，一个 block 只存 <b>block_size / ratio</b> 条分数</p>
+  </div>
+  <div class="stage">
+    <div class="ratio rv d3">
+      <div class="ln">
+        <div class="idx">16 条 · 索引记录</div>
+        <div class="ghost">其余 48 条不存（block_size 64 / ratio 4）</div>
+      </div>
+    </div>
+    <div class="small rv d4">占比 1/4 —— 索引自身也被压缩，<b>否则"为了省而生的索引"自己就成了新的大头</b></div>
+  </div>
+  <div class="scr-foot rv d5">工程审美在此：<b>省什么都要问一句"那登记簿本身多大"</b>。</div>
+</section>
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1">05 · <b>代价</b></div>
+    <h2 class="rv d2">选错了，就永远看不到</h2>
+    <p class="scr-desc rv d2">被跳过的块不参与注意力 —— 若答案恰好在里面，<br>这一步<b style="color:#fda4af">无论如何都答不对</b></p>
+  </div>
+  <div class="stage">
+    <div class="stack">
+      <div class="card rv d2" style="border-color:rgba(251,113,133,.4)">
+        <div class="k" style="color:#ffb9c4">the risk</div>
+        <b>召回率与算力的直接交换</b>
+        <p>top-k 越小越省，看漏越多；索引分数是预测，不是保证。这是一次<b>用错误率换吞吐</b>的交易，且交易结果静默发生。</p>
+      </div>
+      <div class="card rv d3">
+        <div class="k">the mitigation</div>
+        <b>工程上的对冲</b>
+        <p>滑窗（SWA）保近处必看、索引保远处选看；两级筛先放宽再收紧；靠评测集持续验证"看漏率"没涨。</p>
+      </div>
+    </div>
+  </div>
+  <div class="scr-foot rv d4">它不是优化技巧，是<b>一种有损压缩的方案权衡</b> —— 收益和风险要一起报。</div>
+</section>
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1">06 · <b>收束</b></div>
+    <h2 class="rv d2">长度的两笔账，就此凑齐</h2>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d3"><div class="i">🏷️</div><div><b>索引</b><p>每块一个 uint8 分数，把 100 万次比较压缩成几十次块级判断。</p></div></div>
+      <div class="fact rv d4"><div class="i">🪜</div><div><b>两级筛</b><p>粗筛保召回、max 归约定块分、top-k 保算力；索引自身按 ratio 再压四倍。</p></div></div>
+      <div class="fact rv d5"><div class="i">🎯</div><div><b>与 YaRN 分工</b><p>YaRN 解决"角度没见过"，稀疏解决"比较次数多" —— 长度这一幕的两半。</p></div></div>
+    </div>
+    <div class="small rv d6">下一集回到 token 本身：<b>一个位置占多少字节</b></div>
+  </div>
+  <div class="scr-foot rv d7">数据出处：<b>cache_engine.py</b> L208（ica_cache 形状）· config 的 candidate_topk_blocks / topk_block_score_reduce。</div>
+</section>
+
+<script src="vendor/three.global.js"></script>
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  /* ---------- 3D 块墙（封面）：不可用则 CSS 网格降级 ---------- */
+  var wallbox = document.getElementById('wallbox');
+  var wallcss = document.getElementById('wallcss');
+  var LIT = [14, 25, 26, 37];           // 亮块下标（10×6 墙）
+  var COLS = 10, ROWS = 6;
+
+  function buildCssWall() {
+    if (!wallcss) return;
+    for (var i = 0; i < COLS * ROWS; i++) {
+      var d = document.createElement('i');
+      if (LIT.indexOf(i) !== -1) d.className = 'lit';
+      wallcss.appendChild(d);
+    }
+  }
+
+  var renderer = null, scene = null, camera = null, wallGroup = null, running = false;
+
+  function init3D() {
+    if (typeof THREE === 'undefined') return false;
+    var test = document.createElement('canvas');
+    var gl = test.getContext('webgl') || test.getContext('experimental-webgl');
+    if (!gl) return false;
+
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    wallbox.appendChild(renderer.domElement);
+
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+    camera.position.set(0, 1.2, 7.2);
+    camera.lookAt(0, 0, 0);
+
+    wallGroup = new THREE.Group();
+    var geo = new THREE.BoxGeometry(0.86, 0.86, 0.5);
+    var edge = new THREE.EdgesGeometry(geo);
+    var dimMat = new THREE.MeshBasicMaterial({ color: 0x1b2537 });
+    var litMat = new THREE.MeshBasicMaterial({ color: 0x60a5fa });
+    var dimEdge = new THREE.LineBasicMaterial({ color: 0x2c3a52 });
+    var litEdge = new THREE.LineBasicMaterial({ color: 0x93c5fd });
+
+    for (var r = 0; r < ROWS; r++) {
+      for (var c = 0; c < COLS; c++) {
+        var i = r * COLS + c;
+        var lit = LIT.indexOf(i) !== -1;
+        var m = new THREE.Mesh(geo, lit ? litMat : dimMat);
+        m.position.set((c - (COLS - 1) / 2) * 0.95, ((ROWS - 1) / 2 - r) * 0.95, 0);
+        wallGroup.add(m);
+        wallGroup.add(new THREE.LineSegments(edge, lit ? litEdge : dimEdge).translateX(m.position.x).translateY(m.position.y));
+      }
+    }
+    scene.add(wallGroup);
+    resize3D();
+    window.addEventListener('resize', resize3D);
+    return true;
+  }
+
+  function resize3D() {
+    if (!renderer) return;
+    var rect = wallbox.getBoundingClientRect();
+    if (rect.width < 10 || rect.height < 10) return;
+    renderer.setSize(rect.width, rect.height);
+    camera.aspect = rect.width / rect.height;
+    camera.updateProjectionMatrix();
+  }
+
+  var t0 = Date.now();
+  function tick() {
+    if (!running || !renderer) return;
+    var t = (Date.now() - t0) / 1000;
+    wallGroup.rotation.y = Math.sin(t * 0.4) * 0.18;
+    wallGroup.rotation.x = 0.06;
+    renderer.render(scene, camera);
+    requestAnimationFrame(tick);
+  }
+
+  function start3D() {
+    if (running) return;
+    running = true;
+    tick();
+  }
+
+  function useFallback() {
+    wallbox.classList.add('no3d');
+    buildCssWall();
+  }
+
+  var booted = false;
+  function bootWall() {
+    if (booted) return;
+    booted = true;
+    try {
+      booted = init3D();
+    } catch (e) { booted = false; }
+    if (!booted) useFallback();
+    else { wallcss.style.display = 'none'; resize3D(); }
+  }
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (i === 0) { bootWall(); start3D(); } else { running = false; }
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+
+  var replayBtn = document.getElementById('replayBtn');
+  if (replayBtn) replayBtn.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+
+</body>
+</html>
