@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="InputMetadata 装箱单：varlen 与规整张量的矛盾、字段语义、CP-mirror 的排与还原、compute_attn_info 的展开、get_clean_list 的清理。">
+<title>装箱单 · 推理原理 第三季</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#2dd4bf;--acc2:#7dd3fc;--accSoft:rgba(45,212,191,.34);
+    --accBg:rgba(45,212,191,.08);--accBd:rgba(45,212,191,.34);--accGl:rgba(45,212,191,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1,.s2,.s3,.s4,.s5,.s6,.s7,.s8,.s9{--glow:var(--accGl)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* 封面 */
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--acc2) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  /* 通用组件 */
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .stack{display:flex;flex-direction:column;gap:11px;width:100%;max-width:540px}
+  .tag{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.07);color:#c3cde2}
+  .tag.acc{background:var(--accBg);color:var(--acc);border:1px solid var(--accBd)}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+  .big{font-family:var(--mono);font-size:clamp(20px,5vw,26px);font-weight:800;color:var(--acc);line-height:1}
+
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;max-width:520px}
+  .g2 .p{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:10px}
+  .g2 .p .t{font-size:10.5px;color:var(--dim);margin-top:6px;text-align:center}
+
+  /* 表格 */
+  .tbl{width:100%;max-width:540px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:rgba(7,11,20,.4)}
+  .tbl .r{display:grid;gap:6px;padding:9px 12px;font-size:11px;border-top:1px solid var(--line);align-items:center}
+  .tbl .r:first-child{border-top:none;background:rgba(255,255,255,.04);font-size:9px;letter-spacing:.1em;color:var(--dim);font-family:var(--mono)}
+  .tbl .r b{font-family:var(--mono);color:var(--acc);font-weight:700}
+
+  /* 横向流程 */
+  .flow{display:flex;align-items:stretch;width:100%;max-width:560px;gap:0}
+  .flow .n{flex:1;border:1px solid var(--line);border-radius:11px;background:var(--card);padding:12px 8px;text-align:center;
+    display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:0}
+  .flow .n .t{font-size:12px;font-weight:700}
+  .flow .n .s{font-family:var(--mono);font-size:9px;color:var(--dim);line-height:1.5}
+  .flow .n.hi{border-color:var(--accBd);background:var(--accBg)}
+  .flow .a{flex:none;width:20px;display:flex;align-items:center;justify-content:center;color:var(--acc);font-size:11px}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  /* 装箱演示：varlen 行 → 规整张量 */
+  .pack{width:100%;max-width:520px;display:flex;flex-direction:column;gap:7px}
+  .pack .pr{display:flex;gap:4px;align-items:center;justify-content:flex-start}
+  .pack .pr em{font-family:var(--mono);font-size:8.5px;font-style:normal;color:var(--dim);width:34px;flex:none;text-align:right}
+  .pack .pr span{width:26px;height:22px;border-radius:4px;background:linear-gradient(180deg,var(--acc),var(--accSoft));
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:8.5px;color:#0b1020;font-weight:700}
+  .pack .pr span.pad{background:rgba(251,113,133,.16);border:1px dashed rgba(251,113,133,.55);color:#fda4af;font-weight:400}
+  .pack:not(.packed) .pr span.pad{visibility:hidden}
+  .packbtn{align-self:center;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;color:#0b1020;font-weight:700;
+    border:none;border-radius:999px;padding:8px 18px;background:linear-gradient(90deg,var(--accSoft),var(--acc));cursor:pointer}
+  .readout{display:flex;gap:8px;width:100%;max-width:520px;margin-top:2px}
+  .readout .c{flex:1;border:1px solid var(--line);border-radius:9px;background:var(--card);padding:8px 6px;text-align:center}
+  .readout .c .v{font-family:var(--mono);font-size:15px;font-weight:800;color:var(--acc);line-height:1.1}
+  .readout .c .t{font-size:9px;color:var(--dim);margin-top:2px}
+  .readout .c.bad .v{color:#fb7185}
+
+  /* CP-mirror 网格 */
+  .mirror{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .mirror .mrow{display:flex;gap:4px;align-items:center}
+  .mirror .mrow em{font-family:var(--mono);font-size:8.5px;font-style:normal;color:var(--dim);width:44px;flex:none;text-align:right}
+  .mirror .mrow span{flex:1;height:26px;border-radius:4px;display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:9px;background:rgba(255,255,255,.06);color:#c3cde2}
+  .mirror .mrow span.tk{background:linear-gradient(180deg,var(--accSoft),rgba(45,212,191,.10));border:1px solid var(--accBd);color:#7dd3fc}
+  .mirror .mrow span.n1{background:rgba(251,113,133,.14);border:1px dashed rgba(251,113,133,.55);color:#fda4af}
+  .mirror .rev{display:flex;gap:4px;align-items:center;margin-top:2px}
+  .mirror .rev em{font-family:var(--mono);font-size:8.5px;font-style:normal;color:var(--dim);width:44px;flex:none;text-align:right}
+  .mirror .rev span{flex:1;height:20px;border-radius:4px;display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:8.5px;background:rgba(125,211,252,.08);color:#7dd3fc}
+  .mirror .rev span.n1{color:#fda4af;background:rgba(251,113,133,.08)}
+
+  @media (max-width:560px){
+    .pack .pr span{width:22px;height:20px}
+    .mirror .mrow span{font-size:8px}
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="inf-31-cuda-graph-animation.html" aria-label="上一集" title="上一集：一百次发射">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="inf-33-fused-sampler-animation.html" aria-label="下一集" title="下一集：只留一个 id">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1">
+  <div class="hero-kicker rv d1">SEASON 3 · 08 · 幕 C 时延</div>
+  <h1 class="rv d2">装箱单</h1>
+  <p class="hero-sub rv d3">每条请求长短不一，kernel 只吃规整张量<br>中间那张单子，叫 <b>InputMetadata</b></p>
+  <div style="margin-top:22px" class="rv d4">
+    <svg viewBox="0 0 520 110" width="100%" style="max-width:460px" xmlns="http://www.w3.org/2000/svg">
+      <g fill="rgba(45,212,191,.5)">
+        <rect x="40" y="18" width="26" height="16" rx="3" transform="rotate(-14 53 26)"/>
+        <rect x="76" y="40" width="20" height="20" rx="3" transform="rotate(9 86 50)"/>
+        <rect x="58" y="70" width="30" height="14" rx="3" transform="rotate(-6 73 77)"/>
+        <rect x="100" y="14" width="16" height="16" rx="3" transform="rotate(18 108 22)"/>
+        <rect x="98" y="66" width="22" height="22" rx="3" transform="rotate(-11 109 77)"/>
+      </g>
+      <path d="M140 55 L188 55" stroke="rgba(45,212,191,.8)" stroke-width="1.2" fill="none"/>
+      <path d="M182 50 L189 55 L182 60" stroke="rgba(45,212,191,.8)" stroke-width="1.2" fill="none"/>
+      <g fill="rgba(45,212,191,.85)">
+        <rect x="210" y="20" width="34" height="15" rx="3"/>
+        <rect x="210" y="40" width="34" height="15" rx="3"/>
+        <rect x="210" y="60" width="34" height="15" rx="3"/>
+        <rect x="210" y="80" width="34" height="15" rx="3"/>
+      </g>
+      <text x="296" y="60" font-family="ui-monospace,Consolas,monospace" font-size="9" fill="#8b96ad">打包</text>
+      <path d="M330 55 L368 55" stroke="rgba(45,212,191,.8)" stroke-width="1.2" fill="none"/>
+      <path d="M362 50 L369 55 L362 60" stroke="rgba(45,212,191,.8)" stroke-width="1.2" fill="none"/>
+      <rect x="386" y="34" width="94" height="42" rx="7" fill="rgba(45,212,191,.14)" stroke="rgba(45,212,191,.7)" stroke-width=".8"/>
+      <text x="433" y="59" text-anchor="middle" font-family="ui-monospace,Consolas,monospace" font-size="10" fill="#7dd3fc">kernel</text>
+    </svg>
+  </div>
+  <div class="next-hint">向下滚动 · 先看形状不一的货有多麻烦<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1">01 · <b>矛盾</b></div>
+    <h2 class="rv d2">长短不一的货，规整的流水线</h2>
+    <p class="scr-desc rv d3">一批请求每条长度不同，但 kernel 的输入必须是规整张量。<br>装箱单先解决"怎么摆"。</p>
+  </div>
+  <div class="stage">
+    <div class="pack rv d4" id="pack">
+      <div class="pr"><em>r0</em><span>泡</span><span>泡</span><span>泡</span><span>泡</span><span>泡</span><span>泡</span><span class="pad">空</span><span class="pad">空</span></div>
+      <div class="pr"><em>r1</em><span>泡</span><span>泡</span><span>泡</span><span class="pad">空</span><span class="pad">空</span><span class="pad">空</span><span class="pad">空</span><span class="pad">空</span></div>
+      <div class="pr"><em>r2</em><span>泡</span><span>泡</span><span>泡</span><span>泡</span><span>泡</span><span class="pad">空</span><span class="pad">空</span><span class="pad">空</span></div>
+      <div class="pr"><em>r3</em><span>泡</span><span>泡</span><span class="pad">空</span><span class="pad">空</span><span class="pad">空</span><span class="pad">空</span><span class="pad">空</span><span class="pad">空</span></div>
+    </div>
+    <button class="packbtn rv d5" id="packbtn">摆成规整张量 →</button>
+    <div class="readout rv d6">
+      <div class="c"><div class="v" id="vReal">0</div><div class="t">真实 token</div></div>
+      <div class="c" id="wCard"><div class="v" id="vPad">0</div><div class="t">垫出来的空位</div></div>
+      <div class="c"><div class="v" id="vMax">6</div><div class="t">最长行（桶宽）</div></div>
+    </div>
+    <div class="small rv d7">"空位"不是浪费设计——是 kernel 能吃整块的<b>入场费</b></div>
+  </div>
+  <div class="scr-foot rv d8">谁来记账：每行多长、哪里是真货、总共几行——这张单子就是 <b>InputMetadata</b>。</div>
+</section>
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1">02 · <b>字段语义</b></div>
+    <h2 class="rv d2">单子上的四栏</h2>
+    <p class="scr-desc rv d3">每个字段都回答一个具体问题。<br>最容易被读错的是 <code>positions</code>。</p>
+  </div>
+  <div class="stage">
+    <div class="tbl rv d4">
+      <div class="r" style="grid-template-columns:1.35fr 1.65fr">
+        <span>字段</span><span>回答的问题</span>
+      </div>
+      <div class="r" style="grid-template-columns:1.35fr 1.65fr">
+        <b>input_ids</b><span>原始的变长序列——装箱前的货</span>
+      </div>
+      <div class="r" style="grid-template-columns:1.35fr 1.65fr">
+        <b>positions</b><span>每个 token 在<b style="color:#fda4af">未压缩序列</b>里的位置——不是缓存里的下标</span>
+      </div>
+      <div class="r" style="grid-template-columns:1.35fr 1.65fr">
+        <b>valid_token_mask</b><span>哪些格子是真货，false 是 padding</span>
+      </div>
+      <div class="r" style="grid-template-columns:1.35fr 1.65fr">
+        <b>num_reqs</b><span>真实请求数——不含垫出来的行</span>
+      </div>
+    </div>
+    <div class="small rv d5">positions 一旦按"压缩后的下标"理解，压缩层和 RoPE 就会<b>整体串位</b></div>
+  </div>
+  <div class="scr-foot rv d6">四个字段各管一件事，混用任何一个，错法都不一样。</div>
+</section>
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1">03 · <b>CP-mirror</b></div>
+    <h2 class="rv d2">重新排，也要能排回去</h2>
+    <p class="scr-desc rv d3">上下文并行时，token 被重新分到各 rank。<br><code>mirror_cp_index</code> 记"怎么排"，<code>mirror_cp_reverse_index</code> 记"怎么还原"。</p>
+  </div>
+  <div class="stage">
+    <div class="mirror rv d4">
+      <div class="mrow"><em>rank 0</em><span class="tk">t0</span><span class="tk">t2</span><span class="tk">t4</span><span class="tk">t6</span><span class="n1">-1</span></div>
+      <div class="mrow"><em>rank 1</em><span class="tk">t1</span><span class="tk">t3</span><span class="tk">t5</span><span class="tk">t7</span><span class="n1">-1</span></div>
+      <div class="rev"><em>还原</em><span>t0</span><span>t1</span><span>t2</span><span>t3</span><span>t4 · t5 · t6 · t7</span></div>
+    </div>
+    <div class="small rv d5"><b>-1 表示 padding</b>——不是某个 token 的下标。把 -1 当成真下标用，就会去读不属于它的位置</div>
+  </div>
+  <div class="scr-foot rv d6">排出去的每一格，都要能靠 reverse 索引原样收回来——收不回来，各 rank 的结果就对不齐。</div>
+</section>
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1">04 · <b>展开</b></div>
+    <h2 class="rv d2">紧凑的单子，喂不饱 kernel</h2>
+    <p class="scr-desc rv d3"><code>compute_attn_info</code> 把紧凑的 index 字段展开成<br>kernel 要的完整注意力索引。</p>
+  </div>
+  <div class="stage">
+    <div class="flow rv d4">
+      <div class="n"><div class="t">紧凑字段</div><div class="s">每行一个起止</div></div>
+      <div class="a">→</div>
+      <div class="n hi"><div class="t">compute_attn_info</div><div class="s">forward 开头重算</div></div>
+      <div class="a">→</div>
+      <div class="n"><div class="t">完整注意力索引</div><div class="s">逐格可查</div></div>
+    </div>
+    <div class="facts">
+      <div class="fact rv d5"><div class="i">🔁</div><div><b>每次 forward 都要重算</b><p>它依赖这一批的具体形状，不是可以一次算好存起来的东西。</p></div></div>
+      <div class="fact rv d6"><div class="i">📼</div><div><b>从 cudagraph 复用之后也一样</b><p>图只认桶不认请求。replay 出来的还是那张规整图，注意力索引得按新的一批重新展开。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d7">紧凑是为了传输，展开是为了计算——两副面孔，同一条数据。</div>
+</section>
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1">05 · <b>清理</b></div>
+    <h2 class="rv d2">复用之前，先擦掉上一批的字迹</h2>
+    <p class="scr-desc rv d3">复用 cudagraph 时，"forward 里会重算"的字段<br>必须先清成 None。</p>
+  </div>
+  <div class="stage">
+    <div class="codeblk rv d4"><i># 复用图之前</i>
+<em>get_clean_list</em>()  →  列出需要清空的字段
+for f in clean_list:
+    setattr(meta, f, <em>None</em>)   <i># 不能留着上一批的值</i></div>
+    <div class="facts">
+      <div class="fact rv d5"><div class="i">🧼</div><div><b>为什么是 None 而不是 0</b><p>0 是一个合法的值（第 0 行、位置 0）。None 才能在下游被识别成"待重算"，触发正确的重建。</p></div></div>
+      <div class="fact rv d6"><div class="i">☣️</div><div><b>不清会怎样</b><p>mask、索引里留着上一批的残留——kernel 按旧形状算新的一批，错得没有规律，也难查。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d7">装箱单是公用的纸：每批货上新单子之前，旧字迹必须擦干净。</div>
+</section>
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1">06 · <b>收束</b></div>
+    <h2 class="rv d2">一半在算，一半在单子</h2>
+  </div>
+  <div class="stage">
+    <div class="tbl rv d4">
+      <div class="r" style="grid-template-columns:1.6fr 1.4fr">
+        <span>约定</span><span>守不住会怎样</span>
+      </div>
+      <div class="r" style="grid-template-columns:1.6fr 1.4fr">
+        <span>positions 用未压缩序列</span><b>压缩层整体串位</b>
+      </div>
+      <div class="r" style="grid-template-columns:1.6fr 1.4fr">
+        <span>num_reqs 记真实数</span><b>统计与广播错位</b>
+      </div>
+      <div class="r" style="grid-template-columns:1.6fr 1.4fr">
+        <span>-1 只表示 padding</span><b>读到别人的位置</b>
+      </div>
+      <div class="r" style="grid-template-columns:1.6fr 1.4fr">
+        <span>复用前清成 None</span><b>拿到上一批残留</b>
+      </div>
+    </div>
+    <div class="small rv d5">下一集：单子齐了，轮到最后一个算子——采样</div>
+  </div>
+  <div class="scr-foot rv d6">数据出处：<b>input_metadata/input_metadata.py</b>、<b>prepare_tensor_input_zos.py</b>。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  var HOOK = null;
+  /* ---------- episode ---------- */
+
+  var pack = document.getElementById('pack');
+  var packbtn = document.getElementById('packbtn');
+  var vReal = document.getElementById('vReal');
+  var vPad = document.getElementById('vPad');
+  var wCard = document.getElementById('wCard');
+
+  var real = 16, pads = 8, maxc = 6;
+  function update() {
+    vReal.textContent = real;
+    vPad.textContent = pads;
+    document.getElementById('vMax').textContent = maxc;
+    wCard.className = pads > 0 ? 'c bad' : 'c';
+  }
+  if (pack && packbtn) {
+    packbtn.addEventListener('click', function () {
+      var on = pack.classList.toggle('packed');
+      packbtn.textContent = on ? '← 拆回长短不一' : '摆成规整张量 →';
+    });
+    update();
+  }
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (HOOK) { try { HOOK(i); } catch (e) {} }
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+
+</body>
+</html>
