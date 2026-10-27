@@ -28,6 +28,7 @@ from app.agent import (
     ToolExecutionError,
     ValidationError,
 )
+from app.agent.store import CheckpointStore, JsonCheckpointStore, MemoryCheckpointStore
 from app.agent.teaching_tools import build_teaching_registry
 from app.models.agent import (
     AgentChatRequest,
@@ -36,6 +37,17 @@ from app.models.agent import (
 )
 
 router = APIRouter(prefix="/agent", tags=["agent"])
+
+# 会话检查点存储：模块级惰性单例，测试可替换为 MemoryCheckpointStore
+_store: CheckpointStore | None = None
+
+
+def _get_store() -> CheckpointStore:
+    global _store
+    if _store is None:
+        directory = os.getenv("AGENT_SESSION_DIR", "app/data/agent_sessions")
+        _store = JsonCheckpointStore(directory)
+    return _store
 
 DEFAULT_SYSTEM_PROMPT = (
     "你是 AI-Insight 课程的教学助手，回答保持简洁、面向初学者。"
@@ -75,6 +87,11 @@ def _create_agent(req: AgentChatRequest, on_event=None) -> Agent:
 
 
 def _history_messages(req: AgentChatRequest) -> list[Message]:
+    # session 检查点优先：存有历史就整体采用（其已含 system），忽略请求里的 history
+    if req.session_id:
+        stored = _get_store().load(req.session_id)
+        if stored:
+            return stored
     history = [Message.system(req.system_prompt or DEFAULT_SYSTEM_PROMPT)]
     for turn in req.history:
         if turn.role == "user":
@@ -82,6 +99,11 @@ def _history_messages(req: AgentChatRequest) -> list[Message]:
         else:
             history.append(Message.assistant(turn.content))
     return history
+
+
+def _persist_session(req: AgentChatRequest, result) -> None:
+    if req.session_id:
+        _get_store().save(req.session_id, result.messages)
 
 
 def _http_status(exc: AgentError) -> int:
@@ -130,11 +152,13 @@ async def agent_chat(req: AgentChatRequest):
             status_code=_http_status(exc),
             detail={"kind": type(exc).__name__, "message": str(exc)},
         ) from exc
+    _persist_session(req, result)
     return AgentChatResponse(
         output=result.output,
         steps=result.steps,
         finish_reason=result.finish_reason,
         trace=trace,
+        session_id=req.session_id,
     )
 
 
@@ -150,7 +174,10 @@ async def agent_chat_stream(req: AgentChatRequest):
     async def _run() -> None:
         try:
             agent = _create_agent(req, on_event)
-            await agent.run(req.message, messages=_history_messages(req))
+            result = await agent.run(req.message, messages=_history_messages(req))
+            _persist_session(req, result)
+            if req.session_id:
+                await queue.put({"event": "session", "session_id": req.session_id})
         except AgentError as exc:
             await queue.put(
                 {"event": "error", "kind": type(exc).__name__, "detail": str(exc)}

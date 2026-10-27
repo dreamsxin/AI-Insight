@@ -17,6 +17,7 @@ from app.agent import (
     MaxStepsExceededError,
     ToolCall,
 )
+from app.agent.store import MemoryCheckpointStore
 from app.agent.teaching_tools import build_teaching_registry
 from main import app
 
@@ -74,6 +75,16 @@ def install_llm(monkeypatch):
         return llm
 
     return _install
+
+
+@pytest.fixture
+def fresh_store(monkeypatch):
+    """Replace the router's checkpoint store with an isolated in-memory one."""
+    from app.routers import agent as agent_router
+
+    store = MemoryCheckpointStore()
+    monkeypatch.setattr(agent_router, "_store", store)
+    return store
 
 
 def test_chat_without_tools_converges(client, install_llm):
@@ -173,3 +184,47 @@ def test_stream_emits_events_until_finished(client, install_llm):
     assert finished["output"] == "2 加 3 等于 5。"
     tool_result = next(e for e in events if e["event"] == "tool_result")
     assert tool_result["content"].endswith("5")
+
+
+def test_session_roundtrip_persists_history(client, install_llm, fresh_store):
+    llm = install_llm([_answer("第一答"), _answer("第二答")])
+
+    first = client.post(
+        "/api/agent/chat", json={"message": "第一问", "session_id": "sess1"}
+    )
+    assert first.status_code == 200
+    assert first.json()["session_id"] == "sess1"
+
+    second = client.post(
+        "/api/agent/chat", json={"message": "第二问", "session_id": "sess1"}
+    )
+    assert second.status_code == 200
+    # 服务端拼的历史：system + 第一轮 user/assistant（来自检查点）+ 新 user
+    roles = [m.role.value for m in llm.calls[1]]
+    assert roles == ["system", "user", "assistant", "user"]
+    assert llm.calls[1][1].content == "第一问"
+    assert llm.calls[1][2].content == "第一答"
+
+
+def test_session_survives_without_client_history(client, install_llm, fresh_store):
+    llm = install_llm([_answer("答一"), _answer("答二")])
+    client.post("/api/agent/chat", json={"message": "问一", "session_id": "sess2"})
+    # 第二轮不带 history 字段 —— 历史完全来自服务端检查点
+    client.post("/api/agent/chat", json={"message": "问二", "session_id": "sess2"})
+    roles = [m.role.value for m in llm.calls[1]]
+    assert roles == ["system", "user", "assistant", "user"]
+
+
+def test_invalid_session_id_rejected(client, fresh_store):
+    resp = client.post(
+        "/api/agent/chat", json={"message": "hi", "session_id": "../evil"}
+    )
+    assert resp.status_code == 422
+
+
+def test_without_session_no_persistence(client, install_llm, fresh_store):
+    install_llm([_answer("好的")])
+    resp = client.post("/api/agent/chat", json={"message": "你好"})
+    assert resp.status_code == 200
+    assert resp.json()["session_id"] is None
+    assert fresh_store.load("anything") is None

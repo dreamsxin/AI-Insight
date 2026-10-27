@@ -8,6 +8,8 @@ export interface AgentChatRequest {
   system_prompt?: string;
   max_steps?: number;
   temperature?: number;
+  /** Server-side checkpoint key; server history takes precedence over `history`. */
+  session_id?: string;
 }
 
 export interface AgentTraceStep {
@@ -24,6 +26,7 @@ export interface AgentChatResponse {
   steps: number;
   finish_reason: string;
   trace: AgentTraceStep[];
+  session_id?: string | null;
 }
 
 /** Run one agent loop turn. Errors surface as ApiError (status + detail). */

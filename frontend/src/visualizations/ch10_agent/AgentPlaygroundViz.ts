@@ -17,6 +17,28 @@ const SUGGESTIONS = [
   "前向传播 inputs=[0.5, 0.2, 0.9]",
 ];
 
+const SESSION_KEY = "ai-insight:agent-session";
+
+/** Stable per-browser session id so the server keeps the transcript across reloads. */
+function loadSessionId(): string {
+  try {
+    const existing = localStorage.getItem(SESSION_KEY);
+    if (existing) return existing;
+  } catch {
+    /* storage unavailable (privacy mode) — fall through to a per-load id */
+  }
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  try {
+    localStorage.setItem(SESSION_KEY, id);
+  } catch {
+    /* ignore */
+  }
+  return id;
+}
+
 export class AgentPlaygroundViz extends BaseVisualization {
   private root: HTMLDivElement | null = null;
   private logEl: HTMLDivElement | null = null;
@@ -25,6 +47,7 @@ export class AgentPlaygroundViz extends BaseVisualization {
   private statusEl: HTMLSpanElement | null = null;
   private history: Turn[] = [];
   private running = false;
+  private sessionId = loadSessionId();
 
   onMount(): void {
     this.root = document.createElement("div");
@@ -132,11 +155,25 @@ export class AgentPlaygroundViz extends BaseVisualization {
 
     try {
       const resp = await agentChat(
-        { message: text, history: this.history, max_steps: 8, temperature: 0.3 },
+        {
+          message: text,
+          history: this.history,
+          max_steps: 8,
+          temperature: 0.3,
+          session_id: this.sessionId,
+        },
         this.getAbortSignal(),
       );
       typing.remove();
       const bubble = this.appendMessage("agent", resp.output);
+      if (resp.session_id && resp.session_id !== this.sessionId) {
+        this.sessionId = resp.session_id;
+        try {
+          localStorage.setItem(SESSION_KEY, resp.session_id);
+        } catch {
+          /* ignore */
+        }
+      }
       if (resp.trace.length > 0) {
         this.appendTrace(bubble);
         for (const step of resp.trace) this.appendStep(bubble.querySelector(".agp-trace")!, step);

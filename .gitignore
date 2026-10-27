@@ -39,3 +39,6 @@ shot-*.png
 
 # Scratch dirs (screenshots, throwaway installs)
 .tmp*/
+
+# Agent session checkpoints (runtime)
+backend/app/data/agent_sessions/
