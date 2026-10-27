@@ -7,9 +7,10 @@ Guidance for ZCode agents working in this repository.
 AI-Insight (洞见AI) is an interactive, Chinese-language tutorial that visualizes
 AI/neural-network principles. A FastAPI backend performs real NumPy computations;
 a Vite + TypeScript (strict) frontend renders them with a custom Canvas 2D engine
-(no React/Vue). Content is organized as 9 chapters, each with pages containing a
-visualization, explanatory text, and interactive controls. All user-facing copy is
-**Chinese** — match that when adding content.
+(no React/Vue). Content is organized as 10 chapters (ch10 is the Agent
+Playground), each with pages containing a visualization, explanatory text, and
+interactive controls. All user-facing copy is **Chinese** — match that when
+adding content.
 
 ## Commands
 
@@ -38,17 +39,25 @@ Frontend (run from `frontend/`):
 - **Agent framework (`app/agent/`)**: a self-contained, production-grade async
   agent runtime (`Agent` loop, `ToolRegistry`, `LLMClient`, `Guardrails`,
   Pydantic models in `models.py`, typed errors in `errors.py`; see
-  `app/agent/README.md`). It is deliberately **decoupled** from
-  routers/services/models — it imports nothing from them, and nothing imports
-  it yet. Design: the model only proposes tool calls, the host executes
+  `app/agent/README.md`). The framework core still imports nothing from
+  routers/services; the coupling lives in two deliberate bridges:
+  `teaching_tools.py` (inside `app/agent/`) wraps `services/` NumPy compute
+  as agent tools — keep the dependency direction agent→services, never the
+  reverse. HTTP integration is `routers/agent.py` (registered in `main.py`):
+  it carries its own AgentError → HTTP mapping because `AgentError` is NOT a
+  `ValueError` and `_safe()` won't catch it — reuse that mapping for new
+  agent endpoints. The frontend consumes it via `POST /api/agent/chat`
+  (SSE streaming) through `src/api/agent.ts`; ch10 `AgentPlaygroundViz`
+  renders the transcript. Self-evolution loop also lives here:
+  `eval.py` (EvalCase runner), `playbook.py` (lesson store), `evolve.py`
+  (GEPA-style outer loop), backed by `store.py` JSON persistence.
+  Design: the model only proposes tool calls, the host executes
   (`think → act → observe`); guardrails (max steps, token budgets, repeat
   detection, tool allowlist) are enforced in code, not prompts; every step
   emits a structured event through the `on_event` callback (sync or async).
   `LLMClient` speaks the OpenAI Chat Completions protocol via `httpx` and
   reads `LLM_BASE_URL` / `LLM_API_KEY` from the environment (config.py does
-  NOT load .env files). When wiring it into a router later, note that
-  `AgentError` subclasses are NOT `ValueError` — `_safe()` won't catch them;
-  add a dedicated AgentError → HTTP mapping instead.
+  NOT load .env files).
 - **Content is data-driven**: `backend/app/data/chapters.py` defines
   Chapter → Page, and each page names a visualization by **string** plus its
   `ControlConfig`s. The frontend resolves that string through `VIZ_REGISTRY`.
@@ -82,11 +91,18 @@ Frontend (run from `frontend/`):
 - Trained models persist as individual JSON files under
   `backend/app/data/saved_models/` (no database). The directory is git-ignored and
   created at runtime by `services/model_store.py`; don't commit model files.
-- Agent async tests (`app/tests/test_agent.py`) rely on `pytest-asyncio`
+- Agent async tests rely on `pytest-asyncio`
   (listed in requirements.txt; `asyncio_mode=auto` is set in pytest.ini).
   LLM credentials for `app/agent` come from the environment
-  (`LLM_BASE_URL` / `LLM_API_KEY`) — never commit keys; the 12 agent tests
-  run offline against a FakeLLM and need no credentials.
+  (`LLM_BASE_URL` / `LLM_API_KEY`) — never commit keys. The ~50 agent tests
+  (test_agent / _features / _api / playbook / evolve) run offline against a
+  FakeLLM; `test_agent_e2e.py` needs real credentials and skips whole-file
+  when they are absent.
+- `examples/` holds standalone runnable demos outside both apps:
+  `agent-harness-demo/` (paired with the HERMES harness episodes) and
+  `rag-demo/` (a self-contained RAG mini-app with its own requirements.txt,
+  `scripts/`, and `ui.html`, plus two user-supplied PDFs — leave the PDFs
+  alone). They are not exercised by pytest or Vite.
 - `docs/` holds the animation collection; `index.html` is the only entry point
   and links all 113 episodes (none orphaned). Twelve series, in index order:
   训练原理 ·01–06 (`tr-` prefix, the L1 layer that used to hold only four
@@ -131,9 +147,10 @@ Frontend (run from `frontend/`):
   Host/Client/Server + tools/list, soft-vs-hard guardrails).
   Each demo is one self-contained file (no build step) using full-screen CSS
   scroll-snap, one animation per screen; they are not part of the Vite app and
-  frontend changes do not affect them. Subfolders: `research/` (reports and the
-  inference-series plan, not demos), `tools/` (maintenance scripts), `vendor/`
-  (vendored libraries).
+  frontend changes do not affect them. Subfolders: `research/` (planning
+  documents and research reports — series plans, `roadmap-2026-10.md`,
+  agent-harness / agent-self-evolution research — not demos), `tools/`
+  (maintenance scripts), `vendor/` (vendored libraries).
 - **Episode navigation is generated, not hand-written.** Index card order *is*
   the reading order. Every episode carries a `<!-- epnav:start --> …
   <!-- epnav:end -->` block — a fixed top-left pill (`‹ 目录 ›`) plus ←/→
@@ -151,7 +168,8 @@ Frontend (run from `frontend/`):
   update the per-layer counts in the map.
 - **3D in docs demos**: `docs/vendor/three.global.js` is three.js r160 with its
   ES-module `export{}` rewritten to `window.THREE` (so it loads from `file://`
-  without a server). Users are: `inf-` 01/05/07/10/11 and 13/17/21/24, plus
+  without a server). Users are: `inf-` 01/05/07/10/11, 13/17/21/24, 29 (KV
+  block wall), 35 (NUMA motherboard) and 36 (cache racks), plus
   `ai-13-thinking`
   (search tree with backtracking), `ai-19-embedding` (points on the unit sphere,
   angle = cosine similarity) and `ai-15-diffusion` (noise cloud settling into a
@@ -163,4 +181,14 @@ Frontend (run from `frontend/`):
   from the container aspect ratio rather than hard-coding a z — the hero canvas
   is tall and narrow on phones. Every 3D screen must degrade to a CSS glow when
   `window.THREE` or WebGL is unavailable.
+- **Verifying docs episodes**: the established acceptance pass is a Playwright
+  screenshot sweep — every `section.screen` at 1440×900 and 390×844, collect
+  `pageerror`/`console.error` (must be zero), trigger interactive controls, and
+  for 3D episodes re-shoot with WebGL stubbed to `null` to verify the CSS
+  fallback. Git-ignored `.tmp*/` dirs are scratch space from past sweeps and
+  may already contain a playwright install plus `shot*.mjs` driver scripts;
+  the browser binary comes from the ms-playwright cache. Add episodes to
+  `docs/index.html` (card + counts in meta/subtitle/search/knowledge-map) and
+  run `python docs/tools/nav-gen.py` in the same change, then bump the episode
+  counts everywhere they appear (README.md and this file).
 
