@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="一格能装多少：state slot 数、stored/dropped 分区、对齐的零头、3FS 与纠删码、四个数字并排的全季收口。">
+<title>一格能装多少 · 推理原理 第三季</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#818cf8;--acc2:#a5b4fc;--accSoft:rgba(129,140,248,.34);
+    --accBg:rgba(129,140,248,.08);--accBd:rgba(129,140,248,.34);--accGl:rgba(129,140,248,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1,.s2,.s3,.s4,.s5,.s6,.s7,.s8,.s9{--glow:var(--accGl)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,#22d3ee 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+  .big{font-family:var(--mono);font-size:clamp(20px,5vw,26px);font-weight:800;color:var(--acc);line-height:1}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  /* state block 分区条 */
+  .sblock{width:100%;max-width:520px;display:flex;flex-direction:column;gap:5px}
+  .sblock .bar{display:flex;height:34px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+  .sblock .bar div{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1px;
+    font-family:var(--mono);font-size:9px;line-height:1.35}
+  .sblock .st{width:62%;background:linear-gradient(180deg,var(--acc),var(--accSoft));color:#0b1020}
+  .sblock .st b,.sblock .st span{color:#0b1020}
+  .sblock .dr{flex:1;background:rgba(148,163,184,.12);color:#94a3b8}
+  .sblock .cap{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--dim)}
+
+  /* 对齐零头账 */
+  .ledger{width:100%;max-width:520px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:rgba(7,11,20,.4)}
+  .ledger .r{display:grid;gap:6px;padding:9px 12px;font-size:11px;border-top:1px solid var(--line);align-items:center}
+  .ledger .r:first-child{border-top:none;background:rgba(255,255,255,.04);font-size:9px;letter-spacing:.1em;color:var(--dim);font-family:var(--mono)}
+  .ledger .r .v{font-family:var(--mono);color:#c3cde2;text-align:right}
+  .ledger .r.sum .v{color:var(--acc);font-weight:800}
+
+  /* 3FS 数字卡 */
+  .fs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:100%;max-width:520px}
+  .fs .c{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:10px 6px;text-align:center}
+  .fs .c .v{font-family:var(--mono);font-size:clamp(13px,3.4vw,16px);font-weight:800;color:var(--acc2)}
+  .fs .c .t{font-size:9px;color:var(--dim);margin-top:3px;line-height:1.5}
+
+  /* 3D 机柜 */
+  .rackbox{position:relative;width:100%;max-width:560px;height:clamp(230px,36vh,310px)}
+  .rackbox canvas{width:100%;height:100%;display:block}
+  .rackcss{position:absolute;inset:0;display:flex;gap:10px;align-items:center;justify-content:center}
+  .rackcss .rk{display:grid;grid-template-rows:repeat(8,1fr);gap:3px;height:82%;aspect-ratio:.62;
+    border:1px solid var(--line);border-radius:8px;padding:5px;background:rgba(255,255,255,.03)}
+  .rackcss .rk i{border-radius:2px;background:rgba(148,163,184,.12);display:block}
+  .rackcss .rk i.lit{background:linear-gradient(180deg,var(--acc),var(--accSoft));border:1px solid var(--accBd)}
+  .rackbox.no3d canvas{display:none}
+  .rackcap{font-family:var(--mono);font-size:9px;color:var(--dim);text-align:center;margin-top:2px}
+
+  /* 四数字收口 */
+  .four{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;width:100%;max-width:600px}
+  .four .q{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:13px 6px;text-align:center;position:relative}
+  .four .q .v{font-family:var(--mono);font-size:clamp(15px,4.4vw,22px);font-weight:800;line-height:1}
+  .four .q .n{font-size:10px;color:#c3cde2;margin-top:6px;font-weight:700}
+  .four .q .w{font-family:var(--mono);font-size:8px;color:var(--dim);margin-top:6px;line-height:1.6;border-top:1px dashed rgba(255,255,255,.14);padding-top:6px}
+  .four .q.score .v{color:#fb7185}
+  .four .q.len .v{color:#60a5fa}
+  .four .q.lat .v{color:#2dd4bf}
+  .four .q.den .v{color:#818cf8}
+
+  @media (max-width:560px){
+    .four{grid-template-columns:1fr 1fr}
+    .fs{grid-template-columns:1fr 1fr}
+    .sblock .cap{flex-direction:column;gap:2px;align-items:center;text-align:center}
+  }
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="inf-35-numa-bind-animation.html" aria-label="上一集" title="上一集：钉在网卡旁边">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="dev-01-tools-animation.html" aria-label="下一集" title="下一集：工具设计">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1">
+  <div class="hero-kicker rv d1">SEASON 3 · 12 · 幕 D 密度 · 收官</div>
+  <h1 class="rv d2">一格<br><span class="grad">能装多少</span></h1>
+  <p class="hero-sub rv d3">机柜看得见，cache 看不见<br>容量不是"买了多少"，是<b>层层折损之后还剩多少</b></p>
+  <div class="rackbox rv d4" id="rackbox">
+    <div class="rackcss" id="rackcss">
+      <div class="rk"><i class="lit"></i><i class="lit"></i><i></i><i class="lit"></i><i></i><i class="lit"></i><i class="lit"></i><i></i></div>
+      <div class="rk"><i></i><i class="lit"></i><i class="lit"></i><i></i><i class="lit"></i><i></i><i class="lit"></i><i class="lit"></i></div>
+      <div class="rk"><i class="lit"></i><i></i><i class="lit"></i><i class="lit"></i><i></i><i class="lit"></i><i></i><i class="lit"></i></div>
+    </div>
+  </div>
+  <div class="rackcap rv d5">机柜 · 每格里是一份额外看不见的 cache（3D · 无 WebGL 时为示意）</div>
+  <div class="next-hint">向下滚动 · 从最小的格子数起<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1">01 · <b>格子数</b></div>
+    <h2 class="rv d2">一个 block 能服务几路会话</h2>
+    <p class="scr-desc rv d3"><code>get_num_state_slots = int(max_num_seqs × ratio) + 1</code><br>格子的总数在分配那一刻就定了。</p>
+  </div>
+  <div class="stage">
+    <div class="codeblk rv d4"><i># cache_engine.py</i>
+get_num_state_slots =
+    int(<em>max_num_seqs</em> × <em>ratio</em>) + <em>1</em></div>
+    <div class="facts">
+      <div class="fact rv d5"><div class="i">➕</div><div><b>为什么多加 1</b><p>给"正在写入但还没登记"的那一路留一个空位——不加这 1，满载时的写入会踩到别人的格子。</p></div></div>
+      <div class="fact rv d6"><div class="i">📐</div><div><b>为什么乘 ratio</b><p>压缩层一份 state 服务多路请求——格子数不等于会话数，是按压缩比折算过的。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d7">容量的第一层：格子总数是公式定死的，不是"能装就装"。</div>
+</section>
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1">02 · <b>分区</b></div>
+    <h2 class="rv d2">一块里，先分两种住户</h2>
+    <p class="scr-desc rv d3">stored（要落盘的 SWA）在前，dropped 在后。<br>落盘时按长度截断，就自然排除 dropped。</p>
+  </div>
+  <div class="stage">
+    <div class="sblock rv d4">
+      <div class="bar">
+        <div class="st"><b>stored</b><span>要落盘 · 低地址</span></div>
+        <div class="dr"><b>dropped</b><span>用完即弃 · 高地址</span></div>
+      </div>
+      <div class="cap"><span>YOCO consumer SWA 之外的正式数据</span><span>截断线在这 · 不用挑着写</span></div>
+    </div>
+    <div class="small rv d5">布局即策略：<b>"谁要留"用地址表达</b>，落盘逻辑里就不再出现 if</div>
+  </div>
+  <div class="scr-foot rv d6">数据出处：cache_engine.py L210–L300 的 StateBlock 分区。</div>
+</section>
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1">03 · <b>零头</b></div>
+    <h2 class="rv d2">对齐吃掉的那部分</h2>
+    <p class="scr-desc rv d3">每层 SWA 按 32 B 对齐；含 SWA 时整块按<br><code>lcm(32, 每 token 字节数)</code> 对齐。</p>
+  </div>
+  <div class="stage">
+    <div class="ledger rv d4">
+      <div class="r" style="grid-template-columns:1.7fr 1fr"><span>项目</span><span style="text-align:right">体量</span></div>
+      <div class="r" style="grid-template-columns:1.7fr 1fr"><span>每层 SWA 对齐零头</span><span class="v">几 KB</span></div>
+      <div class="r" style="grid-template-columns:1.7fr 1fr"><span>× 层数</span><span class="v">× 80</span></div>
+      <div class="r" style="grid-template-columns:1.7fr 1fr"><span>× 每机卡数</span><span class="v">× 8</span></div>
+      <div class="r sum" style="grid-template-columns:1.7fr 1fr"><span>一台机器上被零头吃掉的</span><span class="v">GB 级</span></div>
+    </div>
+    <div class="small rv d5">对齐不是为了好看——是为了 <b>TMA / 拷贝一次拿整段</b>。<br>零头是买"整段搬运"的价钱</div>
+  </div>
+  <div class="scr-foot rv d6">单片看是零头，乘上层数和卡数，就是预算里的一行。</div>
+</section>
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1">04 · <b>集群</b></div>
+    <h2 class="rv d2">再往上一层：3FS 的账</h2>
+    <p class="scr-desc rv d3">折算到每张卡约 <code>14.4 TB</code> 逻辑容量——<br>中间隔着纠删码。</p>
+  </div>
+  <div class="stage">
+    <div class="fs rv d4">
+      <div class="c"><div class="v">20 × 30.73</div><div class="t">TB SSD / 存储节点</div></div>
+      <div class="c"><div class="v">≥40 / 5</div><div class="t">GB/s 读 / 写</div></div>
+      <div class="c"><div class="v">10+2</div><div class="t">纠删码条带</div></div>
+    </div>
+    <div class="small rv d5">12 份物理盘只出 10 份逻辑容量——<b>冗余是买"坏了不丢"的</b>。<br>一个 scale-up 域：64 卡跑 decode，4 卡跑 prefill</div>
+  </div>
+  <div class="scr-foot rv d6">数据出处：<b>inference_deployment_qa.md</b> §Cluster &amp; storage（官方自述口径）。</div>
+</section>
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1">05 · <b>全季收口</b></div>
+    <h2 class="rv d2">四个数字，各自有主</h2>
+  </div>
+  <div class="stage">
+    <div class="four rv d4">
+      <div class="q score"><div class="v">93.4</div><div class="n">分数</div><div class="w">评测流程与判分器定的<br>·26 ·27</div></div>
+      <div class="q len"><div class="v">1M</div><div class="n">长度</div><div class="w">外推与选块定的<br>·28 ·29 ·30</div></div>
+      <div class="q lat"><div class="v">10ms+</div><div class="n">时延</div><div class="w">发射与装箱定的<br>·31 ·32 ·33</div></div>
+      <div class="q den"><div class="v">/node</div><div class="n">密度</div><div class="w">格式与拓扑定的<br>·34 ·35 ·36</div></div>
+    </div>
+    <div class="small rv d5">用户看到的是四个数字；<b>每一集都掀开其中一个的背面</b></div>
+  </div>
+  <div class="scr-foot rv d6">容量不是"买了多少硬盘"，是<b>对齐、分区、纠删码之后还能装多少</b>——第三季完。</div>
+</section>
+
+<script src="vendor/three.global.js"></script>
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  /* ---------- 3D 机柜（封面）：不可用则 CSS 降级 ---------- */
+  var rackbox = document.getElementById('rackbox');
+  var rackcss = document.getElementById('rackcss');
+  var RACKS = 3, SLOTS = 8;
+  var LIT = [[0, 1, 3, 5, 6], [1, 2, 4, 6, 7], [0, 2, 3, 5, 7]];
+  var renderer = null, scene = null, camera = null, racks = null, running = false;
+
+  function init3D() {
+    if (typeof THREE === 'undefined') return false;
+    var test = document.createElement('canvas');
+    var gl = test.getContext('webgl') || test.getContext('experimental-webgl');
+    if (!gl) return false;
+
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    rackbox.appendChild(renderer.domElement);
+
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+    camera.position.set(0, 2.2, 8.4);
+    camera.lookAt(0, 0, 0);
+
+    racks = new THREE.Group();
+    var dimMat = new THREE.MeshBasicMaterial({ color: 0x1b2537 });
+    var dimEdge = new THREE.LineBasicMaterial({ color: 0x2c3a52 });
+    var litMat = new THREE.MeshBasicMaterial({ color: 0x818cf8 });
+    var litEdge = new THREE.LineBasicMaterial({ color: 0xa5b4fc });
+    var cellGeo = new THREE.BoxGeometry(0.78, 0.52, 0.5);
+    var cellEdge = new THREE.EdgesGeometry(cellGeo);
+
+    for (var r = 0; r < RACKS; r++) {
+      var rack = new THREE.Group();
+      var shell = new THREE.Mesh(new THREE.BoxGeometry(1.1, SLOTS * 0.72 + 0.3, 0.72),
+        new THREE.MeshBasicMaterial({ color: 0x131b2c }));
+      rack.add(shell);
+      var se = new THREE.LineSegments(new THREE.EdgesGeometry(shell.geometry),
+        new THREE.LineBasicMaterial({ color: 0x3a4a6a }));
+      rack.add(se);
+      for (var s = 0; s < SLOTS; s++) {
+        var lit = LIT[r].indexOf(s) !== -1;
+        var m = new THREE.Mesh(cellGeo, lit ? litMat : dimMat);
+        m.position.set(0, (SLOTS / 2 - 0.5 - s) * 0.72, 0.16);
+        rack.add(m);
+        var e = new THREE.LineSegments(cellEdge, lit ? litEdge : dimEdge);
+        e.position.copy(m.position);
+        rack.add(e);
+      }
+      rack.position.set((r - (RACKS - 1) / 2) * 1.7, 0, 0);
+      racks.add(rack);
+    }
+    scene.add(racks);
+    resize3D();
+    window.addEventListener('resize', resize3D);
+    return true;
+  }
+
+  function resize3D() {
+    if (!renderer) return;
+    var rect = rackbox.getBoundingClientRect();
+    if (rect.width < 10 || rect.height < 10) return;
+    renderer.setSize(rect.width, rect.height);
+    camera.aspect = rect.width / rect.height;
+    camera.updateProjectionMatrix();
+  }
+
+  var t0 = Date.now();
+  function tick() {
+    if (!running || !renderer) return;
+    var t = (Date.now() - t0) / 1000;
+    racks.rotation.y = Math.sin(t * 0.32) * 0.4;
+    renderer.render(scene, camera);
+    requestAnimationFrame(tick);
+  }
+  function useFallback() {
+    rackbox.classList.add('no3d');
+  }
+  var booted = false;
+  function bootRack() {
+    if (booted) return;
+    booted = true;
+    try { booted = init3D(); } catch (e) { booted = false; }
+    if (!booted) useFallback();
+    else { rackcss.style.display = 'none'; resize3D(); }
+  }
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (i === 0) { bootRack(); running = true; tick(); } else { running = false; }
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+
+</body>
+</html>

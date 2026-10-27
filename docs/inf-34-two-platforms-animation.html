@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="一份代码两颗芯片：cuda/ 与 asc/ 目录对照、行数不对等的原因、rstd_1ulp 的拆分、各多出三个文件的脾气、cudagraph 的平台差异。">
+<title>同一形状两种材质 · 推理原理 第三季</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#818cf8;--acc2:#a5b4fc;--accSoft:rgba(129,140,248,.34);
+    --accBg:rgba(129,140,248,.08);--accBd:rgba(129,140,248,.34);--accGl:rgba(129,140,248,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+    --asc:#34d399;--ascBg:rgba(52,211,153,.10);--ascBd:rgba(52,211,153,.35);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1,.s2,.s3,.s4,.s5,.s6,.s7,.s8,.s9{--glow:var(--accGl)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,var(--asc) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--acc);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+  .big{font-family:var(--mono);font-size:clamp(20px,5vw,26px);font-weight:800;color:var(--acc);line-height:1}
+
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;max-width:520px}
+  .g2 .p{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:10px}
+  .g2 .p .t{font-size:10.5px;color:var(--dim);margin-top:6px;text-align:center}
+
+  .tbl{width:100%;max-width:540px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:rgba(7,11,20,.4)}
+  .tbl .r{display:grid;gap:6px;padding:9px 12px;font-size:11px;border-top:1px solid var(--line);align-items:center}
+  .tbl .r:first-child{border-top:none;background:rgba(255,255,255,.04);font-size:9px;letter-spacing:.1em;color:var(--dim);font-family:var(--mono)}
+  .tbl .r b{font-family:var(--mono);font-weight:700}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk .g{color:var(--asc);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  /* 目录对照 */
+  .dirs{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;width:100%;max-width:560px;align-items:stretch}
+  .dirs .col{border:1px solid var(--line);border-radius:11px;background:var(--card);padding:10px 11px;
+    display:flex;flex-direction:column;gap:4px}
+  .dirs .col h3{font-family:var(--mono);font-size:11px;letter-spacing:.06em;margin-bottom:3px}
+  .dirs .col.gpu h3{color:var(--acc2)}
+  .dirs .col.npu h3{color:var(--asc);border-color:var(--ascBd)}
+  .dirs .col.npu{border-color:rgba(52,211,153,.25)}
+  .dirs .col .fn{font-family:var(--mono);font-size:9px;color:#c3cde2;background:rgba(255,255,255,.05);
+    border-radius:5px;padding:3px 6px;line-height:1.4}
+  .dirs .col .fn.same{color:#8b96ad}
+  .dirs .col .fn.only-gpu{border:1px solid var(--accBd);color:var(--acc2);background:var(--accBg)}
+  .dirs .col .fn.only-npu{border:1px solid var(--ascBd);color:var(--asc);background:var(--ascBg)}
+  .dirs .mid{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+  .dirs .mid .sameN{font-family:var(--mono);font-size:15px;font-weight:800;color:#e8eefc}
+  .dirs .mid .sameT{font-size:8.5px;color:var(--dim);text-align:center;line-height:1.5}
+
+  /* 行数对比条 */
+  .loc{width:100%;max-width:520px;display:flex;flex-direction:column;gap:9px}
+  .loc .row{display:flex;align-items:center;gap:9px}
+  .loc .row em{font-family:var(--mono);font-size:10px;font-style:normal;width:44px;flex:none}
+  .loc .row em.gpu{color:var(--acc2)}
+  .loc .row em.npu{color:var(--asc)}
+  .loc .row .track{flex:1;height:14px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .loc .row .fill{height:100%;width:0;border-radius:99px}
+  .loc .row.gpu .fill{background:linear-gradient(90deg,var(--accSoft),var(--acc))}
+  .loc .row.npu .fill{background:linear-gradient(90deg,rgba(52,211,153,.3),var(--asc))}
+  .screen.active .loc .row .fill{animation:grow 1s cubic-bezier(.2,1,.3,1) both}
+  @keyframes grow{to{width:var(--w)}}
+  .loc .row .val{font-family:var(--mono);font-size:10px;color:#c3cde2;width:52px;flex:none}
+
+  /* 1ulp 拆分示意 */
+  .split{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .split .srow{display:flex;align-items:center;gap:8px}
+  .split .srow .cell{flex:1;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:10px}
+  .split .srow .one{background:rgba(255,255,255,.07);color:#c3cde2;border:1px solid var(--line)}
+  .split .srow .hi{background:linear-gradient(180deg,var(--accSoft),var(--accBg));color:var(--acc2);border:1px solid var(--accBd)}
+  .split .srow .lo{background:var(--ascBg);color:var(--asc);border:1px solid var(--ascBd)}
+  .split .op{font-family:var(--mono);font-size:13px;color:var(--dim);flex:none}
+  .split .cap{font-family:var(--mono);font-size:9px;color:var(--dim);text-align:center}
+
+  @media (max-width:560px){
+    .dirs{grid-template-columns:1fr}
+    .dirs .mid{flex-direction:row;justify-content:center}
+  }
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="inf-33-fused-sampler-animation.html" aria-label="上一集" title="上一集：只留一个 id">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="inf-35-numa-bind-animation.html" aria-label="下一集" title="下一集：钉在网卡旁边">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1">
+  <div class="hero-kicker rv d1">SEASON 3 · 10 · 幕 D 密度</div>
+  <h1 class="rv d2">同一形状<br><span class="grad">两种材质</span></h1>
+  <p class="hero-sub rv d3">一份算子代码，两套后端实现<br>SM100 与 Ascend 950，同一个模型要跑出<b>同一个数</b></p>
+  <div style="margin-top:22px" class="rv d4">
+    <svg viewBox="0 0 520 96" width="100%" style="max-width:460px" xmlns="http://www.w3.org/2000/svg">
+      <rect x="60" y="22" width="90" height="52" rx="9" fill="rgba(129,140,248,.16)" stroke="rgba(129,140,248,.75)" stroke-width=".9"/>
+      <text x="105" y="52" text-anchor="middle" font-family="ui-monospace,Consolas,monospace" font-size="10" fill="#a5b4fc">CUDA</text>
+      <rect x="370" y="22" width="90" height="52" rx="9" fill="rgba(52,211,153,.12)" stroke="rgba(52,211,153,.7)" stroke-width=".9"/>
+      <text x="415" y="52" text-anchor="middle" font-family="ui-monospace,Consolas,monospace" font-size="10" fill="#34d399">ASCEND</text>
+      <g stroke="rgba(232,238,252,.5)" stroke-width=".9" fill="none">
+        <path d="M170 48 L212 48 M212 48 L206 43 M212 48 L206 53"/>
+        <path d="M350 48 L308 48 M308 48 L314 43 M308 48 L314 53"/>
+      </g>
+      <rect x="222" y="30" width="76" height="36" rx="7" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.3)" stroke-width=".8"/>
+      <text x="260" y="52" text-anchor="middle" font-family="ui-monospace,Consolas,monospace" font-size="9.5" fill="#e8eefc">同一份算子</text>
+    </svg>
+  </div>
+  <div class="next-hint">向下滚动 · 先看两个目录长得多像<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1">01 · <b>目录对照</b></div>
+    <h2 class="rv d2">两份目录，27 个同名文件</h2>
+    <p class="scr-desc rv d3"><code>tilelang_ops/cuda/</code> 与 <code>tilelang_ops/asc/</code> 各 30 个文件，<br>同名 = 同一件事的两套实现。</p>
+  </div>
+  <div class="stage">
+    <div class="dirs rv d4">
+      <div class="col gpu">
+        <h3>cuda/ · SM100</h3>
+        <div class="fn same">attention.py</div>
+        <div class="fn same">rms_norm.py</div>
+        <div class="fn same">rope.py</div>
+        <div class="fn same">swa.py …</div>
+        <div class="fn only-gpu">outlier_detection.py</div>
+        <div class="fn only-gpu">quant.py</div>
+        <div class="fn only-gpu">prepare_decode_metadata.py</div>
+      </div>
+      <div class="mid">
+        <div class="sameN">27</div>
+        <div class="sameT">同名<br>同职责</div>
+      </div>
+      <div class="col npu">
+        <h3>asc/ · Ascend 950</h3>
+        <div class="fn same">attention.py</div>
+        <div class="fn same">rms_norm.py</div>
+        <div class="fn same">rope.py</div>
+        <div class="fn same">swa.py …</div>
+        <div class="fn only-npu">kv_quant.py</div>
+        <div class="fn only-npu">rstd_1ulp.py</div>
+        <div class="fn only-npu">prepare_v4_decode_metadata.py</div>
+      </div>
+    </div>
+    <div class="small rv d5">各多出的三个文件，标的就是<b>平台的脾气</b>——下一屏看最典型的一个</div>
+  </div>
+  <div class="scr-foot rv d6">跨平台的第一步不是抽象，是<b>并排摆开逐个点名</b>：谁同名、谁独有。</div>
+</section>
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1">02 · <b>行数不对等</b></div>
+    <h2 class="rv d2">同样的数值，NPU 侧多写 1.5 倍</h2>
+    <p class="scr-desc rv d3">cuda 4968 行，asc 7418 行。<br>不是更啰嗦——是同样的数值要多做几步补偿。</p>
+  </div>
+  <div class="stage">
+    <div class="loc rv d4">
+      <div class="row gpu"><em>cuda</em><div class="track"><div class="fill" style="--w:67%"></div></div><span class="val">4,968</span></div>
+      <div class="row npu"><em>asc</em><div class="track"><div class="fill" style="--w:100%"></div></div><span class="val">7,418</span></div>
+    </div>
+    <div class="small rv d5">多出的行花在：<b>分步补偿</b>、精度对齐、平台特有的前处理/后处理——<br>数学一样，路不一样长</div>
+  </div>
+  <div class="scr-foot rv d6">行数差不是代码质量差，是硬件离"顺手"的距离差。</div>
+</section>
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1">03 · <b>rstd_1ulp</b></div>
+    <h2 class="rv d2">把一个 fp32 拆成两半</h2>
+    <p class="scr-desc rv d3">为了让两个平台算出<b>同一位</b>，asc 侧把一个 fp32<br>拆成 high + low 两片，并保持与训练侧一致的运算顺序。</p>
+  </div>
+  <div class="stage">
+    <div class="split rv d4">
+      <div class="srow">
+        <div class="cell one">x &nbsp;·&nbsp; 一个 fp32</div>
+      </div>
+      <div class="srow">
+        <div class="cell hi">high · 高位片（大部分有效位）</div>
+        <span class="op">+</span>
+        <div class="cell lo">low · 低位片（补回掉的 1 ulp）</div>
+      </div>
+      <div class="cap">high + low ≈ x，但两片各自都能被 FP32 / FMA 精确表示</div>
+    </div>
+    <div class="facts">
+      <div class="fact rv d5"><div class="i">🎯</div><div><b>为什么要拆</b><p>直接算，两个平台的舍入路径不同，结果差 1 ulp。训练侧认定的是"训练时的那个位"，推理必须逐位对上。</p></div></div>
+      <div class="fact rv d6"><div class="i">🧾</div><div><b>为什么叫 1ulp</b><p>ulp = unit in the last place。拆分补回的正是最后一位的误差——名字就是账本。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d7">"数值一致"在这里不是形容词，是<b>逐位相等</b>的验收标准。</div>
+</section>
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1">04 · <b>各多三个</b></div>
+    <h2 class="rv d2">差异本身就是说明书</h2>
+    <p class="scr-desc rv d3">六个独有文件，各自回应一个平台的短板或习惯。</p>
+  </div>
+  <div class="stage">
+    <div class="facts">
+      <div class="fact rv d4"><div class="i">🛡️</div><div><b>cuda 独有 · outlier_detection.py</b><p>量化前先探这一块的最大绝对值，超了就 abort——否则整个 tile 溢出。GPU 路线选择"先检查后量化"。</p></div></div>
+      <div class="fact rv d5"><div class="i">🧮</div><div><b>asc 独有 · kv_quant.py + rstd_1ulp.py</b><p>NPU 路线把量化粒度和精度补偿单独成文件——平台的数值习惯不同，补的位置也不同。</p></div></div>
+      <div class="fact rv d6"><div class="i">🎬</div><div><b>metadata 也各有一份</b><p>prepare_decode_metadata 与 prepare_v4_decode_metadata——两边的图执行模型不同，连"准备元数据"都得各写各的。</p></div></div>
+    </div>
+  </div>
+  <div class="scr-foot rv d7">读目录像读体检报告：哪里多了个文件，哪里就是这块硬件的软肋。</div>
+</section>
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1">05 · <b>cudagraph</b></div>
+    <h2 class="rv d2">连"录图"都不同</h2>
+    <p class="scr-desc rv d3">上一集的 CUDA Graph，到了 NPU 侧少了一半仪式。</p>
+  </div>
+  <div class="stage">
+    <div class="tbl rv d4">
+      <div class="r" style="grid-template-columns:1fr 1.4fr 1.4fr">
+        <span>步骤</span><span>GPU（SM100）</span><span>NPU（Ascend 950）</span>
+      </div>
+      <div class="r" style="grid-template-columns:1fr 1.4fr 1.4fr">
+        <span>捕获</span><span><b>capture</b> + keep_graph=True</span><span>—（无此参数）</span>
+      </div>
+      <div class="r" style="grid-template-columns:1fr 1.4fr 1.4fr">
+        <span>实例化</span><span>instantiate()</span><span>instantiate()</span>
+      </div>
+      <div class="r" style="grid-template-columns:1fr 1.4fr 1.4fr">
+        <span>重放</span><span>replay()</span><span>直接执行实例化后的图</span>
+      </div>
+    </div>
+    <div class="small rv d5">同一个抽象（"录下来反复放"），两套仪式——<br>跨平台兼容不是 if/else，是每个入口都要有人对过</div>
+  </div>
+  <div class="scr-foot rv d6">数据出处：<b>cuda_graph_runner.py</b> L121–L132 的平台分支。</div>
+</section>
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1">06 · <b>收束</b></div>
+    <h2 class="rv d2">不是编译一遍就完了</h2>
+  </div>
+  <div class="stage">
+    <div class="tbl rv d4">
+      <div class="r" style="grid-template-columns:1.6fr 1.4fr">
+        <span>有人要做的</span><span>做到什么程度</span>
+      </div>
+      <div class="r" style="grid-template-columns:1.6fr 1.4fr">
+        <span>同名文件点名</span><b>27 个逐一对照</b>
+      </div>
+      <div class="r" style="grid-template-columns:1.6fr 1.4fr">
+        <span>数值补偿</span><b>逐位相等（1ulp）</b>
+      </div>
+      <div class="r" style="grid-template-columns:1.6fr 1.4fr">
+        <span>独有文件认领</span><b>各 3 个写明理由</b>
+      </div>
+      <div class="r" style="grid-template-columns:1.6fr 1.4fr">
+        <span>图执行对齐</span><b>两套仪式各守各的</b>
+      </div>
+    </div>
+    <div class="small rv d5">下一集：钉在正确的插座上——NUMA 绑定</div>
+  </div>
+  <div class="scr-foot rv d6">数据出处：<b>tilelang_ops/{cuda,asc}/</b> 目录清单 · <b>asc/rstd_1ulp.py</b> · <b>cuda/outlier_detection.py</b>。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+  var HOOK = null;
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (HOOK) { try { HOOK(i); } catch (e) {} }
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+
+</body>
+</html>

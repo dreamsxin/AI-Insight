@@ -5,7 +5,7 @@
 仓库由三部分组成：
 
 1. **交互式课程应用** — Python(FastAPI) + TypeScript(Vite) + 原生 Canvas API 的 AI 原理可视化教程，用数据流动画和直观比喻让不懂数学公式的人也能理解 AI 原理。
-2. **运作动画演示库（`docs/`）** — 12 个系列、110 集自包含逐屏动画，覆盖训练原理、模型原理、推理服务到 Agent 工程的完整知识地图，是仓库目前最主要的产出。
+2. **运作动画演示库（`docs/`）** — 12 个系列、113 集自包含逐屏动画，覆盖训练原理、模型原理、推理服务到 Agent 工程的完整知识地图，是仓库目前最主要的产出。
 3. **通用 Agent 框架（`backend/app/agent/`）** — 零 LLM-SDK 依赖、可用于生产的异步 Agent 运行时，其设计正取自动画系列沉淀的工程共识。
 
 ## 📚 课程内容
@@ -24,7 +24,7 @@
 
 ## 🎬 运作动画演示（docs/）
 
-`docs/index.html` 是唯一入口，收录 **12 个系列、110 集**（无孤儿文件）：
+`docs/index.html` 是唯一入口，收录 **12 个系列、113 集**（无孤儿文件）：
 
 | 系列 | 期数 | 主题 |
 |---|---|---|
@@ -34,7 +34,7 @@
 | AI 运作原理拆解 | 15 | 训练三部曲、上下文窗口、注意力、采样、多 Agent…… |
 | AI 运作原理 · 深入篇 | 8 | Transformer 骨架、MoE、KV Cache、RLVR、LoRA、Embedding、多模态 |
 | LLM 模型算法原理 | 5 | 词向量、损失、位置编码、残差、向量注意力 |
-| 推理原理（三季） | 33 | 服务层（prefill/decode、KV 三级缓存、推测解码）→ 底层账本 → 第三季持续更新 |
+| 推理原理（三季） | 36 | 服务层（prefill/decode、KV 三级缓存、推测解码）→ 底层账本 → 第三季从四个数字下钻到底层，已完结 |
 | AGENT 开发避坑指南 | 5 | 工具设计、循环成本、上下文工程、评估观测、提示注入 |
 | AGENT 实战工坊 | 6 | 知识问答 RAG 全链路：入库 → 检索多轮 → 上线 → 选型 → Agentic RAG → GraphRAG |
 | AGENT 模式进阶 | 6 | Plan-and-Execute、Reflection、CoALA 记忆、MCP 发现、护栏 |
@@ -170,7 +170,7 @@ AI-Insight/
 │   │   ├── visualizations/   # 每章可视化实现 (ch01 ~ ch09)
 │   │   └── utils/            # 数学/颜色工具
 │   └── tests/                # Vitest测试 (25个)
-├── docs/                     # 110 集动画演示库（独立于 Vite 应用）
+├── docs/                     # 113 集动画演示库（独立于 Vite 应用）
 │   ├── index.html            # 唯一入口：12 系列 + 检索 + 知识地图
 │   ├── research/             # 系列规划书与审计报告
 │   ├── tools/                # nav-gen.py 集间导航生成器
@@ -195,7 +195,7 @@ AI-Insight/
 - **✅ 已完成**：`/api/agent/chat` + SSE 流式端点（51 后端测试）；进阶机制 ·08《从零造一个 Harness》动画；`examples/agent-harness-demo/` 五个离线可运行脚本；Harness 资料汇编
 - **✅ P1 · 前端 Agent Playground**：第 10 章「Agent 实验台」已上线（零路由改动），实时展示工具轨迹与护栏触发
 - **P1 · Harness 深化**：trace 落盘与最小评估集、checkpoint store、工具结果来源标记（防上下文提权）、工具利用率审计——依据 `docs/research/agent-harness-research.md` 第二轮调研
-- **P1 · 动画库收尾**：推理原理第三季剩余 3 集（inf-34–36）
+- **P1 · 动画库收尾 ✅（2026-10-27 完结）**：推理原理第三季 12 集（25–36）全部上线
 - **P2 · 工程深化**：真实模型 e2e、长任务两段式示例、治理三问自检（恢复/审计/成本）、子代理支持
 
 ## 📝 License

@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="NUMA 绑定：跨插座延迟翻倍、卡与网卡都有家、which_numa 查节点、setaffinity 与 MPOL_BIND 三个圈收紧、逻辑卡号与物理卡号的换算。">
+<title>钉在网卡旁边 · 推理原理 第三季</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--pink:#f472b6;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --acc:#818cf8;--acc2:#a5b4fc;--accSoft:rgba(129,140,248,.34);
+    --accBg:rgba(129,140,248,.08);--accBd:rgba(129,140,248,.34);--accGl:rgba(129,140,248,.12);
+    --n0:#60a5fa;--n1:#34d399;
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--acc);transform:scale(1.4);box-shadow:0 0 10px var(--accBd)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,var(--glow,var(--accGl)),transparent 70%)}
+  .s1,.s2,.s3,.s4,.s5,.s6,.s7,.s8,.s9{--glow:var(--accGl)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--acc);
+    border:1px solid var(--accBd);background:var(--accBg);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  .s1{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,var(--acc) 5%,#f1f5f9 54%,#34d399 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s1.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+  .big{font-family:var(--mono);font-size:clamp(20px,5vw,26px);font-weight:800;color:var(--acc);line-height:1}
+
+  .codeblk{width:100%;max-width:540px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:11px 13px;font-family:var(--mono);font-size:10.5px;line-height:1.8;color:#c3cde2;white-space:pre-wrap;word-break:break-word}
+  .codeblk em{color:var(--acc);font-style:normal}
+  .codeblk .g{color:var(--n1);font-style:normal}
+  .codeblk .b{color:var(--n0);font-style:normal}
+  .codeblk i{color:var(--dim);font-style:normal}
+
+  .facts{display:flex;flex-direction:column;gap:9px;width:100%;max-width:520px}
+  .fact{display:flex;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+  .fact .i{font-size:15px}
+  .fact b{font-size:12.5px;display:block;margin-bottom:2px}
+  .fact p{font-size:10.5px;color:var(--dim);line-height:1.55}
+
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;max-width:520px}
+  .g2 .p{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:10px}
+  .g2 .p .t{font-size:10.5px;color:var(--dim);margin-top:6px;text-align:center}
+
+  .tbl{width:100%;max-width:540px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:rgba(7,11,20,.4)}
+  .tbl .r{display:grid;gap:6px;padding:9px 12px;font-size:11px;border-top:1px solid var(--line);align-items:center}
+  .tbl .r:first-child{border-top:none;background:rgba(255,255,255,.04);font-size:9px;letter-spacing:.1em;color:var(--dim);font-family:var(--mono)}
+  .tbl .r b{font-family:var(--mono);font-weight:700}
+
+  /* 延迟对比 */
+  .lat{width:100%;max-width:520px;display:flex;flex-direction:column;gap:9px}
+  .lat .row{display:flex;align-items:center;gap:9px}
+  .lat .row em{font-family:var(--mono);font-size:10px;font-style:normal;width:76px;flex:none;text-align:right;color:var(--dim)}
+  .lat .row .track{flex:1;height:14px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .lat .row .fill{height:100%;width:0;border-radius:99px}
+  .lat .row.same .fill{background:linear-gradient(90deg,var(--accSoft),var(--acc))}
+  .lat .row.cross .fill{background:linear-gradient(90deg,rgba(251,113,133,.3),#fb7185)}
+  .screen.active .lat .row .fill{animation:grow 1s cubic-bezier(.2,1,.3,1) both}
+  @keyframes grow{to{width:var(--w)}}
+  .lat .row .val{font-family:var(--mono);font-size:10px;color:#c3cde2;width:44px;flex:none}
+
+  /* 双节点拓扑（CSS 降级 + s3 用） */
+  .topo{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%;max-width:560px}
+  .topo .node{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:11px 12px}
+  .topo .node h3{font-family:var(--mono);font-size:11px;margin-bottom:7px}
+  .topo .node.n0 h3{color:var(--n0)}
+  .topo .node.n1 h3{color:var(--n1)}
+  .topo .dev{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  .topo .dev span{font-family:var(--mono);font-size:9px;border-radius:6px;padding:5px 4px;text-align:center;
+    background:rgba(255,255,255,.05);color:#c3cde2}
+  .topo .node.n0 .dev span{border:1px solid rgba(96,165,250,.28)}
+  .topo .node.n1 .dev span{border:1px solid rgba(52,211,153,.28)}
+  .topo .nic{margin-top:6px;font-family:var(--mono);font-size:9px;border-radius:6px;padding:5px 4px;text-align:center;
+    background:var(--accBg);border:1px dashed var(--accBd);color:var(--acc2)}
+
+  /* 3D 容器 */
+  .boardbox{position:relative;width:100%;max-width:560px;height:clamp(230px,36vh,310px)}
+  .boardbox canvas{width:100%;height:100%;display:block}
+  .boardbox .topo{position:absolute;inset:0;align-content:center}
+  .boardbox.no3d canvas{display:none}
+  .boardcap{font-family:var(--mono);font-size:9px;color:var(--dim);text-align:center;margin-top:2px}
+
+  /* 三圈收紧 */
+  .rings{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px}
+  .ring{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:11px;background:var(--card);padding:11px 13px}
+  .ring .no{font-family:var(--mono);font-size:11px;font-weight:800;color:var(--acc);width:20px;flex:none}
+  .ring b{font-size:12.5px;display:block}
+  .ring p{font-size:10.5px;color:var(--dim);line-height:1.55;margin-top:2px}
+  .ring code{color:var(--cyan);font-size:.92em}
+
+  /* 逻辑/物理对照交互 */
+  .map{width:100%;max-width:520px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:rgba(7,11,20,.4)}
+  .map .m{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:6px;padding:8px 12px;font-size:10.5px;border-top:1px solid var(--line);align-items:center}
+  .map .m:first-child{border-top:none;background:rgba(255,255,255,.04);font-size:9px;letter-spacing:.1em;color:var(--dim);font-family:var(--mono)}
+  .map .m b{font-family:var(--mono);color:var(--acc);font-weight:700}
+  .map .m.warn b{color:#fb7185}
+  .env{width:100%;max-width:520px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,20,.62);
+    padding:10px 13px;font-family:var(--mono);font-size:10.5px;color:#c3cde2;word-break:break-all}
+  .env em{color:var(--acc);font-style:normal}
+  .envbtn{align-self:center;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;color:#0b1020;font-weight:700;
+    border:none;border-radius:999px;padding:8px 18px;background:linear-gradient(90deg,var(--accSoft),var(--acc));cursor:pointer}
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="inf-34-two-platforms-animation.html" aria-label="上一集" title="上一集：同一形状两种材质">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="inf-36-density-animation.html" aria-label="下一集" title="下一集：一格能装多少">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s1">
+  <div class="hero-kicker rv d1">SEASON 3 · 11 · 幕 D 密度</div>
+  <h1 class="rv d2">钉在<br><span class="grad">网卡旁边</span></h1>
+  <p class="hero-sub rv d3">两个插座、八张卡、一张网卡<br>连错一条线，带宽掉一半</p>
+  <div class="boardbox rv d4" id="boardbox">
+    <div class="topo" id="boardcss">
+      <div class="node n0"><h3>NUMA 0</h3><div class="dev"><span>GPU 0</span><span>GPU 1</span><span>GPU 2</span><span>GPU 3</span></div><div class="nic">mlx5_0</div></div>
+      <div class="node n1"><h3>NUMA 1</h3><div class="dev"><span>GPU 4</span><span>GPU 5</span><span>GPU 6</span><span>GPU 7</span></div><div class="nic">—</div></div>
+    </div>
+  </div>
+  <div class="boardcap rv d5">方块 = CPU 插座 · 卡片 = 加速卡 · 虚线框 = 网卡（3D · 无 WebGL 时为示意）</div>
+  <div class="next-hint">向下滚动 · 先看跨插座的代价<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s2">
+  <div class="scr-head">
+    <div class="step-badge rv d1">01 · <b>NUMA 的现实</b></div>
+    <h2 class="rv d2">内存是有归属的</h2>
+    <p class="scr-desc rv d3">一台双路机器，内存分属两个插座。<br>跨插座访问，延迟翻倍、带宽减半。</p>
+  </div>
+  <div class="stage">
+    <div class="lat rv d4">
+      <div class="row same"><em>本节点</em><div class="track"><div class="fill" style="--w:38%"></div></div><span class="val">×1</span></div>
+      <div class="row cross"><em>跨节点</em><div class="track"><div class="fill" style="--w:100%"></div></div><span class="val">×2</span></div>
+    </div>
+    <div class="small rv d5">推理是"每步都搬数据"的活——访问路径长一倍，<b>每一步都长一倍</b></div>
+  </div>
+  <div class="scr-foot rv d6">这不是软件 bug，是物理：内存控制器就长在插座里，谁的数据离谁近。</div>
+</section>
+
+<section class="screen s3">
+  <div class="scr-head">
+    <div class="step-badge rv d1">02 · <b>家家有本</b></div>
+    <h2 class="rv d2">卡有家，网卡也有</h2>
+    <p class="scr-desc rv d3">每张加速卡挂在一个 NUMA 节点上；<br>网卡也一样，写在自己的设备目录里。</p>
+  </div>
+  <div class="stage">
+    <div class="topo rv d4">
+      <div class="node n0"><h3>NUMA 0</h3><div class="dev"><span>GPU 0</span><span>GPU 1</span><span>GPU 2</span><span>GPU 3</span></div><div class="nic">mlx5_0</div></div>
+      <div class="node n1"><h3>NUMA 1</h3><div class="dev"><span>GPU 4</span><span>GPU 5</span><span>GPU 6</span><span>GPU 7</span></div><div class="nic">mlx5_1</div></div>
+    </div>
+    <div class="codeblk rv d5"><i># 网卡的家写在哪</i>
+/sys/class/infiniband/<b>mlx5_0</b>/device/<em>numa_node</em>
+→ 0</div>
+    <div class="small rv d6">推理进程要同时摸<b>卡</b>（算）和<b>网卡</b>（通信）——两边的家最好在同一插座</div>
+  </div>
+  <div class="scr-foot rv d7">拓扑是查出来的，不是猜的：卡和网卡各有一个明确的节点号。</div>
+</section>
+
+<section class="screen s4">
+  <div class="scr-head">
+    <div class="step-badge rv d1">03 · <b>收紧</b></div>
+    <h2 class="rv d2">三个圈，一圈比一圈小</h2>
+    <p class="scr-desc rv d3"><code>which_numa</code> 查出目标节点，然后<br>把 CPU、内存依次"钉"过去。</p>
+  </div>
+  <div class="stage">
+    <div class="rings">
+      <div class="ring rv d4"><span class="no">1</span><div><b>查：卡/网卡属于哪个节点</b><p><code>which_numa</code> —— 读设备的 numa_node，得到目标插座</p></div></div>
+      <div class="ring rv d5"><span class="no">2</span><div><b>钉 CPU</b><p><code>numa_sched_setaffinity</code> —— 这个进程只在这些核上调度</p></div></div>
+      <div class="ring rv d6"><span class="no">3</span><div><b>钉内存</b><p><code>set_mempolicy(MPOL_BIND)</code> —— 新分配的内存只落在这个插座的 DIMM 上</p></div></div>
+    </div>
+    <div class="small rv d7">缺第三个圈：线程钉对了，<b>内存还是从对面插座分来</b>——白钉</div>
+  </div>
+  <div class="scr-foot rv d8">数据出处：<b>deep_cluster/topology/bind.py</b> L42–L93。</div>
+</section>
+
+<section class="screen s5">
+  <div class="scr-head">
+    <div class="step-badge rv d1">04 · <b>陷阱</b></div>
+    <h2 class="rv d2">卡号不是物理号</h2>
+    <p class="scr-desc rv d3"><code>CUDA_VISIBLE_DEVICES</code> 一重排，<br>"第 3 号卡"可能是物理上的第 7 张。</p>
+  </div>
+  <div class="stage">
+    <div class="env rv d4"><em>CUDA_VISIBLE_DEVICES</em>=7,6,5,4,3,2,1,0</div>
+    <div class="map rv d5" id="map"></div>
+    <button class="envbtn rv d6" id="swapBtn">换一个容器顺序 ↻</button>
+    <div class="small rv d7">逻辑 3 → 物理 <b id="physOut">4</b>。按逻辑号查拓扑，<b style="color:#fda4af">绑到别人家去</b></div>
+  </div>
+  <div class="scr-foot rv d8">容器重排一次，映射全变。<b>physical_device_id</b> 的职责就是把逻辑序号换回物理序号。</div>
+</section>
+
+<section class="screen s6">
+  <div class="scr-head">
+    <div class="step-badge rv d1">05 · <b>连错会怎样</b></div>
+    <h2 class="rv d2">没有报错，只有慢</h2>
+    <p class="scr-desc rv d3">绑错不会崩——一切照常跑，<br>只是每一步都在走对面插座。</p>
+  </div>
+  <div class="stage">
+    <div class="tbl rv d4">
+      <div class="r" style="grid-template-columns:1.4fr 1.6fr">
+        <span>绑错姿势</span><span>症状</span>
+      </div>
+      <div class="r" style="grid-template-columns:1.4fr 1.6fr">
+        <span>线程钉 A、内存来自 B</span><span><b>只省一半</b>——分配没跟着钉</span>
+      </div>
+      <div class="r" style="grid-template-columns:1.4fr 1.6fr">
+        <span>按逻辑号绑</span><span><b>绑到别家</b>——重排后映射已变</span>
+      </div>
+      <div class="r" style="grid-template-columns:1.4fr 1.6fr">
+        <span>进程与网卡异节点</span><span><b>通信掉带宽</b>——每步 collectives 都绕路</span>
+      </div>
+    </div>
+    <div class="small rv d5">监控看不到异常，profile 看得到：<b>同一个 kernel，慢了一截</b></div>
+  </div>
+  <div class="scr-foot rv d6">这类问题在压测里表现为"这批机器偏慢"——查到最后一层，往往是拓扑没绑对。</div>
+</section>
+
+<section class="screen s7">
+  <div class="scr-head">
+    <div class="step-badge rv d1">06 · <b>收束</b></div>
+    <h2 class="rv d2">没有算法，只有拓扑</h2>
+  </div>
+  <div class="stage">
+    <div class="tbl rv d4">
+      <div class="r" style="grid-template-columns:1.6fr 1.4fr">
+        <span>动作</span><span>凭据</span>
+      </div>
+      <div class="r" style="grid-template-columns:1.6fr 1.4fr">
+        <span>查节点</span><b>设备的 numa_node</b>
+      </div>
+      <div class="r" style="grid-template-columns:1.6fr 1.4fr">
+        <span>钉 CPU</span><b>sched_setaffinity</b>
+      </div>
+      <div class="r" style="grid-template-columns:1.6fr 1.4fr">
+        <span>钉内存</span><b>MPOL_BIND</b>
+      </div>
+      <div class="r" style="grid-template-columns:1.6fr 1.4fr">
+        <span>换算卡号</span><b>physical_device_id</b>
+      </div>
+    </div>
+    <div class="small rv d5">下一集：一格到底能装多少——容量，本季最后一个数字</div>
+  </div>
+  <div class="scr-foot rv d6">绑错这一步，前面十集优化的每一微秒都会被悄悄吃回去。</div>
+</section>
+
+<script src="vendor/three.global.js"></script>
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  /* ---------- 逻辑/物理映射交互 ---------- */
+  var MAPS = [
+    [7, 6, 5, 4, 3, 2, 1, 0],
+    [4, 5, 6, 7, 0, 1, 2, 3],
+    [3, 7, 2, 6, 1, 5, 0, 4]
+  ];
+  var NODE = [0, 0, 0, 0, 1, 1, 1, 1];
+  var mi = 0;
+  var mapEl = document.getElementById('map');
+  var physOut = document.getElementById('physOut');
+
+  function renderMap() {
+    if (!mapEl) return;
+    var order = MAPS[mi % MAPS.length];
+    var rows = '<div class="m"><span>逻辑号</span><span>物理号</span><span>所在节点</span></div>';
+    for (var lg = 0; lg < 8; lg++) {
+      var ph = order[lg];
+      var warn = (lg === 3);
+      rows += '<div class="m' + (warn ? ' warn' : '') + '"><span>' + lg + '</span><b>' + ph +
+        '</b><span>NUMA ' + NODE[ph] + '</span></div>';
+      if (warn) physOut.textContent = ph;
+    }
+    mapEl.innerHTML = rows;
+  }
+  var swapBtn = document.getElementById('swapBtn');
+  if (swapBtn) swapBtn.addEventListener('click', function () {
+    mi++;
+    renderMap();
+  });
+  renderMap();
+
+  /* ---------- 3D 主板拓扑（封面）：不可用则 CSS 降级 ---------- */
+  var boardbox = document.getElementById('boardbox');
+  var boardcss = document.getElementById('boardcss');
+  var renderer = null, scene = null, camera = null, board = null, running = false;
+
+  function init3D() {
+    if (typeof THREE === 'undefined') return false;
+    var test = document.createElement('canvas');
+    var gl = test.getContext('webgl') || test.getContext('experimental-webgl');
+    if (!gl) return false;
+
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    boardbox.appendChild(renderer.domElement);
+
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+    camera.position.set(0, 5.4, 7.6);
+    camera.lookAt(0, 0, 0);
+
+    board = new THREE.Group();
+
+    // 底板
+    var plane = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.16, 4.6),
+      new THREE.MeshBasicMaterial({ color: 0x131b2c }));
+    board.add(plane);
+    var pe = new THREE.LineSegments(new THREE.EdgesGeometry(plane.geometry),
+      new THREE.LineBasicMaterial({ color: 0x2c3a52 }));
+    pe.position.y = -0.08;
+    board.add(pe);
+
+    function block(x, z, w, d, h, color, edgeColor) {
+      var g = new THREE.BoxGeometry(w, h, d);
+      var m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: color }));
+      m.position.set(x, h / 2 + 0.08, z);
+      board.add(m);
+      var e = new THREE.LineSegments(new THREE.EdgesGeometry(g),
+        new THREE.LineBasicMaterial({ color: edgeColor }));
+      e.position.copy(m.position);
+      board.add(e);
+      return m.position;
+    }
+
+    // 两个 CPU 插座
+    block(-2.2, 0, 1.1, 1.1, 0.5, 0x27304a, 0x4a5a80);
+    block(2.2, 0, 1.1, 1.1, 0.5, 0x27304a, 0x4a5a80);
+
+    // 每个插座下 4 张卡（n0 蓝 / n1 绿）
+    for (var i = 0; i < 4; i++) {
+      block(-3.0 + i * 0.56, 1.7, 0.42, 0.42, 0.28, 0x60a5fa, 0x93c5fd);
+      block(3.0 - i * 0.56, 1.7, 0.42, 0.42, 0.28, 0x34d399, 0x6ee7b7);
+      block(-3.0 + i * 0.56, -1.7, 0.42, 0.42, 0.28, 0x60a5fa, 0x93c5fd);
+      block(3.0 - i * 0.56, -1.7, 0.42, 0.42, 0.28, 0x34d399, 0x6ee7b7);
+    }
+    // 网卡挂在 NUMA 0
+    block(-2.2, 1.9, 0.5, 0.34, 0.2, 0x818cf8, 0xa5b4fc);
+
+    // 跨插座布线（暗）与本侧布线（亮）
+    function wire(a, b, color) {
+      var g = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(a.x, a.y + 0.05, a.z), new THREE.Vector3(b.x, b.y + 0.05, b.z)]);
+      board.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: color })));
+    }
+    var cpu0 = { x: -2.2, y: 0.5, z: 0 }, cpu1 = { x: 2.2, y: 0.5, z: 0 };
+    for (var k = 0; k < 4; k++) {
+      wire(cpu0, { x: -3.0 + k * 0.56, y: 0.28, z: 1.7 }, 0x3b5ba5);
+      wire(cpu0, { x: -3.0 + k * 0.56, y: 0.28, z: -1.7 }, 0x3b5ba5);
+      wire(cpu1, { x: 3.0 - k * 0.56, y: 0.28, z: 1.7 }, 0x2c6b4f);
+      wire(cpu1, { x: 3.0 - k * 0.56, y: 0.28, z: -1.7 }, 0x2c6b4f);
+    }
+    wire(cpu0, cpu1, 0x2c3a52);
+    wire(cpu0, { x: -2.2, y: 0.2, z: 1.9 }, 0x4a5a80);
+
+    scene.add(board);
+    resize3D();
+    window.addEventListener('resize', resize3D);
+    return true;
+  }
+
+  function resize3D() {
+    if (!renderer) return;
+    var rect = boardbox.getBoundingClientRect();
+    if (rect.width < 10 || rect.height < 10) return;
+    renderer.setSize(rect.width, rect.height);
+    camera.aspect = rect.width / rect.height;
+    camera.updateProjectionMatrix();
+  }
+
+  var t0 = Date.now();
+  function tick() {
+    if (!running || !renderer) return;
+    var t = (Date.now() - t0) / 1000;
+    board.rotation.y = 0.5 + Math.sin(t * 0.3) * 0.16;
+    board.rotation.x = 0.0;
+    renderer.render(scene, camera);
+    requestAnimationFrame(tick);
+  }
+  function useFallback() {
+    boardbox.classList.add('no3d');
+  }
+  var booted = false;
+  function bootBoard() {
+    if (booted) return;
+    booted = true;
+    try { booted = init3D(); } catch (e) { booted = false; }
+    if (!booted) useFallback();
+    else { boardcss.style.display = 'none'; resize3D(); }
+  }
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+        if (i === 0) { bootBoard(); running = true; tick(); } else { running = false; }
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+
+</body>
+</html>
