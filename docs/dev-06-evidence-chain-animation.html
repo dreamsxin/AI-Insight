@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="证据链：主张→材料→可核内容→来源→支持范围五环，只有文件名不算证据；双字段、必需与建议两种来源、缺链即阻塞。">
+<title>证据链 · Agent 开发避坑 · 逐屏动画演示</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--cyan);transform:scale(1.4);box-shadow:0 0 10px rgba(34,211,238,.4)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,rgba(34,211,238,.10),transparent 70%)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--cyan);
+    border:1px solid rgba(34,211,238,.34);background:rgba(34,211,238,.08);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  .s-hero{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,#22d3ee 10%,#a78bfa 55%,#f472b6 95%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s-hero.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--cyan);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+  .tag{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.07);color:#c3cde2}
+  .tag.cy{background:rgba(34,211,238,.08);color:var(--cyan);border:1px solid rgba(34,211,238,.34)}
+  .tag.rd{background:rgba(251,113,133,.1);color:#fda4af;border:1px solid rgba(251,113,133,.4)}
+  .tag.gr{background:rgba(52,211,153,.1);color:#6ee7b7;border:1px solid rgba(52,211,153,.4)}
+
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;max-width:520px}
+  .g2 .p{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:10px}
+  .g2 .p .t{font-size:10.5px;color:var(--dim);margin-top:6px;text-align:center;line-height:1.6}
+
+  /* s2：打勾清单 vs 悬空主张 */
+  .illus{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;width:100%;max-width:560px;align-items:center}
+  .illus .box{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:13px}
+  .illus .box .t{font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:.08em;margin-bottom:8px}
+  .illus .row{display:flex;align-items:center;gap:7px;font-size:11px;padding:5px 0;color:#c3cde2}
+  .illus .row i{font-style:normal;width:16px;height:16px;border-radius:50%;flex:none;
+    display:flex;align-items:center;justify-content:center;font-size:9px}
+  .illus .ok i{background:rgba(52,211,153,.16);color:#6ee7b7;border:1px solid rgba(52,211,153,.4)}
+  .illus .q i{background:rgba(251,113,133,.14);color:#fda4af;border:1px dashed rgba(251,113,133,.55)}
+  .illus .mid{display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--dim);font-size:9px}
+  .illus .mid .qmark{font-size:22px;color:#fda4af}
+
+  /* s3：五环链 */
+  .chain{width:100%;max-width:560px;display:flex;flex-direction:column;gap:6px}
+  .ring{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:11px;
+    background:var(--card);padding:10px 13px}
+  .ring .no{font-family:var(--mono);font-size:10px;font-weight:800;color:var(--cyan);
+    width:20px;height:20px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+    border:1px solid rgba(34,211,238,.4)}
+  .ring b{font-size:12.5px;width:86px;flex:none}
+  .ring p{font-size:10.5px;color:var(--dim);line-height:1.55}
+  .ring p em{font-style:normal;color:#67e8f9}
+  .ring-broken{border-color:rgba(251,113,133,.45)}
+
+  /* s4：双字段交互 */
+  .fields{width:100%;max-width:520px;border:1px solid var(--line);border-radius:12px;background:var(--card);padding:13px}
+  .fields .frow{display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px dashed rgba(255,255,255,.1)}
+  .fields .frow:first-of-type{border-top:none}
+  .fields .fname{font-family:var(--mono);font-size:10px;color:#c3cde2;width:110px;flex:none}
+  .fields .fv{flex:1;font-size:10.5px;padding:7px 9px;border-radius:7px;line-height:1.5}
+  .fields .fv.empty{background:rgba(251,113,133,.08);border:1px dashed rgba(251,113,133,.45);color:#fda4af}
+  .fields .fv.filled{background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.4);color:#c3cde2}
+  .fields .fv code{font-size:.9em}
+  .btn{align-self:center;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;color:#070b14;font-weight:700;
+    border:none;border-radius:999px;padding:8px 18px;background:linear-gradient(90deg,#22d3ee,#67e8f9);cursor:pointer}
+  .verdict{font-size:12px;font-weight:700;text-align:center}
+  .verdict.bad{color:#fda4af}
+  .verdict.good{color:#6ee7b7}
+
+  /* s5：必需 vs 建议 */
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;max-width:560px}
+  .two .col{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 13px}
+  .two .col h3{font-size:12px;margin-bottom:7px;display:flex;align-items:center;gap:6px}
+  .two .col.req h3{color:#67e8f9}
+  .two .col.sug h3{color:#fbbf24}
+  .two .col p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .two .col .rule{margin-top:8px;font-size:10px;padding:6px 8px;border-radius:7px;line-height:1.55}
+  .two .col.req .rule{background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.3);color:#a5f3fc}
+  .two .col.sug .rule{background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.3);color:#fcd34d}
+
+  /* s6：缺口矩阵 */
+  .matrix{width:100%;max-width:540px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:rgba(7,11,20,.4)}
+  .matrix .m{display:grid;grid-template-columns:1.5fr 1fr 1.3fr;gap:6px;padding:8px 12px;font-size:10.5px;border-top:1px solid var(--line);align-items:center}
+  .matrix .m:first-child{border-top:none;background:rgba(255,255,255,.04);font-size:9px;letter-spacing:.1em;color:var(--dim);font-family:var(--mono)}
+  .matrix .m b{font-family:var(--mono);font-weight:700}
+  .matrix .m .bl{color:#fda4af}
+  .matrix .m .ok{color:#6ee7b7}
+
+  @media (max-width:560px){
+    .illus{grid-template-columns:1fr}
+    .illus .mid{flex-direction:row}
+    .two{grid-template-columns:1fr}
+    .ring b{width:74px;font-size:11.5px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="dev-05-injection-animation.html" aria-label="上一集" title="上一集：注入新战场：工具会下毒">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <a class="epnav-b" href="rag-01-ingest-animation.html" aria-label="下一集" title="下一集：语料入库">›</a>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s-hero">
+  <div class="hero-kicker rv d1">AGENT 开发避坑指南 · 06</div>
+  <h1 class="rv d2">证据链</h1>
+  <p class="hero-sub rv d3">Agent 引用资料的最大的坑：<br>把「有文件」当成「已证明」——<b>只有文件名不算证据</b></p>
+  <div style="margin-top:22px" class="rv d4">
+    <svg viewBox="0 0 520 104" width="100%" style="max-width:460px" xmlns="http://www.w3.org/2000/svg">
+      <g fill="rgba(148,163,184,.28)">
+        <rect x="46" y="18" width="72" height="12" rx="3"/>
+        <rect x="58" y="38" width="72" height="12" rx="3"/>
+        <rect x="40" y="58" width="72" height="12" rx="3"/>
+        <rect x="66" y="78" width="72" height="12" rx="3"/>
+      </g>
+      <text x="82" y="106" text-anchor="middle" font-family="ui-monospace,Consolas,monospace" font-size="8.5" fill="#8b96ad">一摞文件</text>
+      <path d="M160 52 L204 52" stroke="rgba(34,211,238,.75)" stroke-width="1.2" fill="none"/>
+      <path d="M198 47 L205 52 L198 57" stroke="rgba(34,211,238,.75)" stroke-width="1.2" fill="none"/>
+      <g stroke="rgba(34,211,238,.8)" stroke-width="1.4" fill="none">
+        <circle cx="234" cy="52" r="5"/>
+        <path d="M246 52 L286 52 M286 52 L280 47 M286 52 L280 57" stroke="rgba(34,211,238,.55)"/>
+        <circle cx="304" cy="52" r="5"/>
+        <path d="M316 52 L356 52 M356 52 L350 47 M356 52 L350 57" stroke="rgba(34,211,238,.55)"/>
+        <circle cx="374" cy="52" r="5" fill="rgba(34,211,238,.85)"/>
+      </g>
+      <text x="374" y="34" text-anchor="middle" font-family="ui-monospace,Consolas,monospace" font-size="8.5" fill="#67e8f9">一条链</text>
+      <rect x="404" y="30" width="86" height="44" rx="8" fill="rgba(34,211,238,.12)" stroke="rgba(34,211,238,.6)" stroke-width=".8"/>
+      <text x="447" y="56" text-anchor="middle" font-family="ui-monospace,Consolas,monospace" font-size="9.5" fill="#67e8f9">主张成立</text>
+    </svg>
+  </div>
+  <div class="next-hint">向下滚动 · 先看一个全打勾的清单<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s-illusion">
+  <div class="scr-head">
+    <div class="step-badge rv d1">01 · <b>错觉</b></div>
+    <h2 class="rv d2">清单全绿，主张悬空</h2>
+    <p class="scr-desc rv d3">材料清单上三个文件都「已上传」，系统亮绿灯。<br>但"<b style="color:#fda4af">被引用的主张</b>"仍然是悬空的——没人回答：哪个文件、哪一段内容、能证明到什么范围。</p>
+  </div>
+  <div class="stage">
+    <div class="illus rv d4">
+      <div class="box">
+        <div class="t">材料清单 · 全部已上传</div>
+        <div class="row ok"><i>✓</i>invoice.pdf</div>
+        <div class="row ok"><i>✓</i>ledger_export.xlsx</div>
+        <div class="row ok"><i>✓</i>letter.jpg</div>
+        <div class="row" style="color:#6ee7b7;font-weight:700">状态：3/3 就绪</div>
+      </div>
+      <div class="mid"><span class="qmark">?</span><span>支撑<br>何在</span></div>
+      <div class="box">
+        <div class="t">待表达的主张</div>
+        <div class="row q"><i>?</i>「10 月订单已全部退款」</div>
+        <div class="row q"><i>?</i>按哪份文件哪一段？</div>
+        <div class="row q"><i>?</i>支持范围有多大？</div>
+        <div class="row" style="color:#fda4af;font-weight:700">状态：0/1 成立</div>
+      </div>
+    </div>
+    <div class="small rv d5">"已上传"是<b>文件的存在状态</b>；"已证明"是<b>主张与文件的关系</b>——清单只记录前者</div>
+  </div>
+  <div class="scr-foot rv d6">坑在这：下游（人或模型）看到绿灯就放心引用——悬空的主张被一路带进最终文稿。</div>
+</section>
+
+<section class="screen s-chain">
+  <div class="scr-head">
+    <div class="step-badge rv d1">02 · <b>五环</b></div>
+    <h2 class="rv d2">一条链，五个环</h2>
+    <p class="scr-desc rv d3">断在任何一环，都不构成证据。<br>示例（虚构）：主张「《静夜思》作者为李白」。</p>
+  </div>
+  <div class="stage">
+    <div class="chain">
+      <div class="ring rv d3"><span class="no">1</span><b>主张</b><p><em>《静夜思》作者为李白</em> —— 链的起点，没有主张就没有链</p></div>
+      <div class="ring rv d4"><span class="no">2</span><b>材料</b><p>《全唐诗》卷 165 —— 哪份文件承载它</p></div>
+      <div class="ring rv d5"><span class="no">3</span><b>可核内容</b><p>卷 165 题注署名李白 —— 文件里<b>哪一段</b>说了这件事</p></div>
+      <div class="ring rv d6"><span class="no">4</span><b>来源</b><p>中华书局排印本（示意）—— 可回查的位置</p></div>
+      <div class="ring rv d7"><span class="no">5</span><b>支持范围</b><p>仅该篇署名 —— <b style="color:#fda4af">不外推</b>：不能顺带证明"李白所有诗都署名"</p></div>
+    </div>
+    <div class="small rv d7">只有文件名 = 只有第 2 环 —— <b>五环断四环</b></div>
+  </div>
+  <div class="scr-foot rv d7">第 5 环最容易被忽略：材料不能支持超出其内容和覆盖范围的结论。</div>
+</section>
+
+<section class="screen s-fields">
+  <div class="scr-head">
+    <div class="step-badge rv d1">03 · <b>双字段</b></div>
+    <h2 class="rv d2">每份材料，两个必填框</h2>
+    <p class="scr-desc rv d3">只传文件不合格。点按钮补全双字段，看链从断到通。</p>
+  </div>
+  <div class="stage">
+    <div class="fields rv d4">
+      <div class="frow">
+        <span class="fname">invoice.pdf</span>
+        <span class="fv empty" id="f1">材料内容说明：（空）</span>
+      </div>
+      <div class="frow">
+        <span class="fname">↳ 支持什么</span>
+        <span class="fv empty" id="f2">支持的事实/论点：（空）</span>
+      </div>
+    </div>
+    <button class="btn rv d5" id="fillBtn">补全双字段 →</button>
+    <div class="verdict bad rv d6" id="verdict">链状态：断（有文件 ≠ 有证据）</div>
+    <div class="small rv d7">两个框各堵一环：<b>内容说明</b>堵"可核内容"，<b>支持什么</b>堵"支持范围"</div>
+  </div>
+  <div class="scr-foot rv d7">生成物引用这份文件之前，两个框都必须是绿色——这就是"材料完成"的定义。</div>
+</section>
+
+<section class="screen s-two">
+  <div class="scr-head">
+    <div class="step-badge rv d1">04 · <b>两种来源</b></div>
+    <h2 class="rv d2">必需与建议，两种待遇</h2>
+    <p class="scr-desc rv d3">材料从哪来，决定它有多硬。<br>关键词命中不等于原文要求。</p>
+  </div>
+  <div class="stage">
+    <div class="two rv d4">
+      <div class="col req">
+        <h3><span class="tag cy">必需</span> 能定位到原文的要求</h3>
+        <p>原始通知/规则里<b>明确点名</b>的文件。必须保存<b>原文摘录</b>——找不到原句的"疑似要求"只能降级为待核提示。</p>
+        <div class="rule">缺链即阻塞；不可标记"不适用"或"本轮不处理"豁免</div>
+      </div>
+      <div class="col sug">
+        <h3><span class="tag rd">建议</span> 系统按场景推演</h3>
+        <p>按案型推演"通常会需要"的文件。<b>用户决定</b>是否纳入本轮；未纳入不阻塞，只显示风险并记录原因。</p>
+        <div class="rule">纳入后才进本轮清单；提醒留档、可恢复处理</div>
+      </div>
+    </div>
+    <div class="small rv d5">把建议标成必需，<b>用户被吓</b>；把必需标成建议，<b>门槛失守</b>——两类必须分开展示</div>
+  </div>
+  <div class="scr-foot rv d6">本体视角（见 rag-kg 研究）：这就是知识图谱里"必需"与"建议"两类属性——证据链是图上一条路径。</div>
+</section>
+
+<section class="screen s-gate">
+  <div class="scr-head">
+    <div class="step-badge rv d1">05 · <b>缺链即阻塞</b></div>
+    <h2 class="rv d2">生成前，把矩阵跑一遍</h2>
+    <p class="scr-desc rv d3">每条主张一行，逐环检查。<b style="color:#fda4af">有阻塞项就不生成对外稿</b>——提醒可以带病上会，阻塞不行。</p>
+  </div>
+  <div class="stage">
+    <div class="matrix rv d4">
+      <div class="m"><span>主张</span><span>链状态</span><span>缺口</span></div>
+      <div class="m"><span>10 月订单已全部退款</span><b class="bl">断</b><span>退款流水缺"支持范围"说明</span></div>
+      <div class="m"><span>涉案商品有采购来源</span><b class="ok">通</b><span>五环齐（发票双字段 + 原文摘录）</span></div>
+      <div class="m"><span>违规根因已整改</span><b class="bl">断</b><span>整改记录无来源位置</span></div>
+    </div>
+    <div class="small rv d5">对外正文中引用到编号附件清单，<b>顺序与正文引用一致</b>——引用不是装饰，是链路</div>
+  </div>
+  <div class="scr-foot rv d6">参考实现：<b>examples/compliance-flow-demo/02_evidence_gate.py</b>（五环缺口矩阵，零 LLM 依赖）。</div>
+</section>
+
+<section class="screen s-sum">
+  <div class="scr-head">
+    <div class="step-badge rv d1">06 · <b>收束</b></div>
+    <h2 class="rv d2">引用不是装饰，是链路</h2>
+  </div>
+  <div class="stage">
+    <div class="g2 rv d4">
+      <div class="p">
+        <div class="k">AGENT 侧</div>
+        <b>RAG 引用同构</b>
+        <p>拒答与强制引用（避坑 03）讲"答案要有出处"；证据链把它推到材料层——每份附件也要有出处逻辑。GraphRAG（工坊 06）的图路径就是它的形状。</p>
+      </div>
+      <div class="p">
+        <div class="k">流程侧</div>
+        <b>缺链即阻塞</b>
+        <p>它不是一条提示词，是生成前的闸门：矩阵有阻塞项，对外稿不生成。配套"必需 vs 建议"的分级，闸门才有牙齿。</p>
+      </div>
+    </div>
+    <div class="small rv d5">一屏记住：<b>主张 → 材料 → 可核内容 → 来源 → 支持范围</b>——断一环，就不算证明</div>
+  </div>
+  <div class="scr-foot rv d6">全系列模式清单见 <b>docs/research/agent-compliance-patterns-research.md</b>（M4/M5）。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  /* ---------- 双字段交互 ---------- */
+  var fillBtn = document.getElementById('fillBtn');
+  var f1 = document.getElementById('f1');
+  var f2 = document.getElementById('f2');
+  var verdict = document.getElementById('verdict');
+  var filled = false;
+  if (fillBtn) fillBtn.addEventListener('click', function () {
+    filled = !filled;
+    if (filled) {
+      f1.className = 'fv filled';
+      f1.textContent = '采购发票一张：含供应商名称、日期、商品明细';
+      f2.className = 'fv filled';
+      f2.textContent = '支持主张：涉案商品有可回查的采购来源（限发票所列数量与日期）';
+      fillBtn.textContent = '← 清空双字段';
+      verdict.className = 'verdict good';
+      verdict.textContent = '链状态：通（五环齐——但仅限发票覆盖的范围）';
+    } else {
+      f1.className = 'fv empty';
+      f1.textContent = '材料内容说明：（空）';
+      f2.className = 'fv empty';
+      f2.textContent = '支持的事实/论点：（空）';
+      fillBtn.textContent = '补全双字段 →';
+      verdict.className = 'verdict bad';
+      verdict.textContent = '链状态：断（有文件 ≠ 有证据）';
+    }
+  });
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+
+</body>
+</html>
