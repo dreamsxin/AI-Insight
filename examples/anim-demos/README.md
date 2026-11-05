@@ -134,18 +134,18 @@ python examples/anim-demos/inf-30-cache-bytes.py
 
 | | 集 | 标题 | 脚本 / 不做的原因 |
 | :-: | :-- | :-- | :-- |
-| — | `inf-13-fp4` | 四位数够用 | 四本账的定性对比 |
-| — | `inf-14-scale-grain` | 尺子放多细 | 四本账的定性对比 |
-| — | `inf-15-fp4-where` | 同一个 4 位，三把尺子 | 四本账的定性对比 |
-| — | `inf-16-kernel-map` | 一个 step 的 kernel 账单 | 四本账的定性对比 |
-| — | `inf-17-mega-moe` | 三段融成一段 | 四本账的定性对比 |
-| — | `inf-18-kernel-gap` | 只差 5% | 四本账的定性对比 |
-| — | `inf-19-autoscale` | 扩看请求，缩看水位 | 四本账的定性对比 |
-| — | `inf-20-grace-period` | 六十秒搬家 | 四本账的定性对比 |
-| — | `inf-21-ep-failover` | 一块卡坏掉之后 | 四本账的定性对比 |
-| — | `inf-22-batch-invariant` | 同一个输入，同一个输出 | 四本账的定性对比 |
-| — | `inf-23-deterministic-sampling` | 每个序列一个种子 | 四本账的定性对比 |
-| — | `inf-24-three-ledgers` | 四道看不见的账 | 四本账的定性对比 |
+| ✓ |  `inf-13-fp4`  | 四位数够用 | `inf-13-fp4.py` |
+| ✓ |  `inf-14-scale-grain`  | 尺子放多细 | `inf-14-scale-grain.py` |
+| ✓ |  `inf-15-fp4-where`  | 同一个 4 位，三把尺子 | `inf-15-fp4-where.py` |
+| ✓ |  `inf-16-kernel-map`  | 一个 step 的 kernel 账单 | `inf-16-kernel-map.py` |
+| ✓ |  `inf-17-mega-moe`  | 三段融成一段 | `inf-17-mega-moe.py` |
+| ✓ |  `inf-18-kernel-gap`  | 只差 5% | `inf-18-kernel-gap.py` |
+| ✓ |  `inf-19-autoscale`  | 扩看请求，缩看水位 | `inf-19-autoscale.py` |
+| ✓ |  `inf-20-grace-period`  | 六十秒搬家 | `inf-20-grace-period.py` |
+| ✓ |  `inf-21-ep-failover`  | 一块卡坏掉之后 | `inf-21-ep-failover.py` |
+| ✓ |  `inf-22-batch-invariant`  | 同一个输入，同一个输出 | `inf-22-batch-invariant.py` |
+| ✓ |  `inf-23-deterministic-sampling`  | 每个序列一个种子 | `inf-23-deterministic-sampling.py` |
+| ✓ |  `inf-24-three-ledgers`  | 四道看不见的账 | `inf-24-three-ledgers.py` |
 
 ## 推理原理 · 第三季
 
@@ -215,6 +215,23 @@ python examples/anim-demos/inf-30-cache-bytes.py
 | `inf-34` | 30/28 文件、4968/7418 行（1.49×）；顺序求和差 1 ulp，补偿后差 0 |
 | `inf-35` | 同插座 25 / 跨插座 12 GB/s；交错排慢 1.64 倍；逻辑 3 → 物理 4 |
 | `inf-36` | 301 个 slot；`lcm = 1056`；3FS 可用 512.2 TB → 35.6 张卡；每卡 6.25 GB/s |
+
+### 第二季（四本账）跑出来的数
+
+| 集 | 跑出来对上的数 |
+| :-- | :-- |
+| `inf-13` | e2m1 的 8 档；2.7 → 3（误差 11%）；小量级不加尺子直接塌成 0 |
+| `inf-14` | 4.25 / 4.50 / 8.06 位/元素；per-16 多付 5.9%；`d/128 = 56` 个 int32 |
+| `inf-15` | 三个落点各按三个问题判：主 KV 16/e4m3、indexer 32/ue8m0、权重 32/ue8m0 |
+| `inf-16` | 11 段合计 100%，计算 71%（26+42+3），其余是搬与等 |
+| `inf-17` | 56 MB 中间张量；6 趟 → 2 趟，耗时正好 3 倍 |
+| `inf-18` | 26/42/21/11；注意力慢 10% 只值 2.6 个点；3% 优化一倍赚 1.5 |
+| `inf-19` | 需求 1000 → 理论 10 台、实际 12 台；0.86 时拒绝缩容 |
+| `inf-20` | 40 条 × 3 MB = 120 MB，19 ms 搬完；60 秒 ≈ 2700 token 余量 |
+| `inf-21` | 64 整除、63 不均 1 份（4 张扛 5 个专家） |
+| `inf-22` | 顺序求和差 3 ulp；构造出真的 top-1 翻面；成对归约差 0 |
+| `inf-23` | 三条断言全通过；换 seed 后只偶然重合 1/8 |
+| `inf-24` | 四本账互不免费；四层回扣 |
 
 ## 写一份新脚本的约定
 
