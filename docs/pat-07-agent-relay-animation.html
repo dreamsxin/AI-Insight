@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<link rel="icon" href="data:,">
+<meta name="description" content="流水线型多 Agent：六棒接力各带输入/输出/验收标准，棒间是人工确认点；分工成立的三个条件，缺一退回单 Agent 主循环。">
+<title>接力，不是合唱 · AGENT 模式进阶 · 逐屏动画演示</title>
+<style>
+  :root{
+    --bg0:#070b14;--bg1:#0c1322;--ink:#e8eefc;--dim:#8b96ad;
+    --cyan:#22d3ee;--purple:#a78bfa;--green:#34d399;--amber:#fbbf24;--red:#fb7185;
+    --card:rgba(255,255,255,.05);--line:rgba(255,255,255,.12);
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{background:var(--bg0);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(148,163,184,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.05) 1px,transparent 1px);background-size:36px 36px}
+  code{font-family:var(--mono)}
+
+  .dots{position:fixed;right:9px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:11px;z-index:60}
+  .dots button{width:8px;height:8px;border-radius:50%;border:none;padding:0;background:rgba(255,255,255,.22);cursor:pointer;transition:all .3s}
+  .dots button.on{background:var(--cyan);transform:scale(1.4);box-shadow:0 0 10px rgba(34,211,238,.4)}
+
+  .screen{position:relative;z-index:1;height:100vh;height:100svh;scroll-snap-align:start;scroll-snap-stop:always;
+    overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(54px + env(safe-area-inset-bottom))}
+  .screen::before{content:"";position:absolute;inset:-20%;pointer-events:none;
+    background:radial-gradient(620px 440px at 50% 32%,rgba(34,211,238,.10),transparent 70%)}
+
+  .scr-head{width:100%;max-width:640px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:clamp(12px,3.4vh,28px)}
+  .step-badge{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.14em;color:var(--cyan);
+    border:1px solid rgba(34,211,238,.34);background:rgba(34,211,238,.08);padding:4px 13px;border-radius:999px}
+  .step-badge b{color:#fff;font-weight:800}
+  h2{font-size:clamp(20px,5.2vw,29px);font-weight:800;letter-spacing:.02em;text-align:center}
+  .scr-desc{font-size:clamp(12px,3.4vw,14px);color:#aab6cf;line-height:1.7;max-width:560px;text-align:center}
+  .scr-desc code{color:var(--cyan);font-size:.92em;background:rgba(34,211,238,.08);padding:1px 5px;border-radius:5px}
+  .stage{position:relative;z-index:1;flex:0 1 auto;min-height:0;width:100%;max-width:640px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+  .scr-foot{position:absolute;left:20px;right:20px;bottom:calc(16px + env(safe-area-inset-bottom));
+    text-align:center;font-size:12px;line-height:1.7;color:var(--dim)}
+  .scr-foot b{color:#c3cde2}
+
+  .rv{opacity:0;transform:translateY(14px)}
+  .screen.active .rv{animation:rise .55s cubic-bezier(.22,1,.36,1) both}
+  .screen.active .d1{animation-delay:.1s}.screen.active .d2{animation-delay:.28s}
+  .screen.active .d3{animation-delay:.46s}.screen.active .d4{animation-delay:.64s}
+  .screen.active .d5{animation-delay:.82s}.screen.active .d6{animation-delay:1.02s}
+  .screen.active .d7{animation-delay:1.2s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  .s-hero{justify-content:center;text-align:center}
+  .hero-kicker{font-size:10px;letter-spacing:.28em;color:var(--dim);border:1px solid var(--line);
+    background:rgba(7,11,20,.6);padding:6px 16px;border-radius:999px}
+  h1{font-size:clamp(27px,7.2vw,44px);line-height:1.16;font-weight:800;margin:16px 0 12px;letter-spacing:.02em}
+  .grad{background:linear-gradient(92deg,#22d3ee 10%,#a78bfa 55%,#f472b6 95%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero-sub{font-size:clamp(12px,3.5vw,15px);color:#c3cde2;letter-spacing:.05em;line-height:1.8}
+  .hero-sub b{color:#fff}
+  .next-hint{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:11px;color:var(--dim);letter-spacing:.1em}
+  .chev{display:inline-block;margin-left:6px}
+  .s-hero.active .chev{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:none}50%{transform:translateY(4px)}}
+
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px 15px}
+  .card .k{font-family:var(--mono);font-size:9px;color:var(--cyan);letter-spacing:.06em;margin-bottom:5px}
+  .card b{font-size:13px;display:block;margin-bottom:4px}
+  .card p{font-size:10.5px;color:var(--dim);line-height:1.65}
+  .small{font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .small b{color:#c3cde2}
+
+  /* s2 合唱的问题 */
+  .choir{width:100%;max-width:560px;display:flex;flex-direction:column;gap:8px}
+  .chrow{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:11px;background:var(--card);padding:11px 13px}
+  .chrow .i{font-size:15px;flex:none}
+  .chrow b{font-size:12.5px;display:block}
+  .chrow p{font-size:10.5px;color:var(--dim);line-height:1.55;margin-top:2px}
+
+  /* s3 六棒接力（交互） */
+  .relay{width:100%;max-width:560px;display:flex;gap:4px;justify-content:center;flex-wrap:wrap}
+  .baton{font-family:var(--mono);font-size:10px;padding:8px 10px;border-radius:9px;cursor:pointer;
+    border:1px solid var(--line);background:var(--card);color:#c3cde2;transition:all .2s;white-space:nowrap}
+  .baton.on{border-color:rgba(34,211,238,.6);background:rgba(34,211,238,.1);color:#67e8f9}
+  .relay .hnd{color:rgba(34,211,238,.55);font-size:10px;align-self:center}
+  .batonbox{width:100%;max-width:560px;border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 14px;min-height:118px}
+  .batonbox .bt{font-size:12.5px;font-weight:700;color:#67e8f9;margin-bottom:6px}
+  .batonbox .brow{display:flex;gap:8px;font-size:10.5px;line-height:1.65;padding:2.5px 0}
+  .batonbox .brow em{font-family:var(--mono);font-size:9px;font-style:normal;color:var(--dim);width:60px;flex:none}
+  .batonbox .brow span{color:#c3cde2}
+
+  /* s4 阶段墙 */
+  .wall{width:100%;max-width:560px;display:flex;align-items:stretch;gap:0}
+  .wall .seg{flex:1;border:1px solid var(--line);border-radius:11px 0 0 11px;background:var(--card);
+    padding:12px 10px;text-align:center}
+  .wall .seg+.seg{border-radius:0}
+  .wall .seg+.seg:not(:last-child){border-left:none;border-radius:0}
+  .wall .seg:last-child{border-radius:0 11px 11px 0;border-left:none}
+  .wall .seg b{font-size:11.5px;display:block}
+  .wall .seg span{font-family:var(--mono);font-size:8.5px;color:var(--dim)}
+  .wall .gate{flex:none;width:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+  .wall .gate i{font-style:normal;font-size:13px;color:#fbbf24}
+  .wall .gate span{font-family:var(--mono);font-size:7.5px;color:#fcd34d;writing-mode:vertical-rl;letter-spacing:.12em}
+  .wallcap{font-size:10px;color:var(--dim);text-align:center;line-height:1.6}
+
+  /* s5 对比 */
+  .vs{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;max-width:560px}
+  .vs .p{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:13px}
+  .vs .p .t{font-family:var(--mono);font-size:9px;letter-spacing:.08em;margin-bottom:6px}
+  .vs .p.loop .t{color:#6ee7b7}
+  .vs .p.line .t{color:#67e8f9}
+  .vs .p li{font-size:10.5px;color:var(--dim);line-height:1.7;margin-left:16px}
+  .vs .p b{color:#c3cde2;font-weight:600}
+
+  /* s6 三条件 */
+  .conds{width:100%;max-width:560px;display:flex;flex-direction:column;gap:8px}
+  .cond{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:11px;background:var(--card);padding:11px 13px}
+  .cond .no{font-family:var(--mono);font-size:11px;font-weight:800;color:var(--cyan);width:22px;flex:none}
+  .cond b{font-size:12.5px;display:block}
+  .cond p{font-size:10.5px;color:var(--dim);line-height:1.55;margin-top:2px}
+  .fallback{width:100%;max-width:560px;border:1px dashed rgba(251,191,36,.45);border-radius:11px;
+    background:rgba(251,191,36,.06);padding:10px 14px;font-size:11px;color:#fcd34d;text-align:center;line-height:1.6}
+
+  @media (max-width:560px){
+    .vs{grid-template-columns:1fr}
+    .wall{flex-direction:column}
+    .wall .seg,.wall .seg:first-child,.wall .seg:last-child{border-radius:11px;border-left:1px solid var(--line)}
+    .wall .gate{flex-direction:row;width:100%;padding:4px 0}
+    .wall .gate span{writing-mode:horizontal-tb}
+  }
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}.rv{opacity:1;transform:none}
+    .screen.active *{animation-duration:.001s!important;animation-iteration-count:1!important}
+  }
+</style>
+</head>
+<body>
+<!-- epnav:start -->
+<nav class="epnav" aria-label="集间导航">
+  <a class="epnav-b" href="pat-06-guardrails-animation.html" aria-label="上一集" title="上一集：墙上家规与门上锁：软约束 vs 硬约束">‹</a>
+  <a class="epnav-h" href="index.html" title="返回索引">目录</a>
+  <span class="epnav-b dis" aria-hidden="true">›</span>
+</nav>
+<style>
+/* epnav: 集间导航（由 docs/tools/nav-gen.py 生成，勿手工编辑） */
+.epnav{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:70;
+  display:flex;align-items:center;gap:1px;padding:3px;border-radius:999px;
+  background:rgba(7,11,20,.66);border:1px solid rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  opacity:.5;transition:opacity .25s ease}
+.epnav:hover,.epnav:focus-within{opacity:1}
+.epnav a,.epnav span{display:flex;align-items:center;justify-content:center;height:22px;
+  border-radius:999px;color:#8b96ad;text-decoration:none;line-height:1;
+  font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+  transition:color .2s,background .2s}
+.epnav a:hover{color:#22d3ee;background:rgba(34,211,238,.12)}
+.epnav-b{width:25px;font-size:15px}
+.epnav-h{font-size:10.5px;letter-spacing:.12em;padding:0 7px}
+.epnav .dis{opacity:.24;cursor:default}
+.epnav :focus-visible{outline:1px solid #22d3ee;outline-offset:1px}
+@media (max-width:380px){.epnav-h{display:none}}
+@media print{.epnav{display:none}}
+</style>
+<script>
+/* 集间导航键盘支持：← 上一集 / → 下一集 */
+addEventListener("keydown", function (e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  var sel = e.key === "ArrowLeft" ? "上一集" : e.key === "ArrowRight" ? "下一集" : null;
+  if (!sel) return;
+  var a = document.querySelector('.epnav a[aria-label="' + sel + '"]');
+  if (a) { e.preventDefault(); location.href = a.getAttribute("href"); }
+});
+</script>
+<!-- epnav:end -->
+<nav class="dots" id="dots"></nav>
+
+<section class="screen s-hero">
+  <div class="hero-kicker rv d1">AGENT 模式进阶 · 07</div>
+  <h1 class="rv d2">接力，<span class="grad">不是合唱</span></h1>
+  <p class="hero-sub rv d3">多 Agent 不该同时开口——<br>该像接力赛：<b>一棒跑完，交接，下一棒</b></p>
+  <div style="margin-top:22px" class="rv d4">
+    <svg viewBox="0 0 520 96" width="100%" style="max-width:460px" xmlns="http://www.w3.org/2000/svg">
+      <g font-family="ui-monospace,Consolas,monospace" font-size="9" text-anchor="middle">
+        <rect x="30" y="34" width="64" height="30" rx="7" fill="rgba(34,211,238,.12)" stroke="rgba(34,211,238,.6)" stroke-width=".8"/>
+        <text x="62" y="53" fill="#67e8f9">分流</text>
+        <path d="M94 49 L112 49" stroke="rgba(251,191,36,.8)" stroke-width="1.3"/>
+        <circle cx="103" cy="49" r="2.6" fill="#fbbf24"/>
+        <rect x="114" y="34" width="64" height="30" rx="7" fill="rgba(34,211,238,.12)" stroke="rgba(34,211,238,.6)" stroke-width=".8"/>
+        <text x="146" y="53" fill="#67e8f9">资料</text>
+        <path d="M178 49 L196 49" stroke="rgba(251,191,36,.8)" stroke-width="1.3"/>
+        <circle cx="187" cy="49" r="2.6" fill="#fbbf24"/>
+        <rect x="198" y="34" width="64" height="30" rx="7" fill="rgba(34,211,238,.12)" stroke="rgba(34,211,238,.6)" stroke-width=".8"/>
+        <text x="230" y="53" fill="#67e8f9">规划</text>
+        <path d="M262 49 L280 49" stroke="rgba(251,191,36,.8)" stroke-width="1.3"/>
+        <circle cx="271" cy="49" r="2.6" fill="#fbbf24"/>
+        <rect x="282" y="34" width="64" height="30" rx="7" fill="rgba(34,211,238,.12)" stroke="rgba(34,211,238,.6)" stroke-width=".8"/>
+        <text x="314" y="53" fill="#67e8f9">写稿</text>
+        <path d="M346 49 L364 49" stroke="rgba(251,191,36,.8)" stroke-width="1.3"/>
+        <circle cx="355" cy="49" r="2.6" fill="#fbbf24"/>
+        <rect x="366" y="34" width="64" height="30" rx="7" fill="rgba(34,211,238,.12)" stroke="rgba(34,211,238,.6)" stroke-width=".8"/>
+        <text x="398" y="53" fill="#67e8f9">质检</text>
+        <path d="M430 49 L448 49" stroke="rgba(251,191,36,.8)" stroke-width="1.3"/>
+        <circle cx="439" cy="49" r="2.6" fill="#fbbf24"/>
+        <rect x="450" y="34" width="64" height="30" rx="7" fill="rgba(52,211,153,.12)" stroke="rgba(52,211,153,.6)" stroke-width=".8"/>
+        <text x="482" y="53" fill="#6ee7b7">提交</text>
+      </g>
+      <text x="260" y="86" text-anchor="middle" font-family="ui-monospace,Consolas,monospace" font-size="8" fill="#8b96ad">黄点 = 人工确认点（接棒前有人签字）</text>
+    </svg>
+  </div>
+  <div class="next-hint">向下滚动 · 先回忆一下"合唱"为什么难听<span class="chev">↓</span></div>
+</section>
+
+<section class="screen s-choir">
+  <div class="scr-head">
+    <div class="step-badge rv d1">01 · <b>合唱的问题</b></div>
+    <h2 class="rv d2">一群智能体同时开口，往往更差</h2>
+    <p class="scr-desc rv d3">hermes-17 的结论在这里依然成立——<br>所以先弄清楚它错在哪，才知道分工什么时候对。</p>
+  </div>
+  <div class="stage">
+    <div class="choir">
+      <div class="chrow rv d4"><span class="i">🗣️</span><div><b>互相说服，误差不降反升</b><p>没有共同事实基线，每个 Agent 都在为自己的版本辩论——token 花了，结论更乱了。</p></div></div>
+      <div class="chrow rv d5"><span class="i">🔁</span><div><b>责任稀释</b><p>"大家"决定 = 没人决定。出错时无法定位是哪一环引入的。</p></div></div>
+      <div class="chrow rv d6"><span class="i">🎭</span><div><b>省的是墙钟，费的是 token</b><p>并行的收益只在互不依赖的任务上；互相依赖的活并行，只是在制造协调成本。</p></div></div>
+    </div>
+    <div class="small rv d7">那多 Agent 就没用了？不是——<b>换一种组织方式</b>：不许同时开口</div>
+  </div>
+  <div class="scr-foot rv d7">合唱的病根是"同时"和"互相"。接力把这两样都拿掉了。</div>
+</section>
+
+<section class="screen s-relay">
+  <div class="scr-head">
+    <div class="step-badge rv d1">02 · <b>六棒接力</b></div>
+    <h2 class="rv d2">每一棒三样东西</h2>
+    <p class="scr-desc rv d3">点任意一棒，看它的输入、输出与验收标准。<br>窄职责 = 只对这三样负责。</p>
+  </div>
+  <div class="stage">
+    <div class="relay rv d4" id="relay">
+      <button class="baton on" data-i="0">分流</button><span class="hnd">→</span>
+      <button class="baton" data-i="1">资料</button><span class="hnd">→</span>
+      <button class="baton" data-i="2">规划</button><span class="hnd">→</span>
+      <button class="baton" data-i="3">写稿</button><span class="hnd">→</span>
+      <button class="baton" data-i="4">质检</button><span class="hnd">→</span>
+      <button class="baton" data-i="5">提交</button>
+    </div>
+    <div class="batonbox rv d5" id="batonbox"></div>
+    <div class="small rv d6">每棒都是窄 Agent 或纯函数——<b>不做上一棒的事，不做下一棒的事</b></div>
+  </div>
+  <div class="scr-foot rv d7">参考实现：<b>examples/compliance-flow-demo/</b> 的四个脚本即前四棒的规则版（零 LLM 依赖）。</div>
+</section>
+
+<section class="screen s-wall">
+  <div class="scr-head">
+    <div class="step-badge rv d1">03 · <b>阶段墙</b></div>
+    <h2 class="rv d2">接棒点不是自动流转，是人工确认</h2>
+    <p class="scr-desc rv d3">黄点不是装饰——是<b style="color:#fcd34d">墙</b>。<br>上一棒的产出先过验收，人签字，下一棒才开始。</p>
+  </div>
+  <div class="stage">
+    <div class="wall rv d4">
+      <div class="seg"><b>资料收集</b><span>产出：案件档案</span></div>
+      <div class="gate"><i>⛔</i><span>用户确认</span></div>
+      <div class="seg"><b>材料规划</b><span>产出：本轮清单</span></div>
+      <div class="gate"><i>⛔</i><span>用户确认</span></div>
+      <div class="seg"><b>文稿生成</b><span>产出：草稿</span></div>
+      <div class="gate"><i>⛔</i><span>用户编辑定稿</span></div>
+    </div>
+    <div class="wallcap rv d5">确认点把流水线切成段：<b>错误最多传播一段</b>，且每段留下一次人工签字的审计痕迹</div>
+    <div class="small rv d6">关键闸门（事实核对、必需材料、提交安全门槛）<b>只能由人打开</b>——Agent 无权放行</div>
+  </div>
+  <div class="scr-foot rv d7">这也是审计的来源：每个确认点 = 一条"谁在什么时候放行了什么"的记录。</div>
+</section>
+
+<section class="screen s-vs">
+  <div class="scr-head">
+    <div class="step-badge rv d1">04 · <b>对照</b></div>
+    <h2 class="rv d2">单 Agent 主循环 vs 流水线</h2>
+    <p class="scr-desc rv d3">不是谁取代谁——是两种组织方式，各有地盘。</p>
+  </div>
+  <div class="stage">
+    <div class="vs rv d4">
+      <div class="p loop">
+        <div class="t">单 Agent 主循环（HERMES ·04）</div>
+        <li><b>think → act → observe</b> 一圈圈转</li>
+        <li>适合：探索性任务，路径未知</li>
+        <li>灵活，但路径与质量都靠模型自觉</li>
+        <li>一个上下文，一处失守全线失守</li>
+      </div>
+      <div class="p line">
+        <div class="t">流水线接力（本集）</div>
+        <li><b>固定棒次</b>，每棒窄职责</li>
+        <li>适合：流程已知、错误不可逆的对外任务</li>
+        <li>质量靠结构：验收标准 + 确认点</li>
+        <li>错误被墙隔断，可定位可回滚</li>
+      </div>
+    </div>
+    <div class="small rv d5">经验法则：<b>流程能画成一张确定的图 → 流水线；画不出来 → 主循环</b></div>
+  </div>
+  <div class="scr-foot rv d6">两者也能嵌套：某一棒内部就是一个主循环 Agent——比如"资料"棒自己跑工具循环去收集。</div>
+</section>
+
+<section class="screen s-conds">
+  <div class="scr-head">
+    <div class="step-badge rv d1">05 · <b>成立条件</b></div>
+    <h2 class="rv d2">分工什么时候是对的</h2>
+    <p class="scr-desc rv d3">三个条件同时满足才上流水线——<br>缺任何一个，退回单 Agent 主循环。</p>
+  </div>
+  <div class="stage">
+    <div class="conds">
+      <div class="cond rv d4"><span class="no">1</span><div><b>错误不可逆</b><p>产出会离开系统（对外提交、正式文稿）。发错了收不回来，值得为它加墙。</p></div></div>
+      <div class="cond rv d5"><span class="no">2</span><div><b>每段有独立验收标准</b><p>能写出"这棒合格长什么样"。写不出验收标准的段，拆了也是白拆。</p></div></div>
+      <div class="cond rv d6"><span class="no">3</span><div><b>确认点隔得开</b><p>棒与棒之间等得起人工确认。实时对话式的任务等不起，硬拆只会添堵。</p></div></div>
+    </div>
+    <div class="fallback rv d7">缺一即退回：一个守好护栏的主循环 Agent，胜过一条没有闸门的流水线</div>
+  </div>
+  <div class="scr-foot rv d7">反面教材就是第 01 屏的合唱：三条件一个都不满足，只是把成本翻了几倍。</div>
+</section>
+
+<section class="screen s-sum">
+  <div class="scr-head">
+    <div class="step-badge rv d1">06 · <b>收束</b></div>
+    <h2 class="rv d2">一屏记住</h2>
+  </div>
+  <div class="stage">
+    <div class="card rv d4" style="width:100%;max-width:560px">
+      <div class="k">接力式流水线</div>
+      <b>窄职责 × 验收标准 × 人工确认点</b>
+      <p>把多 Agent 从"一群同时开口的合唱团"变成"一支各司其职的接力队"：每棒只对输入/输出/验收负责；接棒前有人签字；错误最多传播一段。成立条件三条——错误不可逆、每段可验收、等得起确认——缺一，就退回单 Agent 主循环。</p>
+    </div>
+    <div class="small rv d5">相关集：hermes-17（为什么合唱不行）· pat-06（护栏分层）· dev-06/07（两个关键闸门）</div>
+  </div>
+  <div class="scr-foot rv d6">模式全文 M1 见 <b>docs/research/agent-compliance-patterns-research.md</b> · 规则版实现 <b>examples/compliance-flow-demo/</b>。</div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var screens = [].slice.call(document.querySelectorAll('.screen'));
+  var dots = document.getElementById('dots');
+  screens.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.setAttribute('aria-label', '第 ' + (i + 1) + ' 屏');
+    if (i === 0) b.className = 'on';
+    b.addEventListener('click', function () { s.scrollIntoView({ behavior: 'smooth' }); });
+    dots.appendChild(b);
+  });
+  var btns = [].slice.call(dots.children);
+
+  /* ---------- 六棒接力交互 ---------- */
+  var BATONS = [
+    { name: '① 分流', in_: '用户自由输入 + 可读文件内容', out: '案型候选（带依据）或"待识别"案件', ok: '证据不足时不硬猜，追问而不是选一个' },
+    { name: '② 资料', in_: '已确认的案型 + 用户上传/粘贴的原始资料', out: '案件档案：提取文字、文件名/大小、待核事实清单', ok: '提取内容全部标记待核——不把提取当核实' },
+    { name: '③ 规划', in_: '最新通知原文 + 案型 + 已收集回答', out: '材料计划：必需项（原文摘录）+ 建议项分开', ok: '每个材料项有来源标注；建议不冒充必需' },
+    { name: '④ 写稿', in_: '冻结的事实（已核）+ 用户选定的立场 + 材料计划', out: '对应立场的文稿结构或内部准备卡', ok: '事实未核/来源冲突 → 拒绝生成对外稿；占位符未清零不放行' },
+    { name: '⑤ 质检', in_: '草稿 + 本轮提交包（正文与附件清单）', out: '检查报告：阻塞项 / 提醒项，逐条可定位', ok: '阻塞清零才放行；总检独立校验，不受阶段视图影响' },
+    { name: '⑥ 提交', in_: '已确认的提交包', out: '模拟提交回执 + 本轮 append-only 快照', ok: '只演示提交动作；快照归档后只读，退回开新轮' }
+  ];
+  var relay = document.getElementById('relay');
+  var box = document.getElementById('batonbox');
+  var bts = relay ? [].slice.call(relay.querySelectorAll('.baton')) : [];
+  function pick(i) {
+    bts.forEach(function (b, j) { b.className = 'baton' + (i === j ? ' on' : ''); });
+    var d = BATONS[i];
+    box.innerHTML = '<div class="bt">' + d.name + '</div>' +
+      '<div class="brow"><em>输入</em><span>' + d.in_ + '</span></div>' +
+      '<div class="brow"><em>输出</em><span>' + d.out + '</span></div>' +
+      '<div class="brow"><em>验收</em><span>' + d.ok + '</span></div>';
+  }
+  bts.forEach(function (b, i) { b.addEventListener('click', function () { pick(i); }); });
+  if (bts.length) pick(0);
+
+  /* ---------- observer ---------- */
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio > 0.55) {
+        screens.forEach(function (s) { s.classList.remove('active'); });
+        en.target.classList.add('active');
+        var i = screens.indexOf(en.target);
+        btns.forEach(function (b, j) { b.classList.toggle('on', i === j); });
+      }
+    });
+  }, { threshold: [0.55] });
+  screens.forEach(function (s) { io.observe(s); });
+})();
+</script>
+
+</body>
+</html>

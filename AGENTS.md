@@ -104,7 +104,7 @@ Frontend (run from `frontend/`):
   `scripts/`, and `ui.html`, plus two user-supplied PDFs — leave the PDFs
   alone). They are not exercised by pytest or Vite.
 - `docs/` holds the animation collection; `index.html` is the only entry point
-  and links all 114 episodes (none orphaned). Twelve series, in index order:
+  and links all 116 episodes (none orphaned). Twelve series, in index order:
   训练原理 ·01–06 (`tr-` prefix, the L1 layer that used to hold only four
   episodes: corpus pipeline & dedup & mixture, parallel sharding
   DP/TP/PP/EP/CP with the
@@ -140,11 +140,11 @@ Frontend (run from `frontend/`):
   per-token latency (CUDA Graph bucketing, metadata packing, fused sampling) and
   density (dual platform, NUMA binding, capacity). All twelve S3 episodes
   (25–36) are live — the season is complete); AGENT
-  开发避坑指南 ·01–06 (incl. 05 tool-poisoning injection, 06 evidence chain); AGENT 实战工坊
+  开发避坑指南 ·01–07 (incl. 05 tool-poisoning injection, 06 evidence chain, 07 fact state machine); AGENT 实战工坊
   ·01–06 (knowledge-QA RAG walkthrough, project-selection guide, Agentic RAG,
-  GraphRAG); AGENT 模式进阶 ·01–06 (`pat-` prefix: Plan-and-Execute,
+  GraphRAG); AGENT 模式进阶 ·01–07 (`pat-` prefix: Plan-and-Execute,
   Reflection, CoALA memory extraction/routing, window/summary compression, MCP
-  Host/Client/Server + tools/list, soft-vs-hard guardrails).
+  Host/Client/Server + tools/list, soft-vs-hard guardrails, agent relay pipelines with human gates).
   Each demo is one self-contained file (no build step) using full-screen CSS
   scroll-snap, one animation per screen; they are not part of the Vite app and
   frontend changes do not affect them. Subfolders: `research/` (planning
@@ -159,7 +159,7 @@ Frontend (run from `frontend/`):
   which is idempotent. After adding, removing or reordering an episode,
   re-run it (`--check` reports drift without writing). Never hand-edit the
   block — it is replaced wholesale on the next run, and it is what keeps the
-  episodes from being 114 dead ends.
+  episodes from being 116 dead ends.
 - **Index affordances.** `index.html` also has a client-side search (`/`
   focuses, `Esc` clears; matches `a.card` on text + href), a static 知识地图
   (L1 训练 → L2 模型原理 → L3 推理服务 → L4 Agent 工程) and three recommended
