@@ -49,7 +49,7 @@ async def test_live_model_uses_calculator_tool():
 
 @pytest.mark.asyncio
 async def test_live_model_guard_trips_on_repeat():
-    from app.agent import Agent, AgentConfig, LLMClient, RepeatedCallError, tool
+    from app.agent import Agent, AgentConfig, LLMClient, RepeatedCallError, ToolRegistry, tool
 
     registry = ToolRegistry()
 

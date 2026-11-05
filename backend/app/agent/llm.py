@@ -42,13 +42,13 @@ class LLMClient:
         *,
         base_url: str | None = None,
         api_key: str | None = None,
-        model: str = "gpt-4o-mini",
+        model: str | None = None,
         timeout: float = 60.0,
         headers: dict[str, str] | None = None,
     ) -> None:
         self.base_url = (base_url or os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
         self.api_key = api_key if api_key is not None else os.getenv("LLM_API_KEY", "")
-        self.model = model
+        self.model = model or os.getenv("LLM_MODEL", "gpt-4o-mini")
         self.timeout = timeout
         self.extra_headers = headers or {}
 

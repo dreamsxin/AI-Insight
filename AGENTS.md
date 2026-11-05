@@ -56,8 +56,9 @@ Frontend (run from `frontend/`):
   detection, tool allowlist) are enforced in code, not prompts; every step
   emits a structured event through the `on_event` callback (sync or async).
   `LLMClient` speaks the OpenAI Chat Completions protocol via `httpx` and
-  reads `LLM_BASE_URL` / `LLM_API_KEY` from the environment (config.py does
-  NOT load .env files).
+  reads `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` from the environment
+  (config.py does NOT load .env files). Real-model e2e acceptance record:
+  `docs/research/agent-e2e-trace.md`.
 - **Content is data-driven**: `backend/app/data/chapters.py` defines
   Chapter → Page, and each page names a visualization by **string** plus its
   `ControlConfig`s. The frontend resolves that string through `VIZ_REGISTRY`.
