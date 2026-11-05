@@ -117,18 +117,18 @@ python examples/anim-demos/inf-30-cache-bytes.py
 
 | | 集 | 标题 | 脚本 / 不做的原因 |
 | :-: | :-- | :-- | :-- |
-| ◐ | `inf-01-overview` | 一个 token 的旅程 | TTFT / TBT 分解与三档成本 |
-| ◐ | `inf-02-protocol` | 三张面孔，一套内核 | 三种协议归一成一段对话，再分流回三种流 |
-| ◐ | `inf-03-encoding` | 特殊 token 的身份证 | 同一串字符落在特殊 token 里外的差别 |
-| ◐ | `inf-04-two-phase` | 两种性格的机器 | 算术强度与屋顶线，prefill vs decode |
-| ◐ | `inf-05-disaggregation` | 拆开才跑得快 | E/P/D 三段的最小与最宽配比 |
-| ◐ | `inf-06-scheduler` | 别让 GPU 等 CPU | 按时间预算反解片大小 |
-| ◐ | `inf-07-kv-tier` | 缓存金字塔 | 三级 KV 的命中链路与成本 |
-| ◐ | `inf-08-swa-replay` | 只重算 128 个 token | 2560 token × 20 层 → 常数 |
-| ◐ | `inf-09-dspark` | 先猜，再验 | 固定 5 的 30% 白验与置信度打分 |
-| ◐ | `inf-10-eplb` | 专家也会堵车 | 贪心放置：让最忙的 rank 最不忙 |
-| ◐ | `inf-11-constrained` | 只能走对的路 | schema → 自动机 → 每步掩码 |
-| ◐ | `inf-12-stream` | 切成两半的字符 | UTF-8 跨块补齐 + 增量 JSON |
+| ✓ | `inf-01-overview` | 一个 token 的旅程 | `inf-01-overview.py` |
+| ✓ | `inf-02-protocol` | 三张面孔，一套内核 | `inf-02-protocol.py` |
+| ✓ | `inf-03-encoding` | 特殊 token 的身份证 | `inf-03-encoding.py` |
+| ✓ | `inf-04-two-phase` | 两种性格的机器 | `inf-04-two-phase.py` |
+| ✓ | `inf-05-disaggregation` | 拆开才跑得快 | `inf-05-disaggregation.py` |
+| ✓ | `inf-06-scheduler` | 别让 GPU 等 CPU | `inf-06-scheduler.py` |
+| ✓ | `inf-07-kv-tier` | 缓存金字塔 | `inf-07-kv-tier.py` |
+| ✓ | `inf-08-swa-replay` | 只重算 128 个 token | `inf-08-swa-replay.py` |
+| ✓ | `inf-09-dspark` | 先猜，再验 | `inf-09-dspark.py` |
+| ✓ | `inf-10-eplb` | 专家也会堵车 | `inf-10-eplb.py` |
+| ✓ | `inf-11-constrained` | 只能走对的路 | `inf-11-constrained.py` |
+| ✓ | `inf-12-stream` | 切成两半的字符 | `inf-12-stream.py` |
 
 ## 推理原理 · 第二季
 
@@ -199,7 +199,9 @@ python examples/anim-demos/inf-30-cache-bytes.py
 | ◐ | `pat-06-guardrails` | 墙上家规与门上锁：软约束 vs 硬约束 | 策略引擎在代码层拦截 |
 | — | `pat-07-agent-relay` | 接力，不是合唱 | 模式对比，同系列其余已可脚本化 |
 
-## 已配脚本的 12 集能自己算出什么
+## 已配脚本的 36 集能自己算出什么
+
+### 第三季（评测、精度与工程）
 
 | 集 | 跑出来对上的数 |
 | :-- | :-- |
@@ -216,7 +218,7 @@ python examples/anim-demos/inf-30-cache-bytes.py
 | `inf-35` | 同插座 25 / 跨插座 12 GB/s；交错排慢 1.64 倍；逻辑 3 → 物理 4 |
 | `inf-36` | 301 个 slot；`lcm = 1056`；3FS 可用 512.2 TB → 35.6 张卡；每卡 6.25 GB/s |
 
-### 第二季（四本账）跑出来的数
+### 第二季（四本账）
 
 | 集 | 跑出来对上的数 |
 | :-- | :-- |
@@ -232,6 +234,23 @@ python examples/anim-demos/inf-30-cache-bytes.py
 | `inf-22` | 顺序求和差 3 ulp；构造出真的 top-1 翻面；成对归约差 0 |
 | `inf-23` | 三条断言全通过；换 seed 后只偶然重合 1/8 |
 | `inf-24` | 四本账互不免费；四层回扣 |
+
+### 第一季（一个 token 的旅程）
+
+| 集 | 跑出来对上的数 |
+| :-- | :-- |
+| `inf-01` | 500 字 = 11.8s，TTFT 只占 6.8%；60 并发 × 每 22ms 一步 ≈ 2727 token/s |
+| `inf-02` | 三种请求归一成同一条消息；三种增量事件各就各位 |
+| `inf-03` | 正文编码不含特殊 id、拼接编码含 —— 「谈论」与「使用」的分界 |
+| `inf-04` | 屋顶线平衡点 ≈ 295 token；prefill 撞算力、decode 撞带宽 |
+| `inf-05` | EP64 → 每卡 4 个专家；4K prompt 的 KV ≈ 6.2 MB，搬它只要 1.0 ms |
+| `inf-06` | 单步 240 token；10 万 token 反解成 417 片 |
+| `inf-07` | 4K prompt = 32 块；全落 3FS 要 64 ms；三级命中成本差 1000 倍 |
+| `inf-08` | 2560 → 128，少算 20 倍；134 个位置 = 1.35 MB/序列；对齐 2688 而非 2560 |
+| `inf-09` | 弱草稿 E=1.92 → 白验 62%；好草稿 E=3.49 → 白验 30% |
+| `inf-10` | moe_lb = 0.98/0.90 = 1.089；干等 8.2%；两段的窗口都是 10 个 |
+| `inf-11` | `^[A-Z]{2}\d{6}$` = 6.76 亿个串 = 29.3 bit；3.2 万/12.8 万 = 25% |
+| `inf-12` | 缓冲上限 3 字节；KMP 进度 4→6→8 不回头；重扫成本差 1024 倍 |
 
 ## 写一份新脚本的约定
 

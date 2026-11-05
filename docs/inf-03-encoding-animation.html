@@ -410,5 +410,25 @@ addEventListener("keydown", function (e) {
   screens.forEach(function (s) { io.observe(s); });
 })();
 </script>
+<!-- demo:start -->
+<style>
+  .demochip{position:fixed;right:14px;top:calc(9px + env(safe-area-inset-top));z-index:70;
+    display:flex;align-items:center;gap:6px;padding:5px 10px 5px 8px;border-radius:99px;
+    border:1px solid rgba(255,255,255,.13);background:rgba(9,14,24,.78);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9.5px;letter-spacing:.02em;
+    color:#7c879e;cursor:pointer;opacity:.62;transition:opacity .25s,border-color .25s,color .25s;
+    -webkit-user-select:none;user-select:none}
+  .demochip:hover{opacity:1;border-color:rgba(255,255,255,.26);color:#c3cde2}
+  .demochip.ok{opacity:1;border-color:var(--acc,#22d3ee);color:var(--acc,#22d3ee)}
+  .demochip i{font-style:normal;font-size:10px;opacity:.9}
+  .demochip em{font-style:normal;opacity:.55}
+  .demochip.ok em{opacity:.9}
+  @media (max-width:520px){.demochip em{display:none}}
+</style>
+<div class="demochip" id="demoChip" data-cmd="python examples/anim-demos/inf-03-encoding.py"><i>&#9881;</i><b>配套脚本</b><em>inf-03-encoding.py</em></div>
+<script>(function(){var c=document.getElementById("demoChip");if(!c)return;var t=c.querySelector("em"),cmd=c.getAttribute("data-cmd"),old=t.textContent;c.addEventListener("click",function(){var done=function(){c.classList.add("ok");t.textContent="已复制";setTimeout(function(){c.classList.remove("ok");t.textContent=old},1500)};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(cmd).then(done,function(){t.textContent=cmd});}else{t.textContent=cmd;}});})();</script>
+<!-- demo:end -->
+
 </body>
 </html>

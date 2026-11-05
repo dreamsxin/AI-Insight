@@ -112,7 +112,8 @@ Frontend (run from `frontend/`):
   `inf-34`), seeds its randomness, and ends with an `[自检]` line asserting the
   numbers shown on screen — the point is that a reader can recompute the
   animation, not watch a second demo. `README.md` there is the triage of all
-  116 episodes (✓ has a script / ◐ computable, queued / — explainer only).
+  116 episodes (✓ has a script / ◐ computable, queued / — explainer only);
+  36 written so far — all of 推理原理 (inf-01…inf-36, seasons 1–3) is covered.
   After adding a script run `python docs/tools/demo-gen.py`, which auto-discovers
   the pairing and injects the 「配套脚本」chip into the page (idempotent;
   `--check` reports drift, `--strip` removes).
