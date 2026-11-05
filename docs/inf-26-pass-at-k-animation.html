@@ -251,8 +251,8 @@ k   从 n 条里抽 k 条来看</div>
 <section class="screen s4">
   <div class="scr-head">
     <div class="step-badge rv d1">03 · <b>k 往上调</b></div>
-    <h2 class="rv d2">一条错样本，被 k 摊薄</h2>
-    <p class="scr-desc rv d3">还是那道「960 条里错 1 条」的题：n = 32、c = 31，<br>k 调到 32 时，那条错的根本挡不住你</p>
+    <h2 class="rv d2">一条对样本，被 k 捞出来</h2>
+    <p class="scr-desc rv d3">同一个模型，32 次里只对 1 次：n = 32、c = 1，<br>k 调到 32 时，那一条对的必然被捞上来</p>
   </div>
   <div class="stage">
     <div class="bars">
@@ -261,9 +261,9 @@ k   从 n 条里抽 k 条来看</div>
       <div class="bar rv d4"><span class="lbl">k=16</span><span class="track"><i class="fill" style="--w:50%"></i></span><span class="val">50%</span></div>
       <div class="bar rv d5"><span class="lbl">k=32</span><span class="track"><i class="fill" style="--w:100%"></i></span><span class="val">100%</span></div>
     </div>
-    <div class="small rv d6">n=32、c=31 时 pass@k = k / 32 · 抽得越多，越必然抽到对的</div>
+    <div class="small rv d6">n=32、c=1 时 pass@k = k / 32 · 抽得越多，越必然碰到对的那一条</div>
   </div>
-  <div class="scr-foot rv d6">99.9 爬到 100 没有任何魔法 —— <b>只是把「读几条」的旋钮拧到了头</b>。</div>
+  <div class="scr-foot rv d6">3.1 爬到 100 没有任何魔法 —— <b>只是把「读几条」的旋钮拧到了头</b>。</div>
 </section>
 
 <section class="screen s5">
@@ -399,6 +399,25 @@ k   从 n 条里抽 k 条来看</div>
   });
 })();
 </script>
+<!-- demo:start -->
+<style>
+  .demochip{position:fixed;right:14px;top:calc(9px + env(safe-area-inset-top));z-index:70;
+    display:flex;align-items:center;gap:6px;padding:5px 10px 5px 8px;border-radius:99px;
+    border:1px solid rgba(255,255,255,.13);background:rgba(9,14,24,.78);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9.5px;letter-spacing:.02em;
+    color:#7c879e;cursor:pointer;opacity:.62;transition:opacity .25s,border-color .25s,color .25s;
+    -webkit-user-select:none;user-select:none}
+  .demochip:hover{opacity:1;border-color:rgba(255,255,255,.26);color:#c3cde2}
+  .demochip.ok{opacity:1;border-color:var(--acc,#22d3ee);color:var(--acc,#22d3ee)}
+  .demochip i{font-style:normal;font-size:10px;opacity:.9}
+  .demochip em{font-style:normal;opacity:.55}
+  .demochip.ok em{opacity:.9}
+  @media (max-width:520px){.demochip em{display:none}}
+</style>
+<div class="demochip" id="demoChip" data-cmd="python examples/anim-demos/inf-26-pass-at-k.py"><i>&#9881;</i><b>配套脚本</b><em>inf-26-pass-at-k.py</em></div>
+<script>(function(){var c=document.getElementById("demoChip");if(!c)return;var t=c.querySelector("em"),cmd=c.getAttribute("data-cmd"),old=t.textContent;c.addEventListener("click",function(){var done=function(){c.classList.add("ok");t.textContent="已复制";setTimeout(function(){c.classList.remove("ok");t.textContent=old},1500)};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(cmd).then(done,function(){t.textContent=cmd});}else{t.textContent=cmd;}});})();</script>
+<!-- demo:end -->
 
 </body>
 </html>

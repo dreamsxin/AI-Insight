@@ -100,10 +100,22 @@ Frontend (run from `frontend/`):
   FakeLLM; `test_agent_e2e.py` needs real credentials and skips whole-file
   when they are absent.
 - `examples/` holds standalone runnable demos outside both apps:
-  `agent-harness-demo/` (paired with the HERMES harness episodes) and
+  `agent-harness-demo/` (paired with the HERMES harness episodes),
   `rag-demo/` (a self-contained RAG mini-app with its own requirements.txt,
   `scripts/`, and `ui.html`, plus two user-supplied PDFs — leave the PDFs
-  alone). They are not exercised by pytest or Vite.
+  alone), and `anim-demos/` (one Python script per animation that has something
+  computable; see below). They are not exercised by pytest or Vite.
+- `examples/anim-demos/` is the executable companion to `docs/`. Naming rule is
+  mechanical: **script name = page name minus `-animation.html`**, so
+  `docs/inf-30-cache-bytes-animation.html` ↔ `anim-demos/inf-30-cache-bytes.py`
+  and no mapping table is needed. Every script is stdlib-only (numpy only in
+  `inf-34`), seeds its randomness, and ends with an `[自检]` line asserting the
+  numbers shown on screen — the point is that a reader can recompute the
+  animation, not watch a second demo. `README.md` there is the triage of all
+  116 episodes (✓ has a script / ◐ computable, queued / — explainer only).
+  After adding a script run `python docs/tools/demo-gen.py`, which auto-discovers
+  the pairing and injects the 「配套脚本」chip into the page (idempotent;
+  `--check` reports drift, `--strip` removes).
 - `docs/` holds the animation collection; `index.html` is the only entry point
   and links all 116 episodes (none orphaned). Twelve series, in index order:
   训练原理 ·01–06 (`tr-` prefix, the L1 layer that used to hold only four
