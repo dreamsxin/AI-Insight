@@ -25,6 +25,7 @@ from app.agent.errors import (
     MaxStepsExceededError,
     RepeatedCallError,
     ToolExecutionError,
+    ToolNotAllowedError,
     ToolNotFoundError,
     ValidationError,
 )
@@ -81,6 +82,7 @@ __all__ = [
     "BudgetExceededError",
     "MaxStepsExceededError",
     "ToolExecutionError",
+    "ToolNotAllowedError",
     "ToolNotFoundError",
     "ValidationError",
     "RepeatedCallError",

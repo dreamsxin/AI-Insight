@@ -1,6 +1,6 @@
 /** Compute API calls - neural network, CNN, transformer. */
 
-import { apiDelete, apiGet, apiPost } from "./client";
+import { apiGet, apiPost } from "./client";
 import type {
   NNForwardRequest,
   NNForwardResponse,
@@ -15,7 +15,6 @@ import type {
   Term,
   NNTrainStepRequest,
   NNTrainStepResponse,
-  DatasetInfo,
   DatasetResponse,
   SavedModelSummary,
   SavedModelDetail,
@@ -53,12 +52,6 @@ export const nnTrainStep = (req: NNTrainStepRequest, signal?: AbortSignal) =>
   apiPost<NNTrainStepResponse>("/compute/nn/train/step", req, signal);
 
 // Datasets
-export const fetchDatasets = (signal?: AbortSignal): Promise<DatasetInfo[]> => {
-  return apiGet<{ datasets: DatasetInfo[] }>("/compute/nn/datasets", signal).then(
-    (d) => d.datasets,
-  );
-};
-
 export const fetchDataset = (name: string, signal?: AbortSignal): Promise<DatasetResponse> =>
   apiGet<DatasetResponse>(`/compute/nn/datasets/${name}`, signal);
 
@@ -74,6 +67,3 @@ export const saveModel = (req: SaveModelRequest, signal?: AbortSignal): Promise<
 
 export const loadModel = (id: string, signal?: AbortSignal): Promise<SavedModelDetail> =>
   apiGet<SavedModelDetail>(`/compute/nn/models/${id}`, signal);
-
-export const removeModel = (id: string, signal?: AbortSignal): Promise<{ id: string; deleted: boolean }> =>
-  apiDelete<{ id: string; deleted: boolean }>(`/compute/nn/models/${id}`, signal);

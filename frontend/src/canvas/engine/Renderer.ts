@@ -4,7 +4,6 @@ import type { RenderContext } from "@/types/canvas";
 import { Scene } from "./Scene";
 import { AnimationLoop } from "./AnimationLoop";
 import { Tween } from "../animation/Tween";
-import { Timeline } from "../animation/Timeline";
 
 export class Renderer {
   canvas: HTMLCanvasElement;
@@ -12,7 +11,6 @@ export class Renderer {
   scene: Scene;
   private loop: AnimationLoop;
   private tweens: Tween[] = [];
-  private timelines: Timeline[] = [];
   private dpr: number = 1;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -60,16 +58,9 @@ export class Renderer {
     return tween;
   }
 
-  /** Add a timeline to be updated each frame. */
-  addTimeline(timeline: Timeline): Timeline {
-    this.timelines.push(timeline);
-    return timeline;
-  }
-
-  /** Remove all tweens and timelines. */
+  /** Remove all tweens. */
   clearAnimations(): void {
     this.tweens = [];
-    this.timelines = [];
   }
 
   private update(dt: number): void {
@@ -81,16 +72,6 @@ export class Renderer {
       tween.update(dt);
       if (!tween.isFinished && !this.tweens.includes(tween)) {
         this.tweens.push(tween);
-      }
-    }
-
-    // Update timelines
-    const currentTimelines = this.timelines;
-    this.timelines = [];
-    for (const timeline of currentTimelines) {
-      timeline.update(dt);
-      if (timeline.isPlaying && !this.timelines.includes(timeline)) {
-        this.timelines.push(timeline);
       }
     }
   }

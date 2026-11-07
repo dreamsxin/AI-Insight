@@ -27,7 +27,6 @@ export interface ControlConfig {
   default: number;
   options: string[];
   value_labels?: string[];
-  api_endpoint?: string;
   /** Display unit suffix (e.g. "ms", "%", "×") */
   unit?: string;
   /** Human-readable description shown as a tooltip */
@@ -45,7 +44,6 @@ export interface Page {
   description: string;
   content: ContentBlock[];
   controls: ControlConfig[];
-  api_endpoint?: string;
 }
 
 export interface ChapterSummary {

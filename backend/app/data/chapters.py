@@ -1,4 +1,4 @@
-"""Structured chapter content data for the 9 chapters of the tutorial."""
+"""Structured chapter content data for the 10 chapters of the tutorial."""
 
 from __future__ import annotations
 
@@ -135,7 +135,6 @@ CH2 = Chapter(
                 ControlConfig(key="activation", label="激活函数", type=ControlType.SELECT, options=["ReLU", "Sigmoid", "Tanh", "Step"], default=0),
                 ControlConfig(key="run", label="运行前向传播", type=ControlType.BUTTON, default=0),
             ],
-            api_endpoint="/api/nn/forward",
         ),
         Page(
             id="p3",
@@ -220,7 +219,6 @@ CH3 = Chapter(
                 ControlConfig(key="epochs", label="训练轮数", type=ControlType.SLIDER, min=20, max=200, step=20, default=100),
                 ControlConfig(key="learning_rate", label="学习率", type=ControlType.SLIDER, min=0.05, max=0.8, step=0.05, default=0.3),
             ],
-            api_endpoint="/api/nn/train",
         ),
         Page(
             id="p4",
@@ -324,7 +322,6 @@ CH4 = Chapter(
                 ControlConfig(key="run", label="运行卷积", type=ControlType.BUTTON, default=0),
                 ControlConfig(key="stride", label="步长", type=ControlType.SLIDER, min=1, max=3, step=1, default=1),
             ],
-            api_endpoint="/api/cnn/convolve",
         ),
         Page(
             id="p3",
@@ -354,7 +351,6 @@ CH4 = Chapter(
                 ControlConfig(key="mode", label="池化方式", type=ControlType.SELECT, options=["max", "avg"], default=0),
                 ControlConfig(key="run", label="运行池化", type=ControlType.BUTTON, default=0),
             ],
-            api_endpoint="/api/cnn/pool",
         ),
     ],
 )
@@ -455,7 +451,6 @@ CH6 = Chapter(
                     group="逐层放大",
                 ),
             ],
-            api_endpoint="/api/transformer/attention",
         ),
         Page(
             id="p2",
@@ -520,7 +515,6 @@ CH6 = Chapter(
                 ControlConfig(key="dim", label="编码维度", type=ControlType.SLIDER, min=8, max=64, step=8, default=16),
                 ControlConfig(key="pos", label="查看位置", type=ControlType.SLIDER, min=0, max=20, step=1, default=0),
             ],
-            api_endpoint="/api/transformer/positional_encoding",
         ),
     ],
 )

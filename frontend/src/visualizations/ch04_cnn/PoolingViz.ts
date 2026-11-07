@@ -65,7 +65,7 @@ export class PoolingViz extends BaseVisualization {
         pool_size: this.poolSize,
         stride: this.poolSize,
         mode: this.mode,
-      });
+      }, this.getAbortSignal());
       this.apiResponse = resp;
       this.animStep = -1;
       this.revealedSteps = 0;

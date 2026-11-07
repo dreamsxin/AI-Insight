@@ -94,10 +94,12 @@ export class FeatureMapViz extends BaseVisualization {
       error: null,
     }));
 
-    // Fetch all four convolutions in parallel.
+    // Fetch all four convolutions in parallel; one shared signal so they are
+    // all cancelled together on unmount (getAbortSignal() cancels prior calls).
+    const signal = this.getAbortSignal();
     const settled = await Promise.allSettled(
       this.results.map((r) =>
-        cnnConvolve({ image: SOURCE_IMAGE, kernel: r.kernel, stride: 1, padding: 0 }),
+        cnnConvolve({ image: SOURCE_IMAGE, kernel: r.kernel, stride: 1, padding: 0 }, signal),
       ),
     );
 

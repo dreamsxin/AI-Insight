@@ -33,7 +33,6 @@ class ToolRegistry:
     def __init__(self) -> None:
         self._fns: dict[str, ToolFn] = {}
         self._specs: dict[str, ToolSpec] = {}
-        self._is_async: dict[str, bool] = {}
 
     def register(
         self,
@@ -52,7 +51,6 @@ class ToolRegistry:
         spec = ToolSpec(name=tool_name, description=doc, parameters=schema)
         self._fns[tool_name] = fn
         self._specs[tool_name] = spec
-        self._is_async[tool_name] = inspect.iscoroutinefunction(fn)
         return spec
 
     def has(self, name: str) -> bool:
@@ -60,9 +58,6 @@ class ToolRegistry:
 
     def get(self, name: str) -> ToolFn:
         return self._fns[name]
-
-    def is_async(self, name: str) -> bool:
-        return self._is_async.get(name, False)
 
     def specs(self) -> list[ToolSpec]:
         # 稳定顺序：提高前缀缓存命中率（Hermes 16 期：工具顺序也值钱）

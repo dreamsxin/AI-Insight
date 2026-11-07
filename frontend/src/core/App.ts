@@ -21,6 +21,7 @@ export class App {
   private currentPage: Page | null = null;
   private statusUnsubscribe: (() => void) | null = null;
   private controlValueUnsubscribe: (() => void) | null = null;
+  private routeGeneration = 0;
   private el: HTMLElement;
 
   constructor(rootEl: HTMLElement) {
@@ -119,14 +120,19 @@ export class App {
   }
 
   private async handleRouteChange(route: { chapter: number; page: number }): Promise<void> {
+    // 每次路由变更作废旧请求：快速切章时，旧章节的迟到响应不得覆写新章节
+    const generation = ++this.routeGeneration;
     // Update sidebar active state
     this.sidebar.updateRoute(route);
 
     // Load chapter if needed
     if (!this.currentChapter || this.currentChapter.id !== route.chapter) {
       try {
-        this.currentChapter = await fetchChapter(route.chapter);
+        const fetched = await fetchChapter(route.chapter);
+        if (generation !== this.routeGeneration) return;
+        this.currentChapter = fetched;
       } catch (e) {
+        if (generation !== this.routeGeneration) return;
         console.error("Failed to load chapter:", e);
         return;
       }
@@ -168,9 +174,6 @@ export class App {
     const container = this.pageView.getCanvasContainer();
     if (VizClass) {
       this.currentViz = new VizClass(container, page.controls);
-      if (page.api_endpoint) {
-        (this.currentViz as BaseVisualization & { apiEndpoint?: string }).apiEndpoint = page.api_endpoint;
-      }
       this.controlsPanel.setControls(page.controls, this.currentViz.getControls());
       this.statusUnsubscribe = this.currentViz.onStatusChange((status) => {
         this.controlsPanel.setPlaybackState(status);

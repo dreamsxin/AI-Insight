@@ -7,6 +7,7 @@ AGENT 实战工坊系列的教学思路一致：工具是普通函数，输出�
 from __future__ import annotations
 
 from app.agent import ToolRegistry, tool
+from app.agent.expr import evaluate_arithmetic
 from app.services.cnn import PREDEFINED_KERNELS
 from app.services.cnn import convolve as cnn_convolve
 from app.services.neural_network import forward as nn_forward
@@ -16,13 +17,9 @@ def build_teaching_registry() -> ToolRegistry:
     """组装 Playground 默认工具表：计算器 + 时钟 + 两个课程计算工具。"""
     registry = ToolRegistry()
 
-    @tool(registry, description="安全地计算一个数学表达式，只允许数字与运算符")
+    @tool(registry, description="安全地计算一个数学表达式，只允许数字与四则运算符")
     def calculator(expression: str) -> str:
-        allowed = set("0123456789+-*/()., %")
-        if not expression or any(ch not in allowed for ch in expression):
-            raise ValueError("表达式包含非法字符，只允许数字与 +-*/().,% ")
-        expr = expression.replace(",", "").replace("%", "/100")
-        return str(eval(expr, {"__builtins__": {}}, {}))  # noqa: S307 - 字符白名单已挡住调用
+        return evaluate_arithmetic(expression)
 
     @tool(registry, description="返回当前 UTC 时间的 ISO 字符串")
     def now_utc() -> str:

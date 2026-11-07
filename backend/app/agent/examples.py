@@ -14,20 +14,16 @@
 from __future__ import annotations
 
 from app.agent import Agent, AgentConfig, LLMClient, ToolRegistry, tool
+from app.agent.expr import evaluate_arithmetic
 
 
 def build_registry() -> ToolRegistry:
     """一个内置计算器 + 时钟的最小工具表，演示注册方式。"""
     registry = ToolRegistry()
 
-    @tool(registry, description="安全地计算一个数学表达式，只允许数字与运算符")
+    @tool(registry, description="安全地计算一个数学表达式，只允许数字与四则运算符")
     def calculator(expression: str) -> str:
-        allowed = set("0123456789+-*/()., %")
-        if not expression or any(ch not in allowed for ch in expression):
-            raise ValueError("表达式包含非法字符")
-        expr = expression.replace(",", "").replace("%", "/100")
-        # 仅用 eval 处理纯数学表达式，字符白名单已挡住函数调用
-        return str(eval(expr, {"__builtins__": {}}, {}))  # noqa: S307
+        return evaluate_arithmetic(expression)
 
     @tool(registry, description="返回当前 UTC 时间的 ISO 字符串")
     def now_utc() -> str:

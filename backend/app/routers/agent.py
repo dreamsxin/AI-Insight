@@ -1,8 +1,8 @@
 """Agent API routes — expose the app.agent runtime over HTTP.
 
 Error mapping (AgentError is NOT ValueError, so `_safe()` does not apply):
-- ValidationError            -> 400
-- MaxStepsExceeded / BudgetExceeded / RepeatedCall -> 409 (guard tripped)
+- ValidationError / ToolNotFoundError -> 400
+- MaxStepsExceeded / BudgetExceeded / RepeatedCall / ToolNotAllowed -> 409 (guard tripped)
 - ToolExecutionError         -> 502 (upstream tool failed)
 - missing LLM credentials    -> 503 (configuration, not client's fault)
 """
@@ -26,6 +26,8 @@ from app.agent import (
     Message,
     RepeatedCallError,
     ToolExecutionError,
+    ToolNotAllowedError,
+    ToolNotFoundError,
     ValidationError,
 )
 from app.agent.store import CheckpointStore, JsonCheckpointStore, MemoryCheckpointStore
@@ -57,7 +59,12 @@ DEFAULT_SYSTEM_PROMPT = (
     "工具报错时读懂错误信息、修正参数重试，绝不假装成功。"
 )
 
-_GUARD_ERRORS = (MaxStepsExceededError, BudgetExceededError, RepeatedCallError)
+_GUARD_ERRORS = (
+    MaxStepsExceededError,
+    BudgetExceededError,
+    RepeatedCallError,
+    ToolNotAllowedError,
+)
 
 
 def _require_llm_config() -> None:
@@ -107,7 +114,7 @@ def _persist_session(req: AgentChatRequest, result) -> None:
 
 
 def _http_status(exc: AgentError) -> int:
-    if isinstance(exc, ValidationError):
+    if isinstance(exc, (ValidationError, ToolNotFoundError)):
         return 400
     if isinstance(exc, _GUARD_ERRORS):
         return 409

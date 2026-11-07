@@ -157,7 +157,10 @@ export class ForwardPassViz extends BaseVisualization {
 
     let layers: LayerResult[];
     try {
-      const response = await nnForward({ layers: sizes, inputs: INPUTS, activation });
+      const response = await nnForward(
+        { layers: sizes, inputs: INPUTS, activation },
+        this.getAbortSignal(),
+      );
       layers = this.withInputLayer(response.layers, sizes);
     } catch {
       layers = localForward(sizes, INPUTS, activation);

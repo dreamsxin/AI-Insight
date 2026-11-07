@@ -69,7 +69,6 @@ class Playbook:
 
     def __init__(self, entries: list[PlaybookEntry] | None = None) -> None:
         self.entries: list[PlaybookEntry] = list(entries or [])
-        self._norms: set[str] = {_normalize(e.text) for e in self.entries}
 
     # -- Curator：唯一写入口 ------------------------------------------------
 
@@ -97,7 +96,6 @@ class Playbook:
             kind=kind, text=text, source=source, created=_now(),
         )
         self.entries.append(entry)
-        self._norms.add(norm)
         return entry, True
 
     def remove(self, entry_id: str) -> bool:

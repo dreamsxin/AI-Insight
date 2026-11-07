@@ -47,8 +47,9 @@ Frontend (run from `frontend/`):
   it carries its own AgentError → HTTP mapping because `AgentError` is NOT a
   `ValueError` and `_safe()` won't catch it — reuse that mapping for new
   agent endpoints. The frontend consumes it via `POST /api/agent/chat`
-  (SSE streaming) through `src/api/agent.ts`; ch10 `AgentPlaygroundViz`
-  renders the transcript. Self-evolution loop also lives here:
+  through `src/api/agent.ts` (a plain JSON request; the backend also exposes
+  an SSE variant `/chat/stream` that the frontend does not yet consume);
+  ch10 `AgentPlaygroundViz` renders the returned transcript. Self-evolution loop also lives here:
   `eval.py` (EvalCase runner), `playbook.py` (lesson store), `evolve.py`
   (GEPA-style outer loop), backed by `store.py` JSON persistence.
   Design: the model only proposes tool calls, the host executes
@@ -68,16 +69,16 @@ Frontend (run from `frontend/`):
   `chapters.py`. The barrel `visualizations/index.ts` imports every chapter module to
   populate the registry.
 - **Canvas engine** lives in `frontend/src/canvas/` (`engine/` Renderer/Scene/
-  AnimationLoop, `shapes/`, `animation/` Tween/Timeline/Easing, `interaction/`).
-  Prefer it over adding rendering libraries. `three` is a dependency but is only used
-  by three visualizations (`ch07` ArchitectureViz, `ch08` TokenizerViz/
-  EmbeddingPipelineViz) — Canvas 2D is the default.
+  AnimationLoop, `shapes/`, `animation/` Tween/Easing, `interaction/`).
+  Prefer it over adding rendering libraries. `three` is a dependency but is only
+  imported by one visualization (`ch07` ArchitectureViz, including OrbitControls)
+  — Canvas 2D is the default.
 - **Lifecycle/requests**: viz instances are created and destroyed per page. Use
   `getAbortSignal()` from `BaseVisualization` for fetch calls so navigation/destroy
   cancels in-flight requests, and do cleanup in `onUnmount()`. API calls go through
   the wrappers in `src/api/client.ts` (`apiGet`/`apiPost`), never raw `fetch`.
 - Frontend code is plain TS classes; DOM UI components live in `src/components/`,
-  app wiring in `src/core/` (App, Router, EventBus).
+  app wiring in `src/core/` (App, Router).
 
 ## Conventions
 
@@ -127,7 +128,7 @@ Frontend (run from `frontend/`):
   economics, post-training (SFT → reward model → PPO → DPO → RLVR), and a 90-day
   timeline that ties it together);
   HERMES AGENT 对象拆解 ·01–18 (08 跨会话记忆篇 is 前瞻演绎/designed
-  extrapolation); HERMES AGENT 进阶机制 ·01–07 (thinking budget wired into the
+  extrapolation); HERMES AGENT 进阶机制 ·01–08 (thinking budget wired into the
   main loop, Skills progressive disclosure, Hooks lifecycle slots, MCP 2026
   transport evolution, A2A & multi-agent sobering, Harness
   scaffold/checkpoint/background tasks, CUA, and building a harness from

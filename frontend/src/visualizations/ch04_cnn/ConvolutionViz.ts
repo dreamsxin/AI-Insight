@@ -96,7 +96,7 @@ export class ConvolutionViz extends BaseVisualization {
         kernel: EDGE_KERNEL,
         stride: this.stride,
         padding: 0,
-      });
+      }, this.getAbortSignal());
       this.apiResponse = resp;
       this.animStep = -1;
       this.kernelVisible = false;

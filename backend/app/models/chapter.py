@@ -51,8 +51,6 @@ class ControlConfig(BaseModel):
     default: float = 0.0
     options: list[str] = Field(default_factory=list)  # for SELECT / SEGMENTED
     value_labels: list[str] = Field(default_factory=list)  # for discrete sliders
-    # Optional backend endpoint to call when the control value changes.
-    api_endpoint: Optional[str] = None
     # Display unit suffix (e.g. "ms", "%", "×")
     unit: Optional[str] = None
     # Human-readable description shown as a tooltip
@@ -72,7 +70,6 @@ class Page(BaseModel):
     description: str = ""
     content: list[ContentBlock] = Field(default_factory=list)
     controls: list[ControlConfig] = Field(default_factory=list)
-    api_endpoint: Optional[str] = None
 
 
 class ChapterSummary(BaseModel):

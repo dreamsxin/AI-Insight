@@ -136,16 +136,6 @@ export interface NNTrainStepResponse {
 // Datasets
 // ---------------------------------------------------------------------------
 
-export interface DatasetInfo {
-  name: string;
-  description: string;
-  sample_count: number;
-  input_dim: number;
-  output_dim: number;
-  n_classes: number;
-  suggested_layers: number[];
-}
-
 export interface DatasetResponse {
   name: string;
   description: string;

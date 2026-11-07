@@ -54,7 +54,7 @@ export class TermDetailViz extends BaseVisualization {
     this.lastRequestedId = id;
     this.renderLoading(id);
     try {
-      const term = await fetchTerm(id);
+      const term = await fetchTerm(id, this.getAbortSignal());
       // Ignore stale responses.
       if (this.lastRequestedId !== id) return;
       this.term = term;

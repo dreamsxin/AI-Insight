@@ -9,10 +9,23 @@ database, no external dependencies - suited to an educational tool.
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 
 MODELS_DIR = Path(__file__).parent.parent / "data" / "saved_models"
+_SAFE_ID = re.compile(r"^[A-Za-z0-9_\-]{1,128}$")
+
+
+def _check_id(model_id: str) -> str:
+    """Reject ids that could escape ``MODELS_DIR`` via path traversal.
+
+    ``overwrite_id`` comes straight from a JSON request body, so this check is
+    the only thing standing between it and ``MODELS_DIR / f"{id}.json"``.
+    """
+    if not isinstance(model_id, str) or not _SAFE_ID.fullmatch(model_id):
+        raise ValueError(f"非法模型 id（仅允许字母/数字/_/-，≤128 字符）: {model_id!r}")
+    return model_id
 
 
 def _ensure_dir() -> None:
@@ -79,6 +92,7 @@ def save_model(
     now = _timestamp()
 
     if overwrite_id:
+        overwrite_id = _check_id(overwrite_id)
         existing_path = MODELS_DIR / f"{overwrite_id}.json"
         if existing_path.exists():
             with open(existing_path, encoding="utf-8") as fh:
@@ -108,7 +122,7 @@ def save_model(
         "updated_at": now,
     }
 
-    path = MODELS_DIR / f"{model_id}.json"
+    path = MODELS_DIR / f"{_check_id(model_id)}.json"
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(model, fh, ensure_ascii=False)
 
@@ -118,6 +132,7 @@ def save_model(
 def load_model(model_id: str) -> dict:
     """Load a full model (including weights/biases). Raises ValueError if not found."""
     _ensure_dir()
+    model_id = _check_id(model_id)
     path = MODELS_DIR / f"{model_id}.json"
     if not path.exists():
         raise ValueError(f"Model not found: {model_id}")
@@ -128,6 +143,7 @@ def load_model(model_id: str) -> dict:
 def delete_model(model_id: str) -> dict:
     """Delete a saved model. Raises ValueError if not found."""
     _ensure_dir()
+    model_id = _check_id(model_id)
     path = MODELS_DIR / f"{model_id}.json"
     if not path.exists():
         raise ValueError(f"Model not found: {model_id}")

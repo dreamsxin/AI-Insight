@@ -30,13 +30,15 @@
 |---|---|---|
 | 训练原理 · 模型怎么来的 | 6 | 语料流水线、并行分片、训练稳定性、scaling law、后训练 |
 | HERMES AGENT 对象拆解 | 18 | 多入口架构、主循环、MCP、权限、流式、错误恢复…… |
-| HERMES AGENT 进阶机制 | 7 | 思考预算、Skills 渐进披露、Hooks、沙箱、A2A、Harness、CUA |
+| HERMES AGENT 进阶机制 | 8 | 思考预算、Skills 渐进披露、Hooks、MCP 2026、A2A、Harness、CUA、从零造 Harness |
 | AI 运作原理拆解 | 15 | 训练三部曲、上下文窗口、注意力、采样、多 Agent…… |
 | AI 运作原理 · 深入篇 | 8 | Transformer 骨架、MoE、KV Cache、RLVR、LoRA、Embedding、多模态 |
 | LLM 模型算法原理 | 5 | 词向量、损失、位置编码、残差、向量注意力 |
-| 推理原理（三季） | 36 | 服务层（prefill/decode、KV 三级缓存、推测解码）→ 底层账本 → 第三季从四个数字下钻到底层，已完结 |
+| 推理原理 | 12 | 服务层：请求生命周期、prefill/decode、KV 三级缓存、推测解码 |
+| 推理原理 · 第二季 | 12 | 底层账本：算力、显存、带宽、时延四本账 |
+| 推理原理 · 第三季 | 12 | 从分数 · 长度 · 时延 · 密度四个数字下钻到底层，已完结 |
 | AGENT 开发避坑指南 | 7 | 工具设计、循环成本、上下文工程、评估观测、提示注入、证据链、事实状态机 |
-| AGENT 实战工坊 | 6 | 知识问答 RAG 全链路：入库 → 检索多轮 → 上线 → 选型 → Agentic RAG → GraphRAG |
+| AGENT 实战工坊 · 知识问答 | 6 | RAG 全链路：入库 → 检索多轮 → 上线 → 选型 → Agentic RAG → GraphRAG |
 | AGENT 模式进阶 | 7 | Plan-and-Execute、Reflection、CoALA 记忆、MCP 发现、护栏、接力流水线 |
 
 **打开方式**（每集单文件零依赖，含上/下集导航与检索）：
@@ -46,13 +48,13 @@ python -m http.server 8899 --directory docs
 # 浏览 http://localhost:8899 ，或直接双击任一 html
 ```
 
-规划与审计文档见 `docs/research/`（推理原理第三季规划书、覆盖审计等）；`docs/tools/nav-gen.py` 负责生成集间导航。
+规划与审计文档见 `docs/research/`（推理原理第三季规划书、覆盖审计、项目审查报告等）。`docs/tools/` 下有三个只读可复算的生成器/校验器：`nav-gen.py` 注入集间导航、`demo-gen.py` 注入配套脚本角标、`count-check.py` 复算全库计数；均支持 `--check`，并由 CI 守护。
 
 ## 🤖 通用 Agent 框架（backend/app/agent/）
 
 生产级异步 Agent 运行时：`think → act → observe` 主循环，**模型只有提案权、执行在宿主**；工具即普通函数；护栏（步数 / token 预算 / 重复检测 / 白名单）全部在代码层强制；全链路结构化事件可观测。走 OpenAI Chat Completions 兼容协议，OpenAI / DeepSeek / 本地 vLLM 均可接入，仅依赖 `httpx`。
 
-**已接入应用**：后端暴露 `POST /api/agent/chat`（含 SSE 流式 `/chat/stream`，需环境变量 `LLM_BASE_URL` / `LLM_API_KEY`）；前端第 10 章「Agent 实验台」提供可对话的 Playground，实时展示工具调用轨迹与护栏触发。
+**已接入应用**：后端暴露 `POST /api/agent/chat`（需环境变量 `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`），另有 SSE 流式端点 `/chat/stream`（**前端暂未接入**）；前端第 10 章「Agent 实验台」提供可对话的 Playground，在一次响应返回后展示本次工具调用轨迹与护栏触发。框架自进化闭环（eval / playbook / evolve）已实现但尚未接入 HTTP 路径。
 
 ```python
 import asyncio
@@ -100,7 +102,7 @@ TypeScript + Vite                    Python + FastAPI + NumPy + httpx
 | 前端构建 | Vite | 极速HMR |
 | 前端语言 | TypeScript (strict) | 类型安全 |
 | 可视化 | 原生 Canvas 2D API | 自研轻量渲染引擎（`three` 仅 3 处使用） |
-| 后端测试 | pytest + pytest-asyncio | 81 个测试（含 Agent 框架 / 端点 / 自进化闭环与提示进化） |
+| 后端测试 | pytest + pytest-asyncio | 109 个测试（含 Agent 框架 / 端点 / 自进化闭环 / 安全回归） |
 | 前端测试 | Vitest | 42个测试 |
 
 ## 🚀 快速开始
@@ -156,26 +158,26 @@ AI-Insight/
 │   │   ├── data/            # 章节内容 + 100术语
 │   │   ├── routers/         # API路由 (chapters/compute/terms)
 │   │   ├── services/        # NumPy计算引擎 (NN/CNN/Transformer)
-│   │   └── tests/           # pytest测试 (43个)
+│   │   └── tests/           # pytest测试 (109个)
 │   └── requirements.txt
 ├── frontend/                 # TypeScript Vite 前端
 │   ├── src/
 │   │   ├── canvas/           # 自研Canvas渲染引擎
 │   │   │   ├── engine/       # Renderer, Scene, AnimationLoop
 │   │   │   ├── shapes/       # Circle, Rect, Line, Text, Arrow...
-│   │   │   └── animation/    # Tween, Easing, Timeline
+│   │   │   └── animation/    # Tween, Easing
 │   │   ├── components/       # UI组件 (Sidebar, ControlsPanel...)
-│   │   ├── core/             # App, Router, EventBus
+│   │   ├── core/             # App, Router
 │   │   ├── api/              # fetch 封装 (client/chapters/compute/agent)
-│   │   ├── visualizations/   # 每章可视化实现 (ch01 ~ ch09)
+│   │   ├── visualizations/   # 每章可视化实现 (ch01 ~ ch10)
 │   │   └── utils/            # 数学/颜色工具
-│   └── tests/                # Vitest测试 (25个)
+│   └── tests/                # Vitest测试 (42个)
 ├── docs/                     # 116 集动画演示库（独立于 Vite 应用）
 │   ├── index.html            # 唯一入口：12 系列 + 检索 + 知识地图
 │   ├── research/             # 系列规划书与审计报告
-│   ├── tools/                # nav-gen.py 集间导航生成器
+│   ├── tools/                # nav-gen.py / demo-gen.py / count-check.py
 │   └── vendor/               # three.js r160（file:// 直开改写版）
-├── examples/                 # 配套可运行示例（rag-demo / agent-harness-demo）
+├── examples/                 # rag-demo / agent-harness-demo / anim-demos / compliance-flow-demo
 ├── start.bat                 # Windows一键启动
 ├── start.sh                  # Linux/Mac一键启动
 └── README.md
@@ -185,14 +187,14 @@ AI-Insight/
 
 - **分页式教学**: 类似PPT的章节导航，每页有可视化 + 文字解释 + 交互控件
 - **实时计算**: 后端用NumPy执行真实的AI计算（前向传播、训练、卷积、注意力）
-- **自研Canvas引擎**: 轻量的Shape/Scene/Tween/Timeline渲染框架，无需第三方依赖
+- **自研Canvas引擎**: 轻量的Shape/Scene/Tween渲染框架，无需第三方依赖
 - **深色主题**: 青紫色渐变配色，适合长时间学习
 
 ## 🗺️ Roadmap
 
 下一步规划详见 [`docs/research/roadmap-2026-10.md`](docs/research/roadmap-2026-10.md)。摘要：
 
-- **✅ 已完成**：`/api/agent/chat` + SSE 流式端点（51 后端测试）；进阶机制 ·08《从零造一个 Harness》动画；`examples/agent-harness-demo/` 五个离线可运行脚本；Harness 资料汇编
+- **✅ 已完成**：`/api/agent/chat` + SSE 流式端点（109 个后端测试）；进阶机制 ·08《从零造一个 Harness》动画；`examples/agent-harness-demo/` 9 个离线可运行脚本；Harness 资料汇编
 - **✅ P1 · 前端 Agent Playground**：第 10 章「Agent 实验台」已上线（零路由改动），实时展示工具轨迹与护栏触发
 - **P1 · Harness 深化**：trace 落盘与最小评估集、checkpoint store、工具结果来源标记（防上下文提权）、工具利用率审计——依据 `docs/research/agent-harness-research.md` 第二轮调研
 - **P1 · 动画库收尾 ✅（2026-10-27 完结）**：推理原理第三季 12 集（25–36）全部上线

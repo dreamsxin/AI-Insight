@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import re
+import threading
+import uuid
 from pathlib import Path
 from typing import Protocol
 
@@ -53,30 +55,44 @@ class MemoryCheckpointStore:
 
 
 class JsonCheckpointStore:
-    """JSON 文件存储：每个会话一个文件，可直接审计与备份。"""
+    """JSON 文件存储：每个会话一个文件，可直接审计与备份。
+
+    写盘策略：唯一临时文件 + 进程内互斥锁。前者避免同 session 的两次
+    并发写共用 ``.tmp`` 互相覆盖；后者让 ``replace`` 串行化（Windows 在
+    目标文件被并发替换时会抛 WinError 5），同时保证 load 不会读到写一半
+    的状态。
+    """
 
     def __init__(self, directory: str | Path) -> None:
         self.dir = Path(directory)
         self.dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
 
     def _path(self, session_id: str) -> Path:
         return self.dir / f"{_check_id(session_id)}.json"
 
     def save(self, session_id: str, messages: list[Message]) -> None:
         path = self._path(session_id)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(
-            json.dumps([m.model_dump() for m in messages], ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        tmp.replace(path)  # 原子写，避免崩溃留下半截检查点
+        tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        with self._lock:
+            try:
+                tmp.write_text(
+                    json.dumps([m.model_dump() for m in messages], ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                tmp.replace(path)  # 原子写，避免崩溃留下半截检查点
+            finally:
+                tmp.unlink(missing_ok=True)
 
     def load(self, session_id: str) -> list[Message] | None:
         path = self._path(session_id)
-        if not path.exists():
-            return None
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return [Message(**m) for m in data]
+        with self._lock:
+            if not path.exists():
+                return None
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return [Message(**m) for m in data]
 
     def delete(self, session_id: str) -> None:
-        self._path(session_id).unlink(missing_ok=True)
+        path = self._path(session_id)
+        with self._lock:
+            path.unlink(missing_ok=True)

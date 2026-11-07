@@ -13,7 +13,6 @@ export abstract class BaseVisualization {
   protected controls: Record<string, number> = {};
   protected controlConfigs: ControlConfig[] = [];
   protected canvas: HTMLCanvasElement;
-  protected apiEndpoint: string | undefined;
   protected container: HTMLElement;
   /** AbortController for cancelling API requests on destroy/re-run */
   protected abortController: AbortController | null = null;

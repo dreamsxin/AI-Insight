@@ -20,6 +20,7 @@ from app.agent import (
     RepeatedCallError,
     Role,
     RunStats,
+    ToolNotAllowedError,
     ToolRegistry,
     tool,
 )
@@ -255,7 +256,7 @@ def test_guardrails_whitelist():
 
     g = Guardrails(allowed_tools={"allowed"})
     g.ensure_tool_allowed("allowed", {s.name for s in reg.specs()})  # 不抛
-    with pytest.raises(PermissionError):
+    with pytest.raises(ToolNotAllowedError):
         g.ensure_tool_allowed("forbidden", {s.name for s in reg.specs()})
 
 

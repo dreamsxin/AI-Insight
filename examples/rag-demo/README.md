@@ -1,6 +1,8 @@
 # 实战：把《经典古诗文诵读》做成知识问答 Agent
 
-一个**完全离线、可直接复现**的 RAG 实战 demo：把 `examples/经典古诗文诵读.pdf`（264 页，教育部推荐诵读篇目）做成能回答「静夜思的作者是谁」「疑是地上霜出自哪」的书本问答服务，带页码引用与拒答兜底。
+一个**完全离线、可直接复现**的 RAG 实战 demo：把 `examples/经典古诗文诵读上.pdf` 与 `经典古诗文诵读下.pdf` 两册（教育部推荐诵读篇目）做成能回答「静夜思的作者是谁」「疑是地上霜出自哪」的书本问答服务，带页码引用与拒答兜底。
+
+> 语料原为单册 `经典古诗文诵读.pdf`，后拆分为上/下两册。`01_extract.py` 按文件名顺序合并为**跨册连续页码**，并额外记录 `book` / `book_page` 便于回查纸质书；下游脚本只依赖 `page` / `text`，无需改动。可先跑 `python scripts/01_extract.py --check` 校验语料发现（不需要 PyMuPDF）。
 
 对应动画教程：`docs/rag-01-ingest-animation.html`（语料入库）、`rag-02`（检索与多轮）、`rag-03`（拒答引用与上线）。
 
@@ -48,7 +50,7 @@ pip install -r requirements.txt   # PyMuPDF / numpy / fastapi / uvicorn
 python scripts/01_extract.py
 ```
 
-真实输出：
+历史输出（原来的单册 264 页语料，保留作对照；拆分为上/下两册后会按册逐行打印，总页数取决于两册实际页数）：
 
 ```
 打开 经典古诗文诵读.pdf：共 264 页
@@ -244,7 +246,7 @@ LLM 回答： 《静夜思》的作者是李白 [1]。他字太白，号青莲�
 
 ## 套用到你自己的书 / 文档
 
-1. 把 PDF 放进 `examples/`，改 `01_extract.py` 里的 `PDF_PATH`；
+1. 把 PDF 放进 `examples/`，调整 `01_extract.py` 里的 `PDF_PATTERN`（或改写 `discover_pdfs()` 的排序规则）；
 2. `python scripts/01_extract.py` → `02` → `03` → `04`，逐屏看每个脚本的统计输出；
 3. 收集 20 个真实问题跑 `05_ask.py`，按第 5 节的表格记录分数，校准 `--threshold`；
 4. `python scripts/06_serve.py` 上线 —— 语料换了，架构一行不用动（rag-03 期）。

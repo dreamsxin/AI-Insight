@@ -22,6 +22,14 @@ class ToolNotFoundError(AgentError):
         super().__init__(f"工具未注册: {name}")
 
 
+class ToolNotAllowedError(AgentError):
+    """工具已注册，但本次运行的白名单未授权（护栏在宿主侧拒绝）。"""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        super().__init__(f"本次运行未授权工具: {name}")
+
+
 class ToolExecutionError(AgentError):
     """工具函数自身抛出的错误（已包装原始异常）。"""
 

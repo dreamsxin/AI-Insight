@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#070b14">
-<meta name="description" content="AI-Insight 运作动画演示索引：Hermes 对象拆解 01-18 + Hermes 进阶机制 01-08 + AI 运作原理拆解 01-14 + AI 深入篇 01-08 + LLM 模型算法原理 01-05 + Agent 开发避坑指南 01-07 + AGENT 实战工坊 01-06 + AGENT 模式进阶 01-07 + 训练原理 01-06 + 推理原理 01-24（两季）+ 第三季 25-36，共 116 个自包含逐屏动画">
+<meta name="description" content="AI-Insight 运作动画演示索引：覆盖模型训练、Transformer 内部、推理服务与 Agent 工程的自包含逐屏动画合集，按系列编排，支持全库检索；集数与顺序以本页卡片为准">
 <title>AI 运作原理 · 动画演示索引</title>
 <style>
   :root {
@@ -212,7 +212,7 @@
         <a href="dev-05-injection-animation.html">注入防御</a>
         <a href="hermes-19-cua-animation.html">CUA</a>
       </div>
-      <div class="layer-n">42 集</div>
+      <div class="layer-n">46 集</div>
     </div>
     <div class="layer">
       <div class="layer-l"><b>L3</b>推理服务</div>
@@ -224,7 +224,7 @@
         <a href="inf-09-dspark-animation.html">投机解码</a>
         <a href="ai-15-kv-cache-animation.html">KV 深入</a>
       </div>
-      <div class="layer-n">40 集</div>
+      <div class="layer-n">36 集</div>
     </div>
     <div class="layer">
       <div class="layer-l"><b>L2</b>模型原理</div>
@@ -237,7 +237,7 @@
         <a href="ai-12-sampling-animation.html">采样</a>
         <a href="ai-20-multimodal-animation.html">多模态</a>
       </div>
-      <div class="layer-n">18 集</div>
+      <div class="layer-n">28 集</div>
     </div>
     <div class="layer">
       <div class="layer-l"><b>L1</b>训练</div>
@@ -249,7 +249,7 @@
         <a href="ai-17-rlvr-animation.html">RLVR</a>
         <a href="ai-18-finetune-animation.html">LoRA</a>
       </div>
-      <div class="layer-n">10 集</div>
+      <div class="layer-n">6 集</div>
     </div>
   </section>
 
@@ -440,7 +440,7 @@
 
   <div class="series">
     <div class="series-head"><b>HERMES AGENT 进阶机制</b></div>
-    <div class="series-note">🎬 进阶 7 集：上一组讲的是对象的骨架，这一组讲长在骨架上的机制 —— 思考预算怎么进主循环、Skills 怎么按需翻开、Hooks 怎么在不改大脑的前提下立规矩，以及 MCP 2026 / A2A / Harness / CUA 四个正在成形的外部接口。</div>
+    <div class="series-note">🎬 进阶 8 集：上一组讲的是对象的骨架，这一组讲长在骨架上的机制 —— 思考预算怎么进主循环、Skills 怎么按需翻开、Hooks 怎么在不改大脑的前提下立规矩，以及 MCP 2026 / A2A / Harness / CUA 四个正在成形的外部接口。</div>
     <div class="grid">
       <a class="card" href="hermes-12-thinking-animation.html">
         <div class="card-top"><span class="card-ico">⏳</span><span class="num n-h1">· 01</span></div>
@@ -840,7 +840,7 @@
 
   <div class="series">
     <div class="series-head"><b>推理原理 · 第三季</b></div>
-    <div class="series-note">🎬 第三季四幕 12 集（25–36）：前两季讲「机器怎么运转」，这一季反过来 —— 从业外能看到的四个数字<b>分数 · 长度 · 时延 · 密度</b>往下钻，看每个数字被什么钉死。四幕：<b>分数 25–27</b> → <b>长度 28–30</b> → <b>时延 31–33</b> → <b>密度 34–36</b>。已上线 7 集（幕 A 分数 25–27、幕 B 长度 28–30 全部完成），其余按批续更。</div>
+    <div class="series-note">🎬 第三季四幕 12 集（25–36）：前两季讲「机器怎么运转」，这一季反过来 —— 从业外能看到的四个数字<b>分数 · 长度 · 时延 · 密度</b>往下钻，看每个数字被什么钉死。四幕：<b>分数 25–27</b> → <b>长度 28–30</b> → <b>时延 31–33</b> → <b>密度 34–36</b>。四幕 12 集（25–36）已全部上线，本季完结。</div>
     <div class="grid">
       <a class="card" href="inf-25-eval-bench-animation.html">
         <div class="card-top"><span class="card-ico">⚖️</span><span class="num n-h1">· 25</span></div>
@@ -967,7 +967,7 @@
 
   <div class="series">
     <div class="series-head"><b>AGENT 实战工坊 · 知识问答</b></div>
-    <div class="series-note">🎬 本系列配套<b>可运行 demo</b>：<a href="../examples/rag-demo/README.md">examples/rag-demo/README.md</a> —— 把《经典古诗文诵读.pdf》整本入库，六个 Python 脚本走完 提取→清洗→切块→TF-IDF 检索→LLM 有据回答 全流程（含拒答与页码引用），命令与真实输出全部记录在案</div>
+    <div class="series-note">🎬 本系列配套<b>可运行 demo</b>：<a href="../examples/rag-demo/README.md">examples/rag-demo/README.md</a> —— 把《经典古诗文诵读》上/下两册入库，脚本 01–06 走完 提取→清洗→切块→TF-IDF 检索→LLM 有据回答 全流程（含拒答与页码引用），命令与历史输出全部记录在案</div>
     <div class="grid">
       <a class="card" href="rag-01-ingest-animation.html">
         <div class="card-top"><span class="card-ico">🗄️</span><span class="num n-h1">· 01</span></div>

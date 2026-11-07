@@ -16,6 +16,7 @@ from app.agent.errors import (
     BudgetExceededError,
     MaxStepsExceededError,
     RepeatedCallError,
+    ToolNotAllowedError,
     ToolNotFoundError,
 )
 
@@ -73,8 +74,8 @@ class Guardrails:
         if name not in registered:
             raise ToolNotFoundError(name)
         if self.allowed_tools is not None and name not in self.allowed_tools:
-            # 工具存在但本次运行未授权：按未找到处理（不泄露内部工具表）
-            raise PermissionError(f"本次运行未授权工具: {name}")
+            # 工具存在但本次运行未授权：按护栏触发处理（不泄露内部工具表）
+            raise ToolNotAllowedError(name)
 
     def observe_call(self, name: str, arguments: dict) -> None:
         """重复检测：同工具 + 同参数连续出现即计数。"""

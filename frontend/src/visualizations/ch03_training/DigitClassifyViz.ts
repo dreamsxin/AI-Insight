@@ -136,6 +136,10 @@ export class DigitClassifyViz extends BaseVisualization {
     this.trainGeneration++;
     this.running = false;
     this.paused = false;
+    if (this.modelStatusTimer !== null) {
+      window.clearTimeout(this.modelStatusTimer);
+      this.modelStatusTimer = null;
+    }
   }
 
   pause(): void {
@@ -783,12 +787,16 @@ export class DigitClassifyViz extends BaseVisualization {
     }
   }
 
+  private modelStatusTimer: number | null = null;
+
   private flashModelStatus(msg: string): void {
     if (this.modelStatusText) {
       this.modelStatusText.text = msg;
       this.modelStatusText.fillStyle = COLORS.highlight;
       this.renderer.renderOnce();
-      setTimeout(() => {
+      if (this.modelStatusTimer !== null) window.clearTimeout(this.modelStatusTimer);
+      this.modelStatusTimer = window.setTimeout(() => {
+        this.modelStatusTimer = null;
         if (this.modelStatusText) {
           this.modelStatusText.fillStyle = COLORS.textDim;
           this.updateStats();

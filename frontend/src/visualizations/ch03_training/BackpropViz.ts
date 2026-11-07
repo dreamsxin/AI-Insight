@@ -114,7 +114,7 @@ export class BackpropViz extends BaseVisualization {
         epochs: this.epochs,
         learning_rate: this.learningRate,
         activation: "sigmoid",
-      });
+      }, this.getAbortSignal());
       lossHistory = res.loss_history;
     } catch {
       lossHistory = this.localTrain();

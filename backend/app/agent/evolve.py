@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.agent.eval import EvalCase, EvalReport, run_eval_async
+from app.agent.models import Message
 from app.agent.tools import ToolRegistry
 
 
@@ -143,7 +144,7 @@ async def evolve_prompt_async(
             origin = f"gen{gen}-v{v}"
             try:
                 resp = await evolver.chat(
-                    [{"role": "user", "content": prompt_text}], temperature=0.4,
+                    [Message.user(prompt_text)], temperature=0.4,
                 )
                 new_prompt = (resp.content or "").strip()
             except Exception as exc:  # noqa: BLE001 - 进化器故障只损失一个变体

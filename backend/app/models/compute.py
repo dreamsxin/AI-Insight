@@ -1,8 +1,14 @@
-"""Pydantic models for compute API requests and responses."""
+"""Pydantic models for compute API requests and responses.
+
+Bounds on numeric fields are intentionally generous compared to the UI
+sliders (e.g. epochs slider tops out at 1000) but tight enough to stop a
+hand-crafted request from allocating unbounded NumPy arrays or looping for
+hours. Keep this in sync when adding new compute endpoints.
+"""
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -12,12 +18,12 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 
 class NNForwardRequest(BaseModel):
-    """Request body for ``POST /api/nn/forward``."""
+    """Request body for ``POST /api/compute/nn/forward``."""
 
     layers: list[int] = Field(
-        ..., description="Neuron counts per layer, e.g. [2, 3, 1]"
+        ..., min_length=2, max_length=8, description="Neuron counts per layer, e.g. [2, 3, 1]"
     )
-    inputs: list[float] = Field(..., description="Input values matching layers[0]")
+    inputs: list[float] = Field(..., max_length=512, description="Input values matching layers[0]")
     # Optional explicit weights; if omitted random weights are used.
     weights: Optional[list[list[list[float]]]] = None
     biases: Optional[list[list[float]]] = None
@@ -37,7 +43,7 @@ class LayerResult(BaseModel):
 
 
 class NNForwardResponse(BaseModel):
-    """Response for ``POST /api/nn/forward``."""
+    """Response for ``POST /api/compute/nn/forward``."""
 
     layers: list[LayerResult]
     output: list[float]
@@ -45,18 +51,18 @@ class NNForwardResponse(BaseModel):
 
 
 class NNTrainRequest(BaseModel):
-    """Request body for ``POST /api/nn/train``."""
+    """Request body for ``POST /api/compute/nn/train``."""
 
-    layers: list[int]
+    layers: list[int] = Field(..., min_length=2, max_length=8)
     # Flattened samples: each inner list is [..inputs, ..targets]
-    data: list[list[float]]
-    epochs: int = 100
-    learning_rate: float = 0.1
+    data: list[list[float]] = Field(..., max_length=20_000)
+    epochs: int = Field(100, ge=1, le=20_000)
+    learning_rate: float = Field(0.1, ge=0, le=10)
     activation: str = "relu"
 
 
 class NNTrainResponse(BaseModel):
-    """Response for ``POST /api/nn/train`` - loss history and final weights."""
+    """Response for ``POST /api/compute/nn/train`` - loss history and final weights."""
 
     loss_history: list[float]
     final_weights: list[list[list[float]]]
@@ -64,12 +70,12 @@ class NNTrainResponse(BaseModel):
 
 
 class NNTrainStepRequest(BaseModel):
-    """Request body for ``POST /api/nn/train/step`` - stepwise training."""
+    """Request body for ``POST /api/compute/nn/train/step`` - stepwise training."""
 
-    layers: list[int]
-    data: list[list[float]]  # [..inputs, ..targets]
-    epochs: int = 1  # epochs to run this call
-    learning_rate: float = 0.1
+    layers: list[int] = Field(..., min_length=2, max_length=8)
+    data: list[list[float]] = Field(..., max_length=20_000)  # [..inputs, ..targets]
+    epochs: int = Field(1, ge=1, le=20_000)  # epochs to run this call
+    learning_rate: float = Field(0.1, ge=0, le=10)
     activation: str = "relu"
     seed: int = 42
     weights: Optional[list[list[list[float]]]] = None  # warm start
@@ -119,11 +125,16 @@ class DatasetResponse(BaseModel):
 
 
 class SaveModelRequest(BaseModel):
-    """Request body for ``POST /api/nn/models`` - save a trained model."""
+    """Request body for ``POST /api/compute/nn/models`` - save a trained model.
+
+    ``overwrite_id`` is validated again in ``services/model_store.py`` (the
+    service is the only writer and can also be called directly), so no regex
+    is duplicated here.
+    """
 
     name: str
     dataset: str
-    layers: list[int]
+    layers: list[int] = Field(..., min_length=2, max_length=8)
     activation: str = "sigmoid"
     weights: list[list[list[float]]]
     biases: list[list[float]]
@@ -163,12 +174,12 @@ class SavedModelDetail(SavedModelSummary):
 # ---------------------------------------------------------------------------
 
 class ConvolveRequest(BaseModel):
-    """Request body for ``POST /api/cnn/convolve``."""
+    """Request body for ``POST /api/compute/cnn/convolve``."""
 
-    image: list[list[float]]
-    kernel: list[list[float]]
-    stride: int = 1
-    padding: int = 0
+    image: list[list[float]] = Field(..., max_length=512)
+    kernel: list[list[float]] = Field(..., max_length=64)
+    stride: int = Field(1, ge=1, le=16)
+    padding: int = Field(0, ge=0, le=16)
 
 
 class ConvolveResponse(BaseModel):
@@ -182,12 +193,12 @@ class ConvolveResponse(BaseModel):
 
 
 class PoolingRequest(BaseModel):
-    """Request body for ``POST /api/cnn/pool``."""
+    """Request body for ``POST /api/compute/cnn/pool``."""
 
-    feature_map: list[list[float]]
-    pool_size: int = 2
-    stride: int = 2
-    mode: str = "max"  # "max" | "avg"
+    feature_map: list[list[float]] = Field(..., max_length=512)
+    pool_size: int = Field(2, ge=1, le=16)
+    stride: int = Field(2, ge=1, le=16)
+    mode: Literal["max", "avg"] = "max"
 
 
 class PoolingResponse(BaseModel):
@@ -200,10 +211,10 @@ class PoolingResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class AttentionRequest(BaseModel):
-    """Request body for ``POST /api/transformer/attention``."""
+    """Request body for ``POST /api/compute/transformer/attention``."""
 
     # Sequence of token vectors (already embedded), shape [seq_len, dim]
-    sequence: list[list[float]]
+    sequence: list[list[float]] = Field(..., max_length=512)
     # If True, apply causal mask (decoder-style).
     causal_mask: bool = False
 
@@ -220,8 +231,8 @@ class AttentionResponse(BaseModel):
 
 
 class PositionalEncodingRequest(BaseModel):
-    seq_len: int = 10
-    dim: int = 16
+    seq_len: int = Field(10, ge=1, le=512)
+    dim: int = Field(16, ge=1, le=512)
 
 
 class PositionalEncodingResponse(BaseModel):

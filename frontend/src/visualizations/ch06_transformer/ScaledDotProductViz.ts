@@ -82,7 +82,10 @@ export class ScaledDotProductViz extends StepSequenceVisualization {
     if (playAfterLoad) this.setVisualizationStatus("idle");
     this.renderLoading();
     try {
-      const resp = await transformerAttention({ sequence: SEQUENCE, causal_mask: false });
+      const resp = await transformerAttention(
+        { sequence: SEQUENCE, causal_mask: false },
+        this.getAbortSignal(),
+      );
       this.apiResponse = resp;
       this.loading = false;
       this.renderStepSequenceFrame();
